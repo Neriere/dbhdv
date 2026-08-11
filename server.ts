@@ -19,6 +19,7 @@ import {
   searchAndStoreItems,
   setItemPrice,
   updateAutomaticSyncSettings,
+  initDB, // <--- Importación añadida
 } from "./src/server/localDataStore";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -32,6 +33,18 @@ function getRequiredEnv(name: string): string {
 }
 
 async function startServer() {
+  // Inicializamos la base de datos en Turso antes de arrancar la API
+  try {
+    await initDB();
+    console.log("[Database] Turso schemas initialized successfully.");
+  } catch (error) {
+    console.error(
+      "[Database Error] Failed to initialize Turso schemas:",
+      error,
+    );
+    process.exit(1);
+  }
+
   const app = express();
   const PORT = Number(process.env.PORT || process.env.APP_PORT || 3000);
   const HOST = process.env.APP_HOST || "0.0.0.0";
@@ -54,22 +67,33 @@ async function startServer() {
     res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
   });
 
-  app.get("/api/local-db/bootstrap", (req, res) => {
-    res.json(getBootstrapData());
+  app.get("/api/local-db/bootstrap", async (req, res) => {
+    try {
+      const data = await getBootstrapData();
+      res.json(data);
+    } catch (error) {
+      console.error("[Local DB Bootstrap Error]", error);
+      res.status(500).json({ error: "Failed to load bootstrap data" });
+    }
   });
 
-  app.get("/api/local-db/meta", (req, res) => {
-    const bootstrap = getBootstrapData();
-    res.json({
-      databasePath: getDatabaseFilePath(),
-      totalItems: bootstrap.items.length,
-      totalRecipes: Object.keys(bootstrap.recipes).length,
-      totalPricedItems: Object.keys(bootstrap.prices).length,
-      syncStatus: bootstrap.syncStatus,
-      syncSettings: bootstrap.syncSettings,
-      priceProfiles: bootstrap.priceProfiles,
-      activePriceProfileId: bootstrap.activePriceProfileId,
-    });
+  app.get("/api/local-db/meta", async (req, res) => {
+    try {
+      const bootstrap = await getBootstrapData();
+      res.json({
+        databasePath: getDatabaseFilePath(),
+        totalItems: bootstrap.items.length,
+        totalRecipes: Object.keys(bootstrap.recipes).length,
+        totalPricedItems: Object.keys(bootstrap.prices).length,
+        syncStatus: bootstrap.syncStatus,
+        syncSettings: bootstrap.syncSettings,
+        priceProfiles: bootstrap.priceProfiles,
+        activePriceProfileId: bootstrap.activePriceProfileId,
+      });
+    } catch (error) {
+      console.error("[Local DB Meta Error]", error);
+      res.status(500).json({ error: "Failed to load meta data" });
+    }
   });
 
   app.post("/api/local-db/import", async (req, res) => {
@@ -87,7 +111,9 @@ async function startServer() {
   app.post("/api/local-db/items/resolve-names", async (req, res) => {
     try {
       const itemIds = Array.isArray(req.body?.itemIds)
-        ? req.body.itemIds.map((value: unknown) => Number(value)).filter(Boolean)
+        ? req.body.itemIds
+            .map((value: unknown) => Number(value))
+            .filter(Boolean)
         : [];
 
       if (itemIds.length === 0) {
@@ -98,9 +124,7 @@ async function startServer() {
       res.json({ updatedItems });
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to resolve item names";
+        error instanceof Error ? error.message : "Failed to resolve item names";
       console.error("[Local DB Resolve Names Error]", error);
       res.status(500).json({ error: message });
     }
@@ -164,7 +188,9 @@ async function startServer() {
   app.post("/api/local-db/category-items", async (req, res) => {
     try {
       const typeIds = Array.isArray(req.body?.typeIds)
-        ? req.body.typeIds.map((value: unknown) => Number(value)).filter(Boolean)
+        ? req.body.typeIds
+            .map((value: unknown) => Number(value))
+            .filter(Boolean)
         : [];
 
       if (typeIds.length === 0) {
@@ -181,18 +207,24 @@ async function startServer() {
     }
   });
 
-  app.get("/api/local-db/price-profiles", (req, res) => {
-    res.json(getPriceProfileState());
+  app.get("/api/local-db/price-profiles", async (req, res) => {
+    try {
+      const state = await getPriceProfileState();
+      res.json(state);
+    } catch (error) {
+      console.error("[Local DB Price Profiles Error]", error);
+      res.status(500).json({ error: "Failed to fetch price profiles" });
+    }
   });
 
-  app.put("/api/local-db/price-profiles/active", (req, res) => {
+  app.put("/api/local-db/price-profiles/active", async (req, res) => {
     try {
       const profileId = Number(req.body?.profileId);
       if (!profileId) {
         return res.status(400).json({ error: "profileId is required" });
       }
 
-      const state = changeActivePriceProfile(profileId);
+      const state = await changeActivePriceProfile(profileId);
       res.json(state);
     } catch (error) {
       const message =
@@ -206,15 +238,24 @@ async function startServer() {
     res.download(getDatabaseFilePath(), "dofus-local.db");
   });
 
-  app.get("/api/local-db/sync-settings", (req, res) => {
-    res.json(getAutomaticSyncState());
+  app.get("/api/local-db/sync-settings", async (req, res) => {
+    try {
+      const state = await getAutomaticSyncState();
+      res.json(state);
+    } catch (error) {
+      console.error("[Local DB Sync Settings Error]", error);
+      res.status(500).json({ error: "Failed to fetch sync settings" });
+    }
   });
 
-  app.put("/api/local-db/sync-settings", (req, res) => {
+  app.put("/api/local-db/sync-settings", async (req, res) => {
     try {
       const enabled = req.body?.enabled !== false;
       const intervalDays = Number(req.body?.intervalDays) || 30;
-      const state = updateAutomaticSyncSettings({ enabled, intervalDays });
+      const state = await updateAutomaticSyncSettings({
+        enabled,
+        intervalDays,
+      });
       res.json(state);
     } catch (error) {
       const message =
@@ -224,18 +265,23 @@ async function startServer() {
     }
   });
 
-  app.put("/api/local-db/prices/:itemId", (req, res) => {
+  app.put("/api/local-db/prices/:itemId", async (req, res) => {
     try {
       const itemId = Number(req.params.itemId);
       const price = Number(req.body?.price);
       const profileId = Number(req.body?.profileId) || undefined;
       if (!itemId || Number.isNaN(price)) {
-        return res.status(400).json({ error: "Valid itemId and price are required" });
+        return res
+          .status(400)
+          .json({ error: "Valid itemId and price are required" });
       }
 
-      const prices = setItemPrice(itemId, price, profileId);
-      const profileState = getPriceProfileState();
-      res.json({ prices, activePriceProfileId: profileState.activePriceProfileId });
+      const prices = await setItemPrice(itemId, price, profileId);
+      const profileState = await getPriceProfileState();
+      res.json({
+        prices: prices.prices,
+        activePriceProfileId: profileState.activePriceProfileId,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Price update failed";
@@ -244,7 +290,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/local-db/prices", (req, res) => {
+  app.put("/api/local-db/prices", async (req, res) => {
     try {
       const prices = req.body?.prices;
       const profileId = Number(req.body?.profileId) || undefined;
@@ -252,7 +298,7 @@ async function startServer() {
         return res.status(400).json({ error: "prices object is required" });
       }
 
-      const updatedPrices = overwritePrices(
+      const updatedPrices = await overwritePrices(
         Object.fromEntries(
           Object.entries(prices).map(([itemId, price]) => [
             Number(itemId),
@@ -261,8 +307,11 @@ async function startServer() {
         ),
         profileId,
       );
-      const profileState = getPriceProfileState();
-      res.json({ prices: updatedPrices, activePriceProfileId: profileState.activePriceProfileId });
+      const profileState = await getPriceProfileState();
+      res.json({
+        prices: updatedPrices.prices,
+        activePriceProfileId: profileState.activePriceProfileId,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Bulk price update failed";
@@ -271,12 +320,15 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/local-db/prices", (req, res) => {
+  app.delete("/api/local-db/prices", async (req, res) => {
     try {
       const profileId = Number(req.body?.profileId) || undefined;
-      const prices = deleteAllStoredPrices(profileId);
-      const profileState = getPriceProfileState();
-      res.json({ prices, activePriceProfileId: profileState.activePriceProfileId });
+      const prices = await deleteAllStoredPrices(profileId);
+      const profileState = await getPriceProfileState();
+      res.json({
+        prices: prices.prices,
+        activePriceProfileId: profileState.activePriceProfileId,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to clear prices";

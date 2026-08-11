@@ -1,11 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { Download, RefreshCw, Database, ShieldAlert, CheckCircle2, Layers, Filter, Sparkles, AlertCircle, Wrench } from 'lucide-react';
-import { SyncStatus, DofusItem, SyncSettings } from '../types';
-import { getSyncSettings, getSyncStatus, initializeDatabase, performFullItemImport, getImportedItems, getStoredRecipes, saveAutomaticSyncSettings } from '../services/dofusDbService';
+import React, { useState, useEffect } from "react";
+import {
+  Download,
+  RefreshCw,
+  Database,
+  ShieldAlert,
+  CheckCircle2,
+  Layers,
+  Filter,
+  Sparkles,
+  AlertCircle,
+  Wrench,
+} from "lucide-react";
+import { SyncStatus, DofusItem, SyncSettings } from "../types";
+import {
+  getSyncSettings,
+  getSyncStatus,
+  initializeDatabase,
+  performFullItemImport,
+  getImportedItems,
+  getStoredRecipes,
+  saveAutomaticSyncSettings,
+} from "../services/dofusDbService";
 
-export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => void }> = ({ onSyncComplete }) => {
+export const DofusImporter: React.FC<{
+  onSyncComplete?: (items: DofusItem[]) => void;
+}> = ({ onSyncComplete }) => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
-  const [syncSettings, setSyncSettings] = useState<SyncSettings>(getSyncSettings());
+  const [syncSettings, setSyncSettings] =
+    useState<SyncSettings>(getSyncSettings());
   const [itemsCount, setItemsCount] = useState<number>(0);
   const [recipesCount, setRecipesCount] = useState<number>(0);
 
@@ -16,7 +38,7 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
         setSyncSettings(getSyncSettings());
       })
       .catch((error) => {
-        console.error('No se pudo inicializar la base local:', error);
+        console.error("No se pudo inicializar la base local:", error);
       });
   }, []);
 
@@ -37,7 +59,7 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
       setRecipesCount(Object.keys(recipes).length);
       if (onSyncComplete) onSyncComplete(result.items);
     } catch (e) {
-      console.error('Import failed', e);
+      console.error("Import failed", e);
     }
   };
 
@@ -50,12 +72,15 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
       setSyncSettings(updated);
       setSyncStatus(getSyncStatus());
     } catch (error) {
-      console.error('No se pudo actualizar la sincronización automática:', error);
+      console.error(
+        "No se pudo actualizar la sincronización automática:",
+        error,
+      );
     }
   };
 
   const handleExportDatabase = () => {
-    window.location.href = '/api/local-db/export-database';
+    window.location.href = "/api/local-db/export-database";
   };
 
   return (
@@ -103,7 +128,9 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
 
       <div className="p-4 rounded-xl bg-[#0f0f0f] border border-neutral-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
-          <div className="text-sm font-semibold text-white">Sincronización automática</div>
+          <div className="text-sm font-semibold text-white">
+            Sincronización automática
+          </div>
           <p className="text-xs text-neutral-400">
             Revisión local cada {syncSettings.intervalDays} días.
           </p>
@@ -117,14 +144,15 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
             }}
             className="rounded border-neutral-700 text-amber-500 focus:ring-0 bg-neutral-950"
           />
-          <span>{syncSettings.enabled ? 'Activa' : 'Pausada'}</span>
+          <span>{syncSettings.enabled ? "Activa" : "Pausada"}</span>
         </label>
       </div>
 
       <div className="p-4 rounded-xl bg-amber-900/10 border border-amber-900/30 flex items-start gap-3">
         <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
         <div className="text-xs text-amber-200/90 leading-relaxed">
-          Se omiten cosméticos, apariencias y runas para mantener la base enfocada en economía.
+          Se omiten cosméticos, apariencias y runas para mantener la base
+          enfocada en economía.
         </div>
       </div>
 
@@ -146,7 +174,9 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Objetos Local</span>
+            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
+              Objetos Local
+            </span>
             <Layers className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-white">
@@ -157,18 +187,22 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
 
         <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Recetas en Base</span>
+            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
+              Recetas en Base
+            </span>
             <Wrench className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-amber-400">
-            {recipesCount > 0 ? recipesCount : (syncStatus.recipesCount || 0)}
+            {recipesCount > 0 ? recipesCount : syncStatus.recipesCount || 0}
           </div>
           <p className="text-[11px] text-neutral-500">Recetas de crafteo</p>
         </div>
 
         <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Equipables</span>
+            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
+              Equipables
+            </span>
             <Filter className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-400">
@@ -179,18 +213,24 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
 
         <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Recursos</span>
+            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
+              Recursos
+            </span>
             <Sparkles className="w-4 h-4 text-blue-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-blue-400">
             {syncStatus.consumablesCount + syncStatus.resourcesCount}
           </div>
-          <p className="text-[11px] text-neutral-500">Ingredientes y pociones</p>
+          <p className="text-[11px] text-neutral-500">
+            Ingredientes y pociones
+          </p>
         </div>
 
         <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Apariencias</span>
+            <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
+              Apariencias
+            </span>
             <CheckCircle2 className="w-4 h-4 text-neutral-500" />
           </div>
           <div className="text-2xl font-bold font-mono text-neutral-400">
@@ -198,18 +238,17 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
           </div>
           <p className="text-[11px] text-neutral-500">Filtrados auto</p>
         </div>
-
       </div>
 
       <div className="p-4 rounded-xl bg-[#0a0a0a] border border-neutral-800 text-xs text-neutral-400 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-amber-400" />
           <span>
-            Última sync:{' '}
+            Última sync:{" "}
             <strong className="text-neutral-200">
               {syncStatus.lastSyncTimestamp
                 ? new Date(syncStatus.lastSyncTimestamp).toLocaleString()
-                : 'Sin datos importados'}
+                : "Sin datos importados"}
             </strong>
           </span>
         </div>
@@ -217,7 +256,6 @@ export const DofusImporter: React.FC<{ onSyncComplete?: (items: DofusItem[]) => 
           SQLite local
         </span>
       </div>
-
     </div>
   );
 };

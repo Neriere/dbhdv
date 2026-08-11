@@ -1,6 +1,5 @@
-import { mkdirSync } from "fs";
-import path from "path";
-import { DatabaseSync } from "node:sqlite";
+import { createClient } from "@libsql/client";
+import "dotenv/config";
 import { isOmittedItem } from "../data/dofusJobs";
 import {
   DofusItem,
@@ -13,8 +12,7 @@ import {
 } from "../types";
 
 const DOFUS_API_BASE = "https://api.dofusdb.fr";
-const DATABASE_DIRECTORY = path.join(process.cwd(), "data");
-const DATABASE_FILE_PATH = path.join(DATABASE_DIRECTORY, "dofus-local.db");
+
 const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   enabled: true,
   intervalDays: 30,
@@ -27,72 +25,71 @@ const UNITY_SERVER_PROFILES: Array<{
   { slug: "private", name: "Privado", isDefault: true },
   { slug: "draconiros", name: "Draconiros" },
   { slug: "hellmina", name: "Hellmina" },
-  { slug: "imagiro", name: "Imagiro" },
+  { slug: "rafal", name: "Rafal" },
   { slug: "mikhal", name: "Mikhal" },
-  { slug: "orukam", name: "Orukam" },
   { slug: "tal-kasha", name: "Tal Kasha" },
-  { slug: "tylezia", name: "Tylezia" },
-  { slug: "kourial", name: "Kourial" },
-  { slug: "dakal", name: "Dakal" },
 ];
 
-mkdirSync(DATABASE_DIRECTORY, { recursive: true });
+export const database = createClient({
+  url: process.env.DATABASE_URL as string,
+  authToken: process.env.DATABASE_AUTH_TOKEN as string,
+});
 
-const database = new DatabaseSync(DATABASE_FILE_PATH);
+export async function initDB() {
+  await database.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS items (
+      id INTEGER PRIMARY KEY,
+      level INTEGER NOT NULL DEFAULT 1,
+      type_id INTEGER NOT NULL DEFAULT 0,
+      super_category_id INTEGER NOT NULL DEFAULT 0,
+      icon_id INTEGER NOT NULL DEFAULT 0,
+      name_es TEXT NOT NULL DEFAULT '',
+      payload_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
 
-database.exec(`
-  CREATE TABLE IF NOT EXISTS items (
-    id INTEGER PRIMARY KEY,
-    level INTEGER NOT NULL DEFAULT 1,
-    type_id INTEGER NOT NULL DEFAULT 0,
-    super_category_id INTEGER NOT NULL DEFAULT 0,
-    icon_id INTEGER NOT NULL DEFAULT 0,
-    name_es TEXT NOT NULL DEFAULT '',
-    payload_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS recipes (
+      result_id INTEGER PRIMARY KEY,
+      job_id INTEGER,
+      payload_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS recipes (
-    result_id INTEGER PRIMARY KEY,
-    job_id INTEGER,
-    payload_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS prices (
+      item_id INTEGER PRIMARY KEY,
+      price INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS prices (
-    item_id INTEGER PRIMARY KEY,
-    price INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS price_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS price_profiles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    is_default INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS profile_prices (
+      profile_id INTEGER NOT NULL,
+      item_id INTEGER NOT NULL,
+      price INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, item_id)
+    );
 
-  CREATE TABLE IF NOT EXISTS profile_prices (
-    profile_id INTEGER NOT NULL,
-    item_id INTEGER NOT NULL,
-    price INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (profile_id, item_id)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
-  CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
-  CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
-  CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
-`);
+    CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
+    CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
+    CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+  `);
+}
 
 let runningImportPromise: Promise<BootstrapData> | null = null;
 
@@ -273,48 +270,43 @@ function normalizeRecipe(
   };
 }
 
-function setMetaValue(key: string, value: unknown): void {
-  const statement = database.prepare(`
-    INSERT INTO meta (key, value_json, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value_json = excluded.value_json,
-      updated_at = excluded.updated_at
-  `);
-
-  statement.run(key, JSON.stringify(value), Date.now());
+async function setMetaValue(key: string, value: unknown): Promise<void> {
+  await database.execute({
+    sql: `
+      INSERT INTO meta (key, value_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at = excluded.updated_at
+    `,
+    args: [key, JSON.stringify(value), Date.now()],
+  });
 }
 
-function getMetaValue<T>(key: string): T | null {
-  const statement = database.prepare(
-    "SELECT value_json FROM meta WHERE key = ?",
-  );
-  const row = statement.get(key) as { value_json: string } | undefined;
-  return row ? parseJsonValue<T>(row.value_json) : null;
+async function getMetaValue<T>(key: string): Promise<T | null> {
+  const result = await database.execute({
+    sql: "SELECT value_json FROM meta WHERE key = ?",
+    args: [key],
+  });
+  const row = result.rows[0];
+  return row ? parseJsonValue<T>(row.value_json as string) : null;
 }
 
-function getPriceProfiles(): PriceProfile[] {
-  const statement = database.prepare(`
+async function getPriceProfiles(): Promise<PriceProfile[]> {
+  const result = await database.execute(`
     SELECT id, name, slug, is_default
     FROM price_profiles
     ORDER BY id ASC
   `);
 
-  const rows = statement.all() as Array<{
-    id: number;
-    name: string;
-    slug: string;
-    is_default: number;
-  }>;
-
   const bySlug = new Map(
-    rows.map((row) => [
-      row.slug,
+    result.rows.map((row) => [
+      row.slug as string,
       {
-        id: row.id,
-        name: row.name,
-        slug: row.slug,
-        isDefault: row.is_default === 1,
+        id: row.id as number,
+        name: row.name as string,
+        slug: row.slug as string,
+        isDefault: (row.is_default as number) === 1,
       } as PriceProfile,
     ]),
   );
@@ -324,128 +316,119 @@ function getPriceProfiles(): PriceProfile[] {
   ).filter((profile): profile is PriceProfile => Boolean(profile));
 }
 
-function ensureDefaultPriceProfile(): PriceProfile {
-  const legacyGeneral = database
-    .prepare("SELECT id FROM price_profiles WHERE slug = 'general' LIMIT 1")
-    .get() as { id: number } | undefined;
+async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
+  const legacyGeneralResult = await database.execute(
+    "SELECT id FROM price_profiles WHERE slug = 'general' LIMIT 1",
+  );
+  const legacyGeneral = legacyGeneralResult.rows[0];
 
   if (legacyGeneral) {
-    database
-      .prepare(
-        `
+    await database.execute({
+      sql: `
         UPDATE price_profiles
         SET name = ?, slug = ?, is_default = 1, updated_at = ?
         WHERE id = ?
       `,
-      )
-      .run("Privado", "private", Date.now(), legacyGeneral.id);
+      args: ["Privado", "private", Date.now(), legacyGeneral.id as number],
+    });
   }
 
   const now = Date.now();
-  const insertStatement = database.prepare(`
-    INSERT INTO price_profiles (name, slug, is_default, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `);
 
-  database.exec("BEGIN");
-  try {
-    for (const profile of UNITY_SERVER_PROFILES) {
-      const existing = database
-        .prepare("SELECT id FROM price_profiles WHERE slug = ? LIMIT 1")
-        .get(profile.slug) as { id: number } | undefined;
+  // Turso usa batching en lugar de transacciones interactivas simples
+  const statements = [];
 
-      if (!existing) {
-        insertStatement.run(
-          profile.name,
-          profile.slug,
-          profile.isDefault ? 1 : 0,
-          now,
-          now,
-        );
-      }
+  for (const profile of UNITY_SERVER_PROFILES) {
+    const existingResult = await database.execute({
+      sql: "SELECT id FROM price_profiles WHERE slug = ? LIMIT 1",
+      args: [profile.slug],
+    });
+
+    if (!existingResult.rows.length) {
+      statements.push({
+        sql: `INSERT INTO price_profiles (name, slug, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+        args: [profile.name, profile.slug, profile.isDefault ? 1 : 0, now, now],
+      });
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
   }
 
-  database
-    .prepare(
-      "UPDATE price_profiles SET is_default = CASE WHEN slug = 'private' THEN 1 ELSE 0 END",
-    )
-    .run();
+  if (statements.length > 0) {
+    await database.batch(statements);
+  }
 
-  const inserted = database
-    .prepare(
-      `
-      SELECT id, name, slug, is_default
-      FROM price_profiles
-      WHERE slug = 'private'
-      LIMIT 1
-    `,
-    )
-    .get() as { id: number; name: string; slug: string; is_default: number };
+  await database.execute(
+    "UPDATE price_profiles SET is_default = CASE WHEN slug = 'private' THEN 1 ELSE 0 END",
+  );
+
+  const insertedResult = await database.execute(`
+    SELECT id, name, slug, is_default
+    FROM price_profiles
+    WHERE slug = 'private'
+    LIMIT 1
+  `);
+
+  const inserted = insertedResult.rows[0];
 
   return {
-    id: inserted.id,
-    name: inserted.name,
-    slug: inserted.slug,
-    isDefault: inserted.is_default === 1,
+    id: inserted.id as number,
+    name: inserted.name as string,
+    slug: inserted.slug as string,
+    isDefault: (inserted.is_default as number) === 1,
   };
 }
 
-function ensureLegacyPriceMigration(defaultProfileId: number): void {
-  const legacyCountRow = database
-    .prepare("SELECT COUNT(*) AS count FROM prices")
-    .get() as { count: number };
-  const profilePriceCountRow = database
-    .prepare("SELECT COUNT(*) AS count FROM profile_prices")
-    .get() as { count: number };
+async function ensureLegacyPriceMigration(
+  defaultProfileId: number,
+): Promise<void> {
+  const legacyCountResult = await database.execute(
+    "SELECT COUNT(*) AS count FROM prices",
+  );
+  const profilePriceCountResult = await database.execute(
+    "SELECT COUNT(*) AS count FROM profile_prices",
+  );
 
-  if (legacyCountRow.count === 0 || profilePriceCountRow.count > 0) {
+  const legacyCount = legacyCountResult.rows[0].count as number;
+  const profilePriceCount = profilePriceCountResult.rows[0].count as number;
+
+  if (legacyCount === 0 || profilePriceCount > 0) {
     return;
   }
 
-  const insertStatement = database.prepare(`
-    INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(profile_id, item_id) DO UPDATE SET
-      price = excluded.price,
-      updated_at = excluded.updated_at
-  `);
+  const legacyRowsResult = await database.execute(
+    "SELECT item_id, price, updated_at FROM prices",
+  );
+  const statements = legacyRowsResult.rows.map((row) => ({
+    sql: `
+      INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(profile_id, item_id) DO UPDATE SET
+        price = excluded.price,
+        updated_at = excluded.updated_at
+    `,
+    args: [
+      defaultProfileId,
+      row.item_id as number,
+      row.price as number,
+      (row.updated_at as number) || Date.now(),
+    ],
+  }));
 
-  const legacyRows = database
-    .prepare("SELECT item_id, price, updated_at FROM prices")
-    .all() as Array<{ item_id: number; price: number; updated_at: number }>;
-
-  database.exec("BEGIN");
-  try {
-    for (const row of legacyRows) {
-      insertStatement.run(
-        defaultProfileId,
-        row.item_id,
-        row.price,
-        row.updated_at || Date.now(),
-      );
-    }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
+  if (statements.length > 0) {
+    await database.batch(statements, "write");
   }
 }
 
-function getSyncStatus(): SyncStatus {
-  return getMetaValue<SyncStatus>("sync_status") ?? getDefaultSyncStatus();
+async function getSyncStatus(): Promise<SyncStatus> {
+  const status = await getMetaValue<SyncStatus>("sync_status");
+  return status ?? getDefaultSyncStatus();
 }
 
-function setSyncStatus(status: SyncStatus): void {
-  setMetaValue("sync_status", status);
+async function setSyncStatus(status: SyncStatus): Promise<void> {
+  await setMetaValue("sync_status", status);
 }
 
-function getSyncSettings(): SyncSettings {
-  const stored = getMetaValue<SyncSettings>("sync_settings");
+async function getSyncSettings(): Promise<SyncSettings> {
+  const stored = await getMetaValue<SyncSettings>("sync_settings");
   if (!stored) {
     return DEFAULT_SYNC_SETTINGS;
   }
@@ -456,7 +439,7 @@ function getSyncSettings(): SyncSettings {
   };
 }
 
-function setSyncSettings(settings: SyncSettings): SyncSettings {
+async function setSyncSettings(settings: SyncSettings): Promise<SyncSettings> {
   const normalizedSettings: SyncSettings = {
     enabled: settings.enabled !== false,
     intervalDays: Math.min(
@@ -464,244 +447,222 @@ function setSyncSettings(settings: SyncSettings): SyncSettings {
       Math.max(1, Number(settings.intervalDays) || 30),
     ),
   };
-  setMetaValue("sync_settings", normalizedSettings);
+  await setMetaValue("sync_settings", normalizedSettings);
   return normalizedSettings;
 }
 
-function getActivePriceProfileId(): number {
-  const defaultProfile = ensureDefaultPriceProfile();
-  ensureLegacyPriceMigration(defaultProfile.id);
-  const visibleProfileIds = new Set(
-    getPriceProfiles().map((profile) => profile.id),
-  );
+async function getActivePriceProfileId(): Promise<number> {
+  const defaultProfile = await ensureDefaultPriceProfile();
+  await ensureLegacyPriceMigration(defaultProfile.id);
+  const profiles = await getPriceProfiles();
+  const visibleProfileIds = new Set(profiles.map((p) => p.id));
 
-  const storedProfileId = getMetaValue<number>("active_price_profile_id");
-  const existingProfile = storedProfileId
-    ? database
-        .prepare("SELECT id FROM price_profiles WHERE id = ? LIMIT 1")
-        .get(storedProfileId)
-    : null;
+  const storedProfileId = await getMetaValue<number>("active_price_profile_id");
+  let existingProfile = null;
+  if (storedProfileId) {
+    const result = await database.execute({
+      sql: "SELECT id FROM price_profiles WHERE id = ? LIMIT 1",
+      args: [storedProfileId],
+    });
+    existingProfile = result.rows[0];
+  }
 
   if (existingProfile && visibleProfileIds.has(storedProfileId as number)) {
     return storedProfileId as number;
   }
 
-  setMetaValue("active_price_profile_id", defaultProfile.id);
+  await setMetaValue("active_price_profile_id", defaultProfile.id);
   return defaultProfile.id;
 }
 
-function setActivePriceProfileId(profileId: number): number {
-  const visibleProfileIds = new Set(
-    getPriceProfiles().map((profile) => profile.id),
-  );
+async function setActivePriceProfileId(profileId: number): Promise<number> {
+  const profiles = await getPriceProfiles();
+  const visibleProfileIds = new Set(profiles.map((p) => p.id));
+
   if (!visibleProfileIds.has(profileId)) {
     throw new Error("Perfil de precios no encontrado.");
   }
 
-  setMetaValue("active_price_profile_id", profileId);
+  await setMetaValue("active_price_profile_id", profileId);
   return profileId;
 }
 
-function getPricesMap(profileId: number): MarketPriceMap {
-  const statement = database.prepare(`
-    SELECT item_id, price
-    FROM profile_prices
-    WHERE profile_id = ?
-    ORDER BY item_id ASC
-  `);
+async function getPricesMap(profileId: number): Promise<MarketPriceMap> {
+  const result = await database.execute({
+    sql: `
+      SELECT item_id, price
+      FROM profile_prices
+      WHERE profile_id = ?
+      ORDER BY item_id ASC
+    `,
+    args: [profileId],
+  });
 
-  const rows = statement.all(profileId) as Array<{
-    item_id: number;
-    price: number;
-  }>;
   const prices: MarketPriceMap = {};
-
-  for (const row of rows) {
-    prices[row.item_id] = row.price;
+  for (const row of result.rows) {
+    prices[row.item_id as number] = row.price as number;
   }
 
   return prices;
 }
 
-function getPriceUpdatedAtMap(profileId: number): PriceUpdatedAtMap {
-  const statement = database.prepare(`
-    SELECT item_id, updated_at
-    FROM profile_prices
-    WHERE profile_id = ?
-    ORDER BY item_id ASC
-  `);
+async function getPriceUpdatedAtMap(
+  profileId: number,
+): Promise<PriceUpdatedAtMap> {
+  const result = await database.execute({
+    sql: `
+      SELECT item_id, updated_at
+      FROM profile_prices
+      WHERE profile_id = ?
+      ORDER BY item_id ASC
+    `,
+    args: [profileId],
+  });
 
-  const rows = statement.all(profileId) as Array<{
-    item_id: number;
-    updated_at: number;
-  }>;
   const updatedAtMap: PriceUpdatedAtMap = {};
-
-  for (const row of rows) {
-    updatedAtMap[row.item_id] = row.updated_at;
+  for (const row of result.rows) {
+    updatedAtMap[row.item_id as number] = row.updated_at as number;
   }
 
   return updatedAtMap;
 }
 
-function upsertItems(items: DofusItem[]): void {
-  const statement = database.prepare(`
-    INSERT INTO items (id, level, type_id, super_category_id, icon_id, name_es, payload_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      level = excluded.level,
-      type_id = excluded.type_id,
-      super_category_id = excluded.super_category_id,
-      icon_id = excluded.icon_id,
-      name_es = excluded.name_es,
-      payload_json = excluded.payload_json,
-      updated_at = excluded.updated_at
-  `);
-
+async function upsertItems(items: DofusItem[]): Promise<void> {
   const now = Date.now();
-  database.exec("BEGIN");
-  try {
-    for (const item of items) {
-      statement.run(
-        item.id,
-        item.level || 1,
-        item.typeId || item.type?.id || 0,
-        item.type?.superCategoryId || 0,
-        item.iconId || 0,
-        item.name?.es || "",
-        JSON.stringify(item),
-        now,
-      );
+  const statements = items.map((item) => ({
+    sql: `
+      INSERT INTO items (id, level, type_id, super_category_id, icon_id, name_es, payload_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        level = excluded.level,
+        type_id = excluded.type_id,
+        super_category_id = excluded.super_category_id,
+        icon_id = excluded.icon_id,
+        name_es = excluded.name_es,
+        payload_json = excluded.payload_json,
+        updated_at = excluded.updated_at
+    `,
+    args: [
+      item.id,
+      item.level || 1,
+      item.typeId || item.type?.id || 0,
+      item.type?.superCategoryId || 0,
+      item.iconId || 0,
+      item.name?.es || "",
+      JSON.stringify(item),
+      now,
+    ],
+  }));
+
+  if (statements.length > 0) {
+    // Procesar en chunks más pequeños para evitar límites del payload
+    const chunkSize = 100;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await database.batch(statements.slice(i, i + chunkSize), "write");
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
   }
 }
 
-function replaceAllItems(items: DofusItem[]): void {
-  database.exec("BEGIN");
-  try {
-    database.exec("DELETE FROM items");
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
-
-  upsertItems(items);
+async function replaceAllItems(items: DofusItem[]): Promise<void> {
+  await database.execute("DELETE FROM items");
+  await upsertItems(items);
 }
 
-function upsertRecipes(recipes: DofusRecipe[]): void {
-  const statement = database.prepare(`
-    INSERT INTO recipes (result_id, job_id, payload_json, updated_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(result_id) DO UPDATE SET
-      job_id = excluded.job_id,
-      payload_json = excluded.payload_json,
-      updated_at = excluded.updated_at
-  `);
-
+async function upsertRecipes(recipes: DofusRecipe[]): Promise<void> {
   const now = Date.now();
-  database.exec("BEGIN");
-  try {
-    for (const recipe of recipes) {
-      statement.run(
-        recipe.resultId,
-        recipe.jobId ?? null,
-        JSON.stringify(recipe),
-        now,
-      );
+  const statements = recipes.map((recipe) => ({
+    sql: `
+      INSERT INTO recipes (result_id, job_id, payload_json, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(result_id) DO UPDATE SET
+        job_id = excluded.job_id,
+        payload_json = excluded.payload_json,
+        updated_at = excluded.updated_at
+    `,
+    args: [recipe.resultId, recipe.jobId ?? null, JSON.stringify(recipe), now],
+  }));
+
+  if (statements.length > 0) {
+    const chunkSize = 100;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await database.batch(statements.slice(i, i + chunkSize), "write");
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
   }
 }
 
-function replaceAllRecipes(recipes: DofusRecipe[]): void {
-  database.exec("BEGIN");
-  try {
-    database.exec("DELETE FROM recipes");
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
-
-  upsertRecipes(recipes);
+async function replaceAllRecipes(recipes: DofusRecipe[]): Promise<void> {
+  await database.execute("DELETE FROM recipes");
+  await upsertRecipes(recipes);
 }
 
-function upsertPrice(profileId: number, itemId: number, price: number): void {
-  database
-    .prepare(
-      `
+async function upsertPrice(
+  profileId: number,
+  itemId: number,
+  price: number,
+): Promise<void> {
+  await database.execute({
+    sql: `
       INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(profile_id, item_id) DO UPDATE SET
         price = excluded.price,
         updated_at = excluded.updated_at
     `,
-    )
-    .run(profileId, itemId, Math.max(0, Math.trunc(price)), Date.now());
+    args: [profileId, itemId, Math.max(0, Math.trunc(price)), Date.now()],
+  });
 }
 
-function replaceAllPrices(profileId: number, prices: MarketPriceMap): void {
-  const statement = database.prepare(`
-    INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
-    VALUES (?, ?, ?, ?)
-  `);
+async function replaceAllPrices(
+  profileId: number,
+  prices: MarketPriceMap,
+): Promise<void> {
+  await database.execute({
+    sql: "DELETE FROM profile_prices WHERE profile_id = ?",
+    args: [profileId],
+  });
 
   const now = Date.now();
-  database.exec("BEGIN");
-  try {
-    database
-      .prepare("DELETE FROM profile_prices WHERE profile_id = ?")
-      .run(profileId);
-    for (const [itemId, price] of Object.entries(prices)) {
-      statement.run(
-        profileId,
-        Number(itemId),
-        Math.max(0, Math.trunc(price)),
-        now,
-      );
+  const statements = Object.entries(prices).map(([itemId, price]) => ({
+    sql: `
+        INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
+        VALUES (?, ?, ?, ?)
+      `,
+    args: [profileId, Number(itemId), Math.max(0, Math.trunc(price)), now],
+  }));
+
+  if (statements.length > 0) {
+    const chunkSize = 100;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await database.batch(statements.slice(i, i + chunkSize), "write");
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
   }
 }
 
-function clearAllPrices(profileId: number): void {
-  database
-    .prepare("DELETE FROM profile_prices WHERE profile_id = ?")
-    .run(profileId);
+async function clearAllPrices(profileId: number): Promise<void> {
+  await database.execute({
+    sql: "DELETE FROM profile_prices WHERE profile_id = ?",
+    args: [profileId],
+  });
 }
 
-function getAllItems(): DofusItem[] {
-  const rows = database
-    .prepare(
-      "SELECT payload_json FROM items ORDER BY name_es COLLATE NOCASE ASC, id ASC",
-    )
-    .all() as Array<{ payload_json: string }>;
-
-  return rows.map((row) => parseJsonValue<DofusItem>(row.payload_json));
+async function getAllItems(): Promise<DofusItem[]> {
+  const result = await database.execute(
+    "SELECT payload_json FROM items ORDER BY name_es COLLATE NOCASE ASC, id ASC",
+  );
+  return result.rows.map((row) =>
+    parseJsonValue<DofusItem>(row.payload_json as string),
+  );
 }
 
-function getAllRecipes(): Record<number, DofusRecipe> {
-  const rows = database
-    .prepare("SELECT payload_json FROM recipes ORDER BY result_id ASC")
-    .all() as Array<{ payload_json: string }>;
-
+async function getAllRecipes(): Promise<Record<number, DofusRecipe>> {
+  const result = await database.execute(
+    "SELECT payload_json FROM recipes ORDER BY result_id ASC",
+  );
   const recipes: Record<number, DofusRecipe> = {};
-  for (const row of rows) {
-    const recipe = parseJsonValue<DofusRecipe>(row.payload_json);
+  for (const row of result.rows) {
+    const recipe = parseJsonValue<DofusRecipe>(row.payload_json as string);
     recipes[recipe.resultId] = recipe;
   }
-
   return recipes;
 }
 
@@ -737,13 +698,13 @@ function shouldRunAutomaticSync(
   return Date.now() - syncStatus.lastSyncTimestamp >= intervalMs;
 }
 
-function maybeStartAutomaticSync(): void {
+async function maybeStartAutomaticSync(): Promise<void> {
   if (runningImportPromise) {
     return;
   }
 
-  const syncStatus = getSyncStatus();
-  const syncSettings = getSyncSettings();
+  const syncStatus = await getSyncStatus();
+  const syncSettings = await getSyncSettings();
   if (!shouldRunAutomaticSync(syncStatus, syncSettings)) {
     return;
   }
@@ -753,29 +714,29 @@ function maybeStartAutomaticSync(): void {
   });
 }
 
-function buildBootstrapData(): BootstrapData {
-  const activePriceProfileId = getActivePriceProfileId();
+async function buildBootstrapData(): Promise<BootstrapData> {
+  const activePriceProfileId = await getActivePriceProfileId();
   return {
-    items: getAllItems(),
-    recipes: getAllRecipes(),
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
-    syncStatus: getSyncStatus(),
-    syncSettings: getSyncSettings(),
-    priceProfiles: getPriceProfiles(),
+    items: await getAllItems(),
+    recipes: await getAllRecipes(),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
+    syncStatus: await getSyncStatus(),
+    syncSettings: await getSyncSettings(),
+    priceProfiles: await getPriceProfiles(),
     activePriceProfileId,
   };
 }
 
 async function importAllDofusDataInternal(): Promise<BootstrapData> {
-  const previousStatus = getSyncStatus();
+  const previousStatus = await getSyncStatus();
   const status: SyncStatus = {
     ...getDefaultSyncStatus(),
     lastSyncTimestamp: previousStatus.lastSyncTimestamp,
     isLoading: true,
     progressMessage: "Importando datos desde DofusDB...",
   };
-  setSyncStatus(status);
+  await setSyncStatus(status);
 
   const importedItemsMap = new Map<number, DofusItem>();
   const importedRecipesMap = new Map<number, DofusRecipe>();
@@ -890,28 +851,32 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
     }
   }
 
-  replaceAllItems(importedItems);
-  replaceAllRecipes(importedRecipes);
+  await replaceAllItems(importedItems);
+  await replaceAllRecipes(importedRecipes);
 
   status.lastSyncTimestamp = Date.now();
   status.isLoading = false;
   status.progressMessage = `Importacion completada: ${status.totalImported} items y ${status.recipesCount || 0} recetas.`;
-  setSyncStatus(status);
+  await setSyncStatus(status);
 
   return buildBootstrapData();
 }
 
 export function getDatabaseFilePath(): string {
-  return DATABASE_FILE_PATH;
+  // Con Turso ya no hay archivo local, puedes devolver la URL o un string indicativo
+  return process.env.DATABASE_URL || "turso-cloud-db";
 }
 
-export function getBootstrapData(): BootstrapData & { databasePath: string } {
-  ensureDefaultPriceProfile();
-  maybeStartAutomaticSync();
+export async function getBootstrapData(): Promise<
+  BootstrapData & { databasePath: string }
+> {
+  await ensureDefaultPriceProfile();
+  await maybeStartAutomaticSync();
 
+  const bootstrapData = await buildBootstrapData();
   return {
-    ...buildBootstrapData(),
-    databasePath: DATABASE_FILE_PATH,
+    ...bootstrapData,
+    databasePath: getDatabaseFilePath(),
   };
 }
 
@@ -925,18 +890,21 @@ export async function importAllDofusData(): Promise<BootstrapData> {
   return runningImportPromise;
 }
 
-export function getStoredItemById(itemId: number): DofusItem | null {
-  const row = database
-    .prepare("SELECT payload_json FROM items WHERE id = ?")
-    .get(itemId) as { payload_json: string } | undefined;
-
-  return row ? parseJsonValue<DofusItem>(row.payload_json) : null;
+export async function getStoredItemById(
+  itemId: number,
+): Promise<DofusItem | null> {
+  const result = await database.execute({
+    sql: "SELECT payload_json FROM items WHERE id = ?",
+    args: [itemId],
+  });
+  const row = result.rows[0];
+  return row ? parseJsonValue<DofusItem>(row.payload_json as string) : null;
 }
 
 export async function getOrFetchItemById(
   itemId: number,
 ): Promise<DofusItem | null> {
-  const storedItem = getStoredItemById(itemId);
+  const storedItem = await getStoredItemById(itemId);
   if (
     storedItem &&
     storedItem.name?.es &&
@@ -949,24 +917,25 @@ export async function getOrFetchItemById(
     `${DOFUS_API_BASE}/items/${itemId}?lang=es`,
   );
   const normalizedItem = normalizeSpanishItem(remoteItem);
-  upsertItems([normalizedItem]);
+  await upsertItems([normalizedItem]);
   return normalizedItem;
 }
 
-export function getStoredRecipeByResultId(
+export async function getStoredRecipeByResultId(
   resultId: number,
-): DofusRecipe | null {
-  const row = database
-    .prepare("SELECT payload_json FROM recipes WHERE result_id = ?")
-    .get(resultId) as { payload_json: string } | undefined;
-
-  return row ? parseJsonValue<DofusRecipe>(row.payload_json) : null;
+): Promise<DofusRecipe | null> {
+  const result = await database.execute({
+    sql: "SELECT payload_json FROM recipes WHERE result_id = ?",
+    args: [resultId],
+  });
+  const row = result.rows[0];
+  return row ? parseJsonValue<DofusRecipe>(row.payload_json as string) : null;
 }
 
 export async function getOrFetchRecipeByResultId(
   resultId: number,
 ): Promise<DofusRecipe | null> {
-  const storedRecipe = getStoredRecipeByResultId(resultId);
+  const storedRecipe = await getStoredRecipeByResultId(resultId);
   if (storedRecipe) {
     return storedRecipe;
   }
@@ -984,21 +953,26 @@ export async function getOrFetchRecipeByResultId(
     return null;
   }
 
-  upsertRecipes([normalizedRecipe]);
+  await upsertRecipes([normalizedRecipe]);
   return normalizedRecipe;
 }
 
 export async function resolveMissingNames(
   itemIds: number[],
 ): Promise<DofusItem[]> {
-  const idsToResolve = itemIds.filter((itemId) => {
-    const storedItem = getStoredItemById(itemId);
-    return (
+  const idsToResolve = [];
+
+  // Como getStoredItemById ahora es asíncrono, usamos un for loop
+  for (const itemId of itemIds) {
+    const storedItem = await getStoredItemById(itemId);
+    if (
       !storedItem ||
       !storedItem.name?.es ||
       storedItem.name.es.startsWith("Objeto #")
-    );
-  });
+    ) {
+      idsToResolve.push(itemId);
+    }
+  }
 
   if (idsToResolve.length === 0) {
     return [];
@@ -1019,106 +993,108 @@ export async function resolveMissingNames(
   return resolvedItems;
 }
 
-export function setItemPrice(
+export async function setItemPrice(
   itemId: number,
   price: number,
   profileId?: number,
-): {
+): Promise<{
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
   activePriceProfileId: number;
-} {
-  const activePriceProfileId = profileId || getActivePriceProfileId();
-  upsertPrice(activePriceProfileId, itemId, price);
+}> {
+  const activePriceProfileId = profileId || (await getActivePriceProfileId());
+  await upsertPrice(activePriceProfileId, itemId, price);
   return {
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
     activePriceProfileId,
   };
 }
 
-export function overwritePrices(
+export async function overwritePrices(
   prices: MarketPriceMap,
   profileId?: number,
-): {
+): Promise<{
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
   activePriceProfileId: number;
-} {
-  const activePriceProfileId = profileId || getActivePriceProfileId();
-  replaceAllPrices(activePriceProfileId, prices);
+}> {
+  const activePriceProfileId = profileId || (await getActivePriceProfileId());
+  await replaceAllPrices(activePriceProfileId, prices);
   return {
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
     activePriceProfileId,
   };
 }
 
-export function deleteAllStoredPrices(profileId?: number): {
+export async function deleteAllStoredPrices(profileId?: number): Promise<{
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
   activePriceProfileId: number;
-} {
-  const activePriceProfileId = profileId || getActivePriceProfileId();
-  clearAllPrices(activePriceProfileId);
+}> {
+  const activePriceProfileId = profileId || (await getActivePriceProfileId());
+  await clearAllPrices(activePriceProfileId);
   return {
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
     activePriceProfileId,
   };
 }
 
-export function changeActivePriceProfile(profileId: number): {
+export async function changeActivePriceProfile(profileId: number): Promise<{
   activePriceProfileId: number;
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
   profiles: PriceProfile[];
-} {
-  const activePriceProfileId = setActivePriceProfileId(profileId);
+}> {
+  const activePriceProfileId = await setActivePriceProfileId(profileId);
   return {
     activePriceProfileId,
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
-    profiles: getPriceProfiles(),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
+    profiles: await getPriceProfiles(),
   };
 }
 
-export function getPriceProfileState(): {
+export async function getPriceProfileState(): Promise<{
   activePriceProfileId: number;
   profiles: PriceProfile[];
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
-} {
-  const activePriceProfileId = getActivePriceProfileId();
+}> {
+  const activePriceProfileId = await getActivePriceProfileId();
   return {
     activePriceProfileId,
-    profiles: getPriceProfiles(),
-    prices: getPricesMap(activePriceProfileId),
-    priceUpdatedAt: getPriceUpdatedAtMap(activePriceProfileId),
+    profiles: await getPriceProfiles(),
+    prices: await getPricesMap(activePriceProfileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(activePriceProfileId),
   };
 }
 
-export function getAutomaticSyncState(): {
+export async function getAutomaticSyncState(): Promise<{
   syncSettings: SyncSettings;
   syncStatus: SyncStatus;
-} {
+}> {
   return {
-    syncSettings: getSyncSettings(),
-    syncStatus: getSyncStatus(),
+    syncSettings: await getSyncSettings(),
+    syncStatus: await getSyncStatus(),
   };
 }
 
-export function updateAutomaticSyncSettings(settings: SyncSettings): {
+export async function updateAutomaticSyncSettings(
+  settings: SyncSettings,
+): Promise<{
   syncSettings: SyncSettings;
   syncStatus: SyncStatus;
-} {
-  const syncSettings = setSyncSettings(settings);
+}> {
+  const syncSettings = await setSyncSettings(settings);
   if (syncSettings.enabled) {
-    maybeStartAutomaticSync();
+    await maybeStartAutomaticSync();
   }
   return {
     syncSettings,
-    syncStatus: getSyncStatus(),
+    syncStatus: await getSyncStatus(),
   };
 }
 
@@ -1127,7 +1103,7 @@ export async function searchAndStoreItems(
 ): Promise<DofusItem[]> {
   const trimmedTerm = searchTerm.trim();
   if (!trimmedTerm || trimmedTerm.length < 2) {
-    return getAllItems();
+    return await getAllItems();
   }
 
   const params = new URLSearchParams({
@@ -1149,17 +1125,17 @@ export async function searchAndStoreItems(
     .filter((item) => item.id && !isOmittedItem(item));
 
   if (normalizedItems.length > 0) {
-    upsertItems(normalizedItems);
+    await upsertItems(normalizedItems);
   }
 
-  return getAllItems();
+  return await getAllItems();
 }
 
 export async function fetchAndStoreCategoryItems(
   typeIds: number[],
 ): Promise<DofusItem[]> {
   if (typeIds.length === 0) {
-    return getAllItems();
+    return await getAllItems();
   }
 
   const params = new URLSearchParams({
@@ -1179,8 +1155,8 @@ export async function fetchAndStoreCategoryItems(
     .filter((item) => item.id && !isOmittedItem(item));
 
   if (normalizedItems.length > 0) {
-    upsertItems(normalizedItems);
+    await upsertItems(normalizedItems);
   }
 
-  return getAllItems();
+  return await getAllItems();
 }
