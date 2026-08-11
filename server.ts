@@ -19,7 +19,8 @@ import {
   searchAndStoreItems,
   setItemPrice,
   updateAutomaticSyncSettings,
-  initDB, // <--- Importación añadida
+  initDB,
+  database, // <--- Importamos la instancia de la base de datos para ejecutar limpiezas directas
 } from "./src/server/localDataStore";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -98,6 +99,33 @@ async function startServer() {
 
   app.post("/api/local-db/import", async (req, res) => {
     try {
+      console.log(
+        "[Local DB Import] Cleaning old items and recipes before import...",
+      );
+
+      // Limpieza segura: Borra ítems y recetas viejos para evitar duplicación masiva en Turso.
+      // (Los precios en 'profile_prices' se quedan completamente intactos).
+      try {
+        await database.execute("DELETE FROM recipes");
+      } catch (e) {
+        // Ignora si la tabla aún no existe o ya está limpia
+      }
+
+      try {
+        await database.execute("DELETE FROM items");
+      } catch (e) {
+        // Ignora si la tabla aún no existe
+      }
+
+      // Restricción estricta de servidores: Deja unicamente Draconiros, Mikhal y Tal Kasha
+      try {
+        await database.execute(
+          "DELETE FROM servers WHERE name NOT IN ('Draconiros', 'Mikhal', 'Tal Kasha')",
+        );
+      } catch (e) {
+        // Ignora si la tabla de servidores tiene otro esquema
+      }
+
       const imported = await importAllDofusData();
       res.json(imported);
     } catch (error) {
@@ -339,7 +367,8 @@ async function startServer() {
 
   app.get("/api/dofusdb/proxy/*", async (req, res) => {
     try {
-      const endpointPath = req.params[0] || "";
+      const params = req.params as Record<string, string>;
+      const endpointPath = params[0] || "";
       const queryString = new URLSearchParams(
         req.query as Record<string, string>,
       ).toString();
@@ -467,7 +496,6 @@ async function startServer() {
     }
   });
 
-  // (Anillos, Capas, Sombreros, Espadas, etc.)
   app.get("/api/dofusdb/item-types", async (req, res) => {
     try {
       const lang = (req.query.lang as string) || "es";
