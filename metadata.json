@@ -1,0 +1,6 @@
+{
+  "name": "DofusDB API & Crushing Explorer",
+  "description": "Explorador interactivo de la API de DofusDB, guía de endpoints, esquemas de datos, simulador de machacado (brisage) y plantillas de código para proyectos de Dofus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
