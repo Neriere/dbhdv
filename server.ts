@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import basicAuth from "express-basic-auth";
+import serverless from "serverless-http";
 import { createServer as createViteServer } from "vite";
 import {
   changeActivePriceProfile,
@@ -20,7 +21,7 @@ import {
   setItemPrice,
   updateAutomaticSyncSettings,
   initDB,
-  database, // <--- Importamos la instancia de la base de datos para ejecutar limpiezas directas
+  database,
 } from "./src/server/localDataStore";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -34,7 +35,6 @@ function getRequiredEnv(name: string): string {
 }
 
 async function startServer() {
-  // Inicializamos la base de datos en Turso antes de arrancar la API
   try {
     await initDB();
     console.log("[Database] Turso schemas initialized successfully.");
@@ -103,28 +103,19 @@ async function startServer() {
         "[Local DB Import] Cleaning old items and recipes before import...",
       );
 
-      // Limpieza segura: Borra ítems y recetas viejos para evitar duplicación masiva en Turso.
-      // (Los precios en 'profile_prices' se quedan completamente intactos).
       try {
         await database.execute("DELETE FROM recipes");
-      } catch (e) {
-        // Ignora si la tabla aún no existe o ya está limpia
-      }
+      } catch (e) {}
 
       try {
         await database.execute("DELETE FROM items");
-      } catch (e) {
-        // Ignora si la tabla aún no existe
-      }
+      } catch (e) {}
 
-      // Restricción estricta de servidores: Deja unicamente Draconiros, Mikhal y Tal Kasha
       try {
         await database.execute(
           "DELETE FROM servers WHERE name NOT IN ('Draconiros', 'Mikhal', 'Tal Kasha')",
         );
-      } catch (e) {
-        // Ignora si la tabla de servidores tiene otro esquema
-      }
+      } catch (e) {}
 
       const imported = await importAllDofusData();
       res.json(imported);
@@ -374,8 +365,6 @@ async function startServer() {
       ).toString();
       const targetUrl = `${DOFUSDB_BASE_URL}/${endpointPath}${queryString ? `?${queryString}` : ""}`;
 
-      console.log(`[DofusDB Proxy] Requesting: ${targetUrl}`);
-
       const response = await fetch(targetUrl, {
         headers: {
           Accept: "application/json",
@@ -446,8 +435,6 @@ async function startServer() {
       }
 
       const targetUrl = `${DOFUSDB_BASE_URL}/items?${params.toString()}`;
-      console.log(`[DofusDB Items] Fetching: ${targetUrl}`);
-
       const response = await fetch(targetUrl);
       if (!response.ok) {
         return res
@@ -526,6 +513,12 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
+
+    app.listen(PORT, HOST, () => {
+      console.log(
+        `[DofusDB Explorer Server] running on http://localhost:${PORT}`,
+      );
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -534,11 +527,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, HOST, () => {
-    console.log(
-      `[DofusDB Explorer Server] running on http://localhost:${PORT}`,
-    );
-  });
+  return app;
 }
 
-startServer();
+const appPromise = startServer().then((app) => serverless(app));
+
+export default async (req: any, res: any) => {
+  const handler = await appPromise;
+  return handler(req, res);
+};
