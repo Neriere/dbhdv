@@ -18,7 +18,7 @@ const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   intervalDays: 30,
 };
 
-// Lista estricta de servidores permitidos
+// Lista estricta de servidores permitidos[cite: 3]
 const UNITY_SERVER_PROFILES: Array<{
   slug: string;
   name: string;
@@ -280,7 +280,6 @@ async function getPriceProfiles(): Promise<PriceProfile[]> {
 }
 
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
-  // Limpieza automática de servidores no permitidos
   const validSlugs = UNITY_SERVER_PROFILES.map((p) => p.slug);
   await database.execute({
     sql: `DELETE FROM price_profiles WHERE slug NOT IN (${validSlugs.map(() => "?").join(", ")})`,
@@ -555,25 +554,141 @@ async function buildBootstrapData(): Promise<BootstrapData> {
 }
 
 async function importAllDofusDataInternal(): Promise<BootstrapData> {
+  const previousStatus = await getSyncStatus();
   const status: SyncStatus = {
     ...getDefaultSyncStatus(),
+    lastSyncTimestamp: previousStatus.lastSyncTimestamp,
     isLoading: true,
-    progressMessage: "Importando...",
+    progressMessage: "Iniciando importación desde DofusDB...",
   };
   await setSyncStatus(status);
 
   const itemsMap = new Map<number, DofusItem>();
   const recipesMap = new Map<number, DofusRecipe>();
 
-  // Lógica de importación mantenida (sin cambios en la descarga de datos)
-  // ... (tu lógica existente de while loops para items y recipes)
+  let itemTotal = 100;
+  let itemSkip = 0;
+  const itemLimit = 100;
 
-  await replaceAllItems(Array.from(itemsMap.values()));
-  await replaceAllRecipes(Array.from(recipesMap.values()));
+  while (itemSkip < itemTotal) {
+    const params = new URLSearchParams({
+      $limit: String(itemLimit),
+      $skip: String(itemSkip),
+      lang: "es",
+    });
+    const body = await fetchJson<{
+      total?: number;
+      data?: Record<string, unknown>[];
+    }>(`${DOFUS_API_BASE}/items?${params.toString()}`);
+
+    const items = body.data ?? [];
+    if (typeof body.total === "number") {
+      itemTotal = body.total;
+    }
+    if (items.length === 0) {
+      break;
+    }
+
+    for (const rawItem of items) {
+      const normalizedItem = normalizeSpanishItem(rawItem);
+      if (!normalizedItem.id) continue;
+
+      if (isOmittedItem(normalizedItem)) {
+        status.cosmeticsOmittedCount += 1;
+        continue;
+      }
+
+      itemsMap.set(normalizedItem.id, normalizedItem);
+
+      const rawRecipe =
+        (rawItem.recipe as Record<string, unknown> | undefined) ??
+        (rawItem.craft as Record<string, unknown> | undefined) ??
+        (Array.isArray(rawItem.recipes)
+          ? (rawItem.recipes[0] as Record<string, unknown> | undefined)
+          : (rawItem.recipes as Record<string, unknown> | undefined));
+
+      if (rawRecipe) {
+        const normalizedRecipe = normalizeRecipe(rawRecipe);
+        if (normalizedRecipe) {
+          recipesMap.set(normalizedRecipe.resultId, normalizedRecipe);
+        }
+      }
+    }
+
+    itemSkip += items.length;
+    status.totalImported = itemsMap.size;
+    status.progressMessage = `Descargando ítems: ${itemSkip} de ${itemTotal}...`;
+    await setSyncStatus(status);
+  }
+
+  let recipeTotal = 50;
+  let recipeSkip = 0;
+  const recipeLimit = 50;
+
+  while (recipeSkip < recipeTotal) {
+    const params = new URLSearchParams({
+      $limit: String(recipeLimit),
+      $skip: String(recipeSkip),
+    });
+    const body = await fetchJson<{
+      total?: number;
+      data?: Record<string, unknown>[];
+    }>(`${DOFUS_API_BASE}/recipes?${params.toString()}`);
+
+    const recipes = body.data ?? [];
+    if (typeof body.total === "number") {
+      recipeTotal = body.total;
+    }
+    if (recipes.length === 0) {
+      break;
+    }
+
+    for (const rawRecipe of recipes) {
+      const normalizedRecipe = normalizeRecipe(rawRecipe);
+      if (normalizedRecipe) {
+        recipesMap.set(normalizedRecipe.resultId, normalizedRecipe);
+      }
+    }
+
+    recipeSkip += recipes.length;
+    status.recipesCount = recipesMap.size;
+    status.progressMessage = `Descargando recetas: ${recipeSkip} de ${recipeTotal}...`;
+    await setSyncStatus(status);
+  }
+
+  status.progressMessage = "Guardando ítems y recetas en Turso...";
+  await setSyncStatus(status);
+
+  const importedItems = Array.from(itemsMap.values());
+  const importedRecipes = Array.from(recipesMap.values());
+
+  status.totalImported = importedItems.length;
+  status.recipesCount = importedRecipes.length;
+
+  for (const item of importedItems) {
+    const superCategoryId = item.type?.superCategoryId ?? 0;
+    const typeId = item.typeId || item.type?.id || 0;
+
+    if (
+      superCategoryId === 1 ||
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 81].includes(typeId)
+    ) {
+      status.equipablesCount += 1;
+    } else if ([33, 37, 38, 42, 43, 68, 69, 104, 219].includes(typeId)) {
+      status.consumablesCount += 1;
+    } else {
+      status.resourcesCount += 1;
+    }
+  }
+
+  await replaceAllItems(importedItems);
+  await replaceAllRecipes(importedRecipes);
 
   status.lastSyncTimestamp = Date.now();
   status.isLoading = false;
+  status.progressMessage = `Importación completada: ${status.totalImported} ítems y ${status.recipesCount || 0} recetas.`;
   await setSyncStatus(status);
+
   return buildBootstrapData();
 }
 
