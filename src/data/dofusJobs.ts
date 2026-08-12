@@ -3,7 +3,7 @@ import {
   JOB_CATEGORY_DATABASE,
   DOFUS_DB_TYPE_TO_JOB_MAP,
   DOFUS_DU_TYPE_TO_JOB_MAP,
-} from "./jobCategoryDatabase";
+} from "./jobCategoryDatabase.js";
 
 export const DOFUS_JOBS: DofusJob[] = JOB_CATEGORY_DATABASE.map((job) => {
   // Aggregate all dofusDbTypes and dofusDuTypes for backwards compatibility

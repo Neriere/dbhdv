@@ -69,7 +69,7 @@ export interface DofusEffectDefinition {
 // API Explorer Query State
 export interface ApiQueryState {
   endpoint: string;
-  lang: 'es' | 'fr' | 'en';
+  lang: "es" | "fr" | "en";
   search: string;
   typeId: string;
   minLevel: number;
@@ -100,7 +100,7 @@ export interface RecipeTreeNode {
   subIngredients?: RecipeTreeNode[];
   isCraftable: boolean;
   marketPrice: number; // Market price of 1 unit
-  decision: 'buy' | 'craft'; // User's decision for this intermediate node
+  decision: "buy" | "craft"; // User's decision for this intermediate node
 }
 
 // Import & Sync Statistics
@@ -134,7 +134,11 @@ export type PriceUpdatedAtMap = Record<number, number>;
 export type MarketPriceMap = Record<number, number>;
 
 // Craft Strategy Modes
-export type CraftStrategyMode = 'direct_buy' | 'full_subcraft' | 'auto_optimal' | 'custom_hybrid';
+export type CraftStrategyMode =
+  | "direct_buy"
+  | "full_subcraft"
+  | "auto_optimal"
+  | "custom_hybrid";
 
 export interface StatRuneBreakdown {
   effectId: number;

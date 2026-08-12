@@ -1,4 +1,4 @@
-import { DofusJob } from "../types";
+import { DofusJob } from "../types.js";
 
 export interface JobCategoryDefinition {
   id: string;
