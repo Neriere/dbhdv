@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Wrench,
   Search,
@@ -32,7 +32,7 @@ import {
   ChevronLeft,
   ArrowLeft,
   Tag,
-} from 'lucide-react';
+} from "lucide-react";
 
 import {
   DofusItem,
@@ -40,13 +40,13 @@ import {
   RecipeTreeNode,
   CraftStrategyMode,
   MarketPriceMap,
-} from '../types';
-import { DOFUS_JOBS, getJobForItem, isOmittedItem } from '../data/dofusJobs';
+} from "../types";
+import { DOFUS_JOBS, getJobForItem, isOmittedItem } from "../data/dofusJobs";
 import {
   PRESET_CRAFTABLE_ITEMS,
   DEFAULT_INGREDIENT_PRICES,
   PresetCraftableItem,
-} from '../data/presetCraftableItems';
+} from "../data/presetCraftableItems";
 import {
   getCraftableItemsSnapshot,
   initializeDatabase,
@@ -60,7 +60,7 @@ import {
   getItemIconUrl,
   getItemFallbackIconUrl,
   resolveMissingItemNamesInBatch,
-} from '../services/dofusDbService';
+} from "../services/dofusDbService";
 
 // Icon Map helper for professions
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
@@ -81,17 +81,30 @@ const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
 };
 
 const getJobBadgeStyle = (jobName: string) => {
-  const name = (jobName || '').toLowerCase();
-  if (name.includes('alquimista')) return 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300';
-  if (name.includes('campesino')) return 'bg-amber-500/20 border-amber-500/40 text-amber-300';
-  if (name.includes('cazador')) return 'bg-orange-500/20 border-orange-500/40 text-orange-300';
-  if (name.includes('leñador') || name.includes('lenador')) return 'bg-lime-500/20 border-lime-500/40 text-lime-300';
-  if (name.includes('minero')) return 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300';
-  if (name.includes('pescador')) return 'bg-blue-500/20 border-blue-500/40 text-blue-300';
-  if (name.includes('equipamiento') || name.includes('forjador') || name.includes('zapatero') || name.includes('sastre') || name.includes('joyero') || name.includes('escultor')) {
-    return 'bg-purple-500/20 border-purple-500/40 text-purple-300';
+  const name = (jobName || "").toLowerCase();
+  if (name.includes("alquimista"))
+    return "bg-emerald-500/20 border-emerald-500/40 text-emerald-300";
+  if (name.includes("campesino"))
+    return "bg-amber-500/20 border-amber-500/40 text-amber-300";
+  if (name.includes("cazador"))
+    return "bg-orange-500/20 border-orange-500/40 text-orange-300";
+  if (name.includes("leñador") || name.includes("lenador"))
+    return "bg-lime-500/20 border-lime-500/40 text-lime-300";
+  if (name.includes("minero"))
+    return "bg-cyan-500/20 border-cyan-500/40 text-cyan-300";
+  if (name.includes("pescador"))
+    return "bg-blue-500/20 border-blue-500/40 text-blue-300";
+  if (
+    name.includes("equipamiento") ||
+    name.includes("forjador") ||
+    name.includes("zapatero") ||
+    name.includes("sastre") ||
+    name.includes("joyero") ||
+    name.includes("escultor")
+  ) {
+    return "bg-purple-500/20 border-purple-500/40 text-purple-300";
   }
-  return 'bg-neutral-800 border-neutral-700 text-neutral-300';
+  return "bg-neutral-800 border-neutral-700 text-neutral-300";
 };
 
 export const RecipeCraftingCalculator: React.FC<{
@@ -99,44 +112,45 @@ export const RecipeCraftingCalculator: React.FC<{
 }> = ({ initialSelectedItem }) => {
   // Page / View mode state: false = Catalog list, true = Dedicated Item Page
   const [isDetailView, setIsDetailView] = useState<boolean>(
-    Boolean(initialSelectedItem)
+    Boolean(initialSelectedItem),
   );
 
   // Selected Job (Profession) Filter
-  const [selectedJobId, setSelectedJobId] = useState<number | 'all'>('all');
+  const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
 
   // Level Filter
-  const [minLevel, setMinLevel] = useState<number | ''>(1);
-  const [maxLevel, setMaxLevel] = useState<number | ''>(200);
+  const [minLevel, setMinLevel] = useState<number | "">(1);
+  const [maxLevel, setMaxLevel] = useState<number | "">(200);
 
   // Search text
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>("");
 
   // Sort By & Profit Filters
   const [sortBy, setSortBy] = useState<
-    | 'level_asc'
-    | 'level_desc'
-    | 'profit_desc'
-    | 'roi_desc'
-    | 'cost_asc'
-    | 'name'
-  >('profit_desc');
+    | "level_asc"
+    | "level_desc"
+    | "profit_desc"
+    | "roi_desc"
+    | "cost_asc"
+    | "name"
+  >("profit_desc");
   const [onlyProfitable, setOnlyProfitable] = useState<boolean>(false);
-  const [minProfitKamas, setMinProfitKamas] = useState<number | ''>(0);
-  const [minRoiPercent, setMinRoiPercent] = useState<number | ''>(0);
+  const [minProfitKamas, setMinProfitKamas] = useState<number | "">(0);
+  const [minRoiPercent, setMinRoiPercent] = useState<number | "">(0);
 
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
-  const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>({});
+  const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>(
+    {},
+  );
   const [databaseVersion, setDatabaseVersion] = useState<number>(0);
 
-  const [activePresetItem, setActivePresetItem] = useState<PresetCraftableItem | null>(
-    PRESET_CRAFTABLE_ITEMS[0]
-  );
+  const [activePresetItem, setActivePresetItem] =
+    useState<PresetCraftableItem | null>(PRESET_CRAFTABLE_ITEMS[0]);
 
   const [recipeTree, setRecipeTree] = useState<RecipeTreeNode | null>(null);
   const [loadingTree, setLoadingTree] = useState<boolean>(false);
 
-  const [activeSalePrice, setActiveSalePrice] = useState<number | ''>('');
+  const [activeSalePrice, setActiveSalePrice] = useState<number | "">("");
 
   // FAST REACTIVE PRICE UPDATE:
   // Optimistically updates local React state immediately (0ms) so calculations update live on keystroke/blur
@@ -159,7 +173,10 @@ export const RecipeCraftingCalculator: React.FC<{
 
   useEffect(() => {
     const hydrateState = () => {
-      setMarketPrices({ ...DEFAULT_INGREDIENT_PRICES, ...getStoredMarketPrices() });
+      setMarketPrices({
+        ...DEFAULT_INGREDIENT_PRICES,
+        ...getStoredMarketPrices(),
+      });
       setPriceUpdatedAt(getStoredPriceUpdatedAt());
       setDatabaseVersion((prev) => prev + 1);
     };
@@ -169,23 +186,25 @@ export const RecipeCraftingCalculator: React.FC<{
         hydrateState();
       })
       .catch((error) => {
-        console.error('No se pudo inicializar la base local:', error);
+        console.error("No se pudo inicializar la base local:", error);
       });
 
     const handleDbUpdate = () => {
       hydrateState();
     };
-    window.addEventListener('dofus_database_updated', handleDbUpdate);
+    window.addEventListener("dofus_database_updated", handleDbUpdate);
 
     return () => {
-      window.removeEventListener('dofus_database_updated', handleDbUpdate);
+      window.removeEventListener("dofus_database_updated", handleDbUpdate);
     };
   }, []);
 
   // Handle external selection (e.g. from Global Profit Ranking)
   useEffect(() => {
     if (initialSelectedItem) {
-      const foundPreset = PRESET_CRAFTABLE_ITEMS.find((p) => p.id === initialSelectedItem.id);
+      const foundPreset = PRESET_CRAFTABLE_ITEMS.find(
+        (p) => p.id === initialSelectedItem.id,
+      );
       if (foundPreset) {
         setActivePresetItem(foundPreset);
       } else {
@@ -211,13 +230,13 @@ export const RecipeCraftingCalculator: React.FC<{
   useEffect(() => {
     if (activePresetItem) {
       const storedPrice = marketPrices[activePresetItem.id];
-      if (typeof storedPrice === 'number' && storedPrice > 0) {
+      if (typeof storedPrice === "number" && storedPrice > 0) {
         setActiveSalePrice(storedPrice);
       } else {
-        setActiveSalePrice('');
+        setActiveSalePrice("");
       }
     } else {
-      setActiveSalePrice('');
+      setActiveSalePrice("");
     }
   }, [activePresetItem?.id, marketPrices[activePresetItem?.id || 0]]);
 
@@ -239,7 +258,7 @@ export const RecipeCraftingCalculator: React.FC<{
         }
       })
       .catch((err) => {
-        console.error('Error al construir árbol de receta:', err);
+        console.error("Error al construir árbol de receta:", err);
         if (isMounted) setLoadingTree(false);
       });
 
@@ -270,9 +289,9 @@ export const RecipeCraftingCalculator: React.FC<{
     const handleDbUpdate = () => {
       setResolvedNamesTrigger((prev) => prev + 1);
     };
-    window.addEventListener('dofus_database_updated', handleDbUpdate);
+    window.addEventListener("dofus_database_updated", handleDbUpdate);
     return () => {
-      window.removeEventListener('dofus_database_updated', handleDbUpdate);
+      window.removeEventListener("dofus_database_updated", handleDbUpdate);
     };
   }, []);
 
@@ -290,20 +309,21 @@ export const RecipeCraftingCalculator: React.FC<{
       });
     }
     const salePrice = marketPrices[item.id] || 0;
-    const netProfit = salePrice - cost;
+    const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.03) : 0;
+    const netProfit = salePrice > 0 ? salePrice - saleTax - cost : -cost;
     const roi = cost > 0 ? (netProfit / cost) * 100 : 0;
-    return { cost, salePrice, netProfit, roi };
+    return { cost, salePrice, saleTax, netProfit, roi };
   };
 
   const filteredItems = React.useMemo(() => {
-    const effMinLevel = minLevel === '' ? 1 : Number(minLevel);
-    const effMaxLevel = maxLevel === '' ? 200 : Number(maxLevel);
-    const effMinProfit = minProfitKamas === '' ? 0 : Number(minProfitKamas);
-    const effMinRoi = minRoiPercent === '' ? 0 : Number(minRoiPercent);
+    const effMinLevel = minLevel === "" ? 1 : Number(minLevel);
+    const effMaxLevel = maxLevel === "" ? 200 : Number(maxLevel);
+    const effMinProfit = minProfitKamas === "" ? 0 : Number(minProfitKamas);
+    const effMinRoi = minRoiPercent === "" ? 0 : Number(minRoiPercent);
 
     return allCraftableItems
       .filter((item) => {
-        if (selectedJobId !== 'all' && item.jobId !== selectedJobId) {
+        if (selectedJobId !== "all" && item.jobId !== selectedJobId) {
           return false;
         }
         if (item.level < effMinLevel || item.level > effMaxLevel) {
@@ -325,20 +345,22 @@ export const RecipeCraftingCalculator: React.FC<{
         return true;
       })
       .sort((a, b) => {
-        const aIsNamed = !getItemName(a).startsWith('Objeto #');
-        const bIsNamed = !getItemName(b).startsWith('Objeto #');
+        const aIsNamed = !getItemName(a).startsWith("Objeto #");
+        const bIsNamed = !getItemName(b).startsWith("Objeto #");
         if (aIsNamed && !bIsNamed) return -1;
         if (!aIsNamed && bIsNamed) return 1;
 
         const aMetrics = getItemMetrics(a);
         const bMetrics = getItemMetrics(b);
 
-        if (sortBy === 'profit_desc') return bMetrics.netProfit - aMetrics.netProfit;
-        if (sortBy === 'roi_desc') return bMetrics.roi - aMetrics.roi;
-        if (sortBy === 'cost_asc') return aMetrics.cost - bMetrics.cost;
-        if (sortBy === 'level_asc') return a.level - b.level;
-        if (sortBy === 'level_desc') return b.level - a.level;
-        if (sortBy === 'name') return getItemName(a).localeCompare(getItemName(b));
+        if (sortBy === "profit_desc")
+          return bMetrics.netProfit - aMetrics.netProfit;
+        if (sortBy === "roi_desc") return bMetrics.roi - aMetrics.roi;
+        if (sortBy === "cost_asc") return aMetrics.cost - bMetrics.cost;
+        if (sortBy === "level_asc") return a.level - b.level;
+        if (sortBy === "level_desc") return b.level - a.level;
+        if (sortBy === "name")
+          return getItemName(a).localeCompare(getItemName(b));
         return 0;
       });
   }, [
@@ -373,22 +395,28 @@ export const RecipeCraftingCalculator: React.FC<{
 
   // Real-time synchronous calculation using marketPrices
   const directCraftCost = recipeTree
-    ? calculateTreeCraftCost(recipeTree, 'direct_buy', marketPrices)
+    ? calculateTreeCraftCost(recipeTree, "direct_buy", marketPrices)
     : 0;
 
   const autoOptimalCost = recipeTree
-    ? calculateTreeCraftCost(recipeTree, 'auto_optimal', marketPrices)
+    ? calculateTreeCraftCost(recipeTree, "auto_optimal", marketPrices)
     : 0;
 
-  const effectiveSalePrice = typeof activeSalePrice === 'number' ? activeSalePrice : 0;
-  const netProfit = effectiveSalePrice - autoOptimalCost;
+  const effectiveSalePrice =
+    typeof activeSalePrice === "number" ? activeSalePrice : 0;
+  const activeSaleTax =
+    effectiveSalePrice > 0 ? Math.ceil(effectiveSalePrice * 0.03) : 0;
+  const netProfit =
+    effectiveSalePrice > 0
+      ? effectiveSalePrice - activeSaleTax - autoOptimalCost
+      : -autoOptimalCost;
   const profitMarginPercent =
     autoOptimalCost > 0 ? (netProfit / autoOptimalCost) * 100 : 0;
 
   const handleSelectItemForDetail = (item: PresetCraftableItem) => {
     setActivePresetItem(item);
     setIsDetailView(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // ---------------------------------------------------------------------------
@@ -420,10 +448,13 @@ export const RecipeCraftingCalculator: React.FC<{
                     className="w-14 h-14 object-contain"
                     onError={(e) => {
                       const fallback = getItemFallbackIconUrl(activePresetItem);
-                      if (fallback && (e.target as HTMLImageElement).src !== fallback) {
+                      if (
+                        fallback &&
+                        (e.target as HTMLImageElement).src !== fallback
+                      ) {
                         (e.target as HTMLImageElement).src = fallback;
                       } else {
-                        (e.target as HTMLElement).style.display = 'none';
+                        (e.target as HTMLElement).style.display = "none";
                       }
                     }}
                   />
@@ -465,8 +496,8 @@ export const RecipeCraftingCalculator: React.FC<{
                   value={activeSalePrice}
                   onChange={(e) => {
                     const val = e.target.value;
-                    if (val === '') {
-                      setActiveSalePrice('');
+                    if (val === "") {
+                      setActiveSalePrice("");
                       handlePriceChange(activePresetItem.id, 0);
                     } else {
                       const num = Math.max(0, Number(val));
@@ -477,7 +508,9 @@ export const RecipeCraftingCalculator: React.FC<{
                   placeholder="0"
                   className="w-36 bg-[#0f0f0f] border border-neutral-700 rounded-lg px-3 py-1.5 text-right text-emerald-400 font-mono font-bold text-lg focus:outline-none focus:border-amber-500 transition-colors"
                 />
-                <span className="text-sm font-bold text-neutral-400">Kamas</span>
+                <span className="text-sm font-bold text-neutral-400">
+                  Kamas
+                </span>
               </div>
             </div>
           </div>
@@ -491,7 +524,9 @@ export const RecipeCraftingCalculator: React.FC<{
               <div className="text-2xl font-bold font-mono text-amber-400">
                 {autoOptimalCost.toLocaleString()} K
               </div>
-              <p className="text-xs text-neutral-500">Ruta más barata calculada</p>
+              <p className="text-xs text-neutral-500">
+                Ruta más barata calculada
+              </p>
             </div>
 
             <div className="p-4 rounded-xl bg-[#0a0a0a] border border-neutral-800 space-y-1 shadow-md">
@@ -501,14 +536,16 @@ export const RecipeCraftingCalculator: React.FC<{
               <div className="text-2xl font-bold font-mono text-emerald-400">
                 {effectiveSalePrice.toLocaleString()} K
               </div>
-              <p className="text-xs text-neutral-500">Mercadillo actual</p>
+              <p className="text-xs font-mono text-neutral-400">
+                Impuesto (3%): -{activeSaleTax.toLocaleString()} K
+              </p>
             </div>
 
             <div
               className={`p-4 rounded-xl border space-y-1 shadow-md ${
                 netProfit >= 0
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : 'bg-red-500/10 border-red-500/30'
+                  ? "bg-emerald-500/10 border-emerald-500/30"
+                  : "bg-red-500/10 border-red-500/30"
               }`}
             >
               <span className="text-xs text-neutral-300 font-bold uppercase tracking-wider block">
@@ -516,22 +553,22 @@ export const RecipeCraftingCalculator: React.FC<{
               </span>
               <div
                 className={`text-2xl font-bold font-mono ${
-                  netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  netProfit >= 0 ? "text-emerald-400" : "text-red-400"
                 }`}
               >
-                {netProfit >= 0 ? '+' : ''}
+                {netProfit >= 0 ? "+" : ""}
                 {netProfit.toLocaleString()} K
               </div>
               <p className="text-xs font-mono text-neutral-400">
-                Beneficio limpio por unidad
+                Limpio tras impuesto (3%)
               </p>
             </div>
 
             <div
               className={`p-4 rounded-xl border space-y-1 shadow-md ${
                 profitMarginPercent >= 0
-                  ? 'bg-amber-500/10 border-amber-500/30'
-                  : 'bg-red-500/10 border-red-500/30'
+                  ? "bg-amber-500/10 border-amber-500/30"
+                  : "bg-red-500/10 border-red-500/30"
               }`}
             >
               <span className="text-xs text-neutral-300 font-bold uppercase tracking-wider block">
@@ -539,37 +576,66 @@ export const RecipeCraftingCalculator: React.FC<{
               </span>
               <div
                 className={`text-2xl font-bold font-mono ${
-                  profitMarginPercent >= 0 ? 'text-amber-400' : 'text-red-400'
+                  profitMarginPercent >= 0 ? "text-amber-400" : "text-red-400"
                 }`}
               >
-                {profitMarginPercent > 0 ? '+' : ''}
+                {profitMarginPercent > 0 ? "+" : ""}
                 {profitMarginPercent.toFixed(1)}%
               </div>
-              <p className="text-xs font-mono text-neutral-400">Retorno sobre inversión</p>
+              <p className="text-xs font-mono text-neutral-400">
+                Retorno sobre inversión
+              </p>
             </div>
           </div>
 
           {/* Smart Strategy Banner */}
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3">
-            <Sparkles className="w-6 h-6 text-amber-400 shrink-0" />
-            <div className="text-xs text-amber-200/90 leading-relaxed font-sans">
+          <div className="p-4 rounded-xl bg-[#0a0a0a] border border-amber-500/30 space-y-3 shadow-md">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+              <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                Estrategia Óptima de Crafteo
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-lg bg-[#0f0f0f] border border-neutral-800 space-y-1">
+                <span className="text-neutral-400 text-[11px] font-sans block">
+                  Comprando Ingredientes Directos:
+                </span>
+                <span className="text-base font-extrabold text-white block">
+                  {directCraftCost.toLocaleString()} K
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-[#0f0f0f] border border-emerald-500/30 space-y-1">
+                <span className="text-neutral-400 text-[11px] font-sans block">
+                  Ruta Óptima (Fabricando Sub-recetas):
+                </span>
+                <span className="text-base font-extrabold text-emerald-400 block">
+                  {autoOptimalCost.toLocaleString()} K
+                </span>
+              </div>
+            </div>
+
+            <div className="text-xs text-amber-200/90 leading-relaxed font-sans pt-1 border-t border-neutral-800/80">
               {autoOptimalCost < directCraftCost ? (
                 <p>
-                  Recomendación:{' '}
+                  Recomendación:{" "}
                   <strong className="text-emerald-400 font-bold">
                     Craftear fabricando los sub-ingredientes
-                  </strong>. Ahorras{' '}
+                  </strong>
+                  . Ahorras{" "}
                   <strong className="text-emerald-300 font-bold font-mono text-sm">
                     {(directCraftCost - autoOptimalCost).toLocaleString()} Kamas
-                  </strong>{' '}
-                  en comparación con comprar todo terminado.
+                  </strong>{" "}
+                  en comparación con comprar todo listo.
                 </p>
               ) : (
                 <p>
-                  Recomendación:{' '}
+                  Recomendación:{" "}
                   <strong className="text-blue-400 font-bold">
                     Comprar los ingredientes directos en el mercadillo
-                  </strong>. No es necesario fabricar sub-crafteos intermedios.
+                  </strong>
+                  . Fabricar sub-crafteos intermedios no reduce el costo.
                 </p>
               )}
             </div>
@@ -591,7 +657,9 @@ export const RecipeCraftingCalculator: React.FC<{
                   Cargando receta e ingredientes...
                 </p>
               </div>
-            ) : recipeTree && recipeTree.subIngredients && recipeTree.subIngredients.length > 0 ? (
+            ) : recipeTree &&
+              recipeTree.subIngredients &&
+              recipeTree.subIngredients.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {recipeTree.subIngredients.map((childNode) => (
                   <HorizontalIngredientCard
@@ -605,7 +673,8 @@ export const RecipeCraftingCalculator: React.FC<{
               </div>
             ) : (
               <div className="py-12 text-center text-xs text-neutral-500 bg-[#0a0a0a] border border-neutral-800 rounded-xl">
-                Este objeto no posee receta de fabricación registrada o es un recurso base.
+                Este objeto no posee receta de fabricación registrada o es un
+                recurso base.
               </div>
             )}
           </div>
@@ -627,18 +696,18 @@ export const RecipeCraftingCalculator: React.FC<{
             Selecciona un Oficio
           </span>
           <span className="text-[11px] font-mono text-neutral-500">
-            {selectedJobId === 'all'
-              ? 'Todos los oficios'
+            {selectedJobId === "all"
+              ? "Todos los oficios"
               : `Oficio ID: #${selectedJobId}`}
           </span>
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           <button
-            onClick={() => setSelectedJobId('all')}
+            onClick={() => setSelectedJobId("all")}
             className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
-              selectedJobId === 'all'
-                ? 'bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20'
-                : 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700'
+              selectedJobId === "all"
+                ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
+                : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -654,8 +723,8 @@ export const RecipeCraftingCalculator: React.FC<{
                 onClick={() => setSelectedJobId(job.id)}
                 className={`px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
                   isSelected
-                    ? 'bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20'
-                    : 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700'
+                    ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
+                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
                 }`}
               >
                 <JobIcon className="w-3.5 h-3.5" />
@@ -689,7 +758,9 @@ export const RecipeCraftingCalculator: React.FC<{
                 onChange={(e) => setOnlyProfitable(e.target.checked)}
                 className="rounded border-neutral-700 text-amber-500 focus:ring-0 bg-neutral-950"
               />
-              <span className="font-semibold text-emerald-400">Solo Rentables (&gt;0 K)</span>
+              <span className="font-semibold text-emerald-400">
+                Solo Rentables (&gt;0 K)
+              </span>
             </label>
           </div>
         </div>
@@ -719,11 +790,11 @@ export const RecipeCraftingCalculator: React.FC<{
               value={`${minLevel}-${maxLevel}`}
               onChange={(e) => {
                 const val = e.target.value;
-                if (val === 'all') {
+                if (val === "all") {
                   setMinLevel(1);
                   setMaxLevel(200);
                 } else {
-                  const [min, max] = val.split('-').map(Number);
+                  const [min, max] = val.split("-").map(Number);
                   setMinLevel(min);
                   setMaxLevel(max);
                 }
@@ -739,7 +810,9 @@ export const RecipeCraftingCalculator: React.FC<{
           </div>
 
           <div>
-            <label className="block text-neutral-400 font-medium mb-1">Ordenar Por</label>
+            <label className="block text-neutral-400 font-medium mb-1">
+              Ordenar Por
+            </label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
@@ -755,13 +828,15 @@ export const RecipeCraftingCalculator: React.FC<{
           </div>
 
           <div>
-            <label className="block text-neutral-400 font-medium mb-1">Ganancia Mín. (Kamas)</label>
+            <label className="block text-neutral-400 font-medium mb-1">
+              Ganancia Mín. (Kamas)
+            </label>
             <input
               type="number"
               value={minProfitKamas}
               onChange={(e) => {
                 const val = e.target.value;
-                setMinProfitKamas(val === '' ? '' : Number(val));
+                setMinProfitKamas(val === "" ? "" : Number(val));
               }}
               step={5000}
               placeholder="0"
@@ -770,13 +845,15 @@ export const RecipeCraftingCalculator: React.FC<{
           </div>
 
           <div>
-            <label className="block text-neutral-400 font-medium mb-1">ROI Mínimo (%)</label>
+            <label className="block text-neutral-400 font-medium mb-1">
+              ROI Mínimo (%)
+            </label>
             <input
               type="number"
               value={minRoiPercent}
               onChange={(e) => {
                 const val = e.target.value;
-                setMinRoiPercent(val === '' ? '' : Number(val));
+                setMinRoiPercent(val === "" ? "" : Number(val));
               }}
               placeholder="0"
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500 focus:outline-none"
@@ -809,10 +886,13 @@ export const RecipeCraftingCalculator: React.FC<{
                         className="w-11 h-11 object-contain"
                         onError={(e) => {
                           const fallback = getItemFallbackIconUrl(item);
-                          if (fallback && (e.target as HTMLImageElement).src !== fallback) {
+                          if (
+                            fallback &&
+                            (e.target as HTMLImageElement).src !== fallback
+                          ) {
                             (e.target as HTMLImageElement).src = fallback;
                           } else {
-                            (e.target as HTMLElement).style.display = 'none';
+                            (e.target as HTMLElement).style.display = "none";
                           }
                         }}
                       />
@@ -831,7 +911,9 @@ export const RecipeCraftingCalculator: React.FC<{
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 pt-0.5">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${jobBadgeClass}`}>
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded border ${jobBadgeClass}`}
+                      >
                         {item.jobNameEs}
                       </span>
                     </div>
@@ -840,27 +922,39 @@ export const RecipeCraftingCalculator: React.FC<{
 
                 <div className="bg-[#0a0a0a] border border-neutral-800/80 rounded-xl p-3 grid grid-cols-3 gap-2 text-center font-mono">
                   <div>
-                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Costo</span>
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">
+                      Costo
+                    </span>
                     <span className="text-sm font-bold text-neutral-200">
-                      {metrics.cost > 0 ? `${metrics.cost.toLocaleString()} K` : '---'}
+                      {metrics.cost > 0
+                        ? `${metrics.cost.toLocaleString()} K`
+                        : "---"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Venta</span>
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">
+                      Venta
+                    </span>
                     <span className="text-sm font-bold text-amber-300">
-                      {metrics.salePrice > 0 ? `${metrics.salePrice.toLocaleString()} K` : '---'}
+                      {metrics.salePrice > 0
+                        ? `${metrics.salePrice.toLocaleString()} K`
+                        : "---"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Ganancia</span>
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">
+                      Ganancia
+                    </span>
                     <span
                       className={`text-sm font-extrabold block ${
-                        metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        metrics.netProfit >= 0
+                          ? "text-emerald-400"
+                          : "text-rose-400"
                       }`}
                     >
                       {metrics.salePrice > 0
-                        ? `${metrics.netProfit >= 0 ? '+' : ''}${metrics.netProfit.toLocaleString()} K`
-                        : '---'}
+                        ? `${metrics.netProfit >= 0 ? "+" : ""}${metrics.netProfit.toLocaleString()} K`
+                        : "---"}
                     </span>
                   </div>
                 </div>
@@ -891,15 +985,20 @@ export const RecipeCraftingCalculator: React.FC<{
         {filteredItems.length > 0 && (
           <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md">
             <span className="text-neutral-400 font-mono">
-              Mostrando{' '}
+              Mostrando{" "}
               <strong className="text-white">
                 {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
-              </strong>{' '}
-              a{' '}
+              </strong>{" "}
+              a{" "}
               <strong className="text-white">
-                {Math.min(safeCurrentPage * ITEMS_PER_PAGE, filteredItems.length)}
-              </strong>{' '}
-              de <strong className="text-amber-400">{filteredItems.length}</strong> Objetos
+                {Math.min(
+                  safeCurrentPage * ITEMS_PER_PAGE,
+                  filteredItems.length,
+                )}
+              </strong>{" "}
+              de{" "}
+              <strong className="text-amber-400">{filteredItems.length}</strong>{" "}
+              Objetos
             </span>
 
             <div className="flex items-center gap-2">
@@ -913,13 +1012,16 @@ export const RecipeCraftingCalculator: React.FC<{
               </button>
 
               <span className="px-3 font-mono text-neutral-400 text-xs">
-                Página <strong className="text-amber-400">{safeCurrentPage}</strong> de{' '}
+                Página{" "}
+                <strong className="text-amber-400">{safeCurrentPage}</strong> de{" "}
                 {totalPages}
               </span>
 
               <button
                 disabled={safeCurrentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
                 className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
               >
                 <span>Siguiente</span>
@@ -959,7 +1061,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
 
   const directBuyCost = totalPriceForQuantity;
   const subCraftCost = hasSubCraft
-    ? calculateTreeCraftCost(node, 'auto_optimal', marketPrices)
+    ? calculateTreeCraftCost(node, "auto_optimal", marketPrices)
     : directBuyCost;
 
   const isSubcraftCheaper = hasSubCraft && subCraftCost < directBuyCost;
@@ -979,10 +1081,13 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                   className="w-9 h-9 object-contain"
                   onError={(e) => {
                     const fallback = getItemFallbackIconUrl(node.item);
-                    if (fallback && (e.target as HTMLImageElement).src !== fallback) {
+                    if (
+                      fallback &&
+                      (e.target as HTMLImageElement).src !== fallback
+                    ) {
                       (e.target as HTMLImageElement).src = fallback;
                     } else {
-                      (e.target as HTMLElement).style.display = 'none';
+                      (e.target as HTMLElement).style.display = "none";
                     }
                   }}
                 />
@@ -1013,17 +1118,27 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
           </div>
           <input
             type="number"
-            value={draftPrice !== null ? draftPrice : currentPrice > 0 ? currentPrice : ''}
+            value={
+              draftPrice !== null
+                ? draftPrice
+                : currentPrice > 0
+                  ? currentPrice
+                  : ""
+            }
             onChange={(e) => {
               const val = e.target.value;
               setDraftPrice(val);
               // Live reactive calculation on typing
-              const numericVal = val === '' ? 0 : Number(val);
+              const numericVal = val === "" ? 0 : Number(val);
               onPriceChange(node.itemId, numericVal);
             }}
             onBlur={() => {
               const nextValue =
-                draftPrice === null ? currentPrice : draftPrice === '' ? 0 : Number(draftPrice);
+                draftPrice === null
+                  ? currentPrice
+                  : draftPrice === ""
+                    ? 0
+                    : Number(draftPrice);
               onPriceChange(node.itemId, nextValue);
               setDraftPrice(null);
             }}
@@ -1036,22 +1151,82 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
       <div className="space-y-2.5 pt-2 border-t border-neutral-800">
         {/* Total Cost for required quantity */}
         <div className="flex items-center justify-between font-mono">
-          <span className="text-xs font-semibold text-neutral-400">Subtotal ({node.quantity}x):</span>
+          <span className="text-xs font-semibold text-neutral-400">
+            Subtotal ({node.quantity}x):
+          </span>
           <span className="text-emerald-400 font-extrabold text-base">
             {totalPriceForQuantity.toLocaleString()} K
           </span>
         </div>
 
-        {/* Sub-crafting badge & Toggle */}
+        {/* Sub-crafting comparison & Toggle */}
         {hasSubCraft && (
-          <div className="pt-1">
+          <div className="pt-1.5 space-y-2">
+            {/* Explicit comparison box showing both options */}
+            <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold">
+                {currentPrice > 0 ? (
+                  subCraftCost < directBuyCost ? (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-extrabold text-[11px] font-mono">
+                      Craftear (-
+                      {(directBuyCost - subCraftCost).toLocaleString()} K)
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-md bg-blue-500/20 border border-blue-500/40 text-blue-300 font-extrabold text-[11px] font-mono">
+                      Comprar Directo{" "}
+                      {savings > 0 ? `(-${savings.toLocaleString()} K)` : ""}
+                    </span>
+                  )
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 font-extrabold text-[11px] font-mono">
+                    Crafteo: {subCraftCost.toLocaleString()} K
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div
+                  className={`p-2 rounded-lg border ${
+                    currentPrice > 0 && directBuyCost <= subCraftCost
+                      ? "bg-blue-500/10 border-blue-500/40"
+                      : "bg-[#0a0a0a] border-neutral-800"
+                  }`}
+                >
+                  <span className="text-[10px] text-neutral-400 block font-sans font-medium">
+                    Comprar Listo:
+                  </span>
+                  <span className="font-extrabold text-white text-sm">
+                    {currentPrice > 0
+                      ? `${directBuyCost.toLocaleString()} K`
+                      : "Sin precio"}
+                  </span>
+                </div>
+                <div
+                  className={`p-2 rounded-lg border ${
+                    currentPrice > 0 && subCraftCost < directBuyCost
+                      ? "bg-emerald-500/10 border-emerald-500/40"
+                      : "bg-[#0a0a0a] border-neutral-800"
+                  }`}
+                >
+                  <span className="text-[10px] text-neutral-400 block font-sans font-medium">
+                    Craftear Sub-receta:
+                  </span>
+                  <span className="font-extrabold text-emerald-400 text-sm">
+                    {subCraftCost.toLocaleString()} K
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="w-full py-1.5 px-2 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-white text-[11px] font-semibold flex items-center justify-between transition-colors"
+              className="w-full py-1.5 px-2.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-white text-xs font-semibold flex items-center justify-between transition-colors"
             >
               <span className="flex items-center gap-1.5">
                 <span className="text-amber-400">⚙️</span>
-                <span>Sub-receta ({node.subIngredients?.length})</span>
+                <span>
+                  Desglose de Sub-receta ({node.subIngredients?.length})
+                </span>
               </span>
               {isExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
@@ -1098,10 +1273,21 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
 
   const displayPrice =
-    draftPrice !== null ? draftPrice : currentPrice > 0 ? currentPrice : '';
+    draftPrice !== null ? draftPrice : currentPrice > 0 ? currentPrice : "";
   const subTotal = currentPrice * sub.quantity;
   const hasSubSubCraft =
     sub.isCraftable && sub.subIngredients && sub.subIngredients.length > 0;
+
+  const subCraftCost = hasSubSubCraft
+    ? calculateTreeCraftCost(sub, "full_subcraft", marketPrices)
+    : subTotal;
+  const directBuyCost = subTotal;
+  const isSubCraftCheaper =
+    hasSubSubCraft && currentPrice > 0 && subCraftCost < directBuyCost;
+  const subSavings =
+    hasSubSubCraft && currentPrice > 0
+      ? Math.abs(directBuyCost - subCraftCost)
+      : 0;
 
   return (
     <div className="bg-[#0f0f0f] border border-neutral-800 rounded-lg p-2.5 space-y-2 shadow-sm">
@@ -1114,7 +1300,7 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
                 alt={getItemName(sub.item)}
                 className="w-5 h-5 object-contain"
                 onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+                  (e.target as HTMLElement).style.display = "none";
                 }}
               />
             ) : (
@@ -1143,16 +1329,16 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
             onChange={(e) => {
               const val = e.target.value;
               setDraftPrice(val);
-              const numericVal = val === '' ? 0 : Number(val);
+              const numericVal = val === "" ? 0 : Number(val);
               onPriceChange(sub.itemId, numericVal);
             }}
             onBlur={() => {
               const nextVal =
                 draftPrice === null
                   ? currentPrice
-                  : draftPrice === ''
-                  ? 0
-                  : Number(draftPrice);
+                  : draftPrice === ""
+                    ? 0
+                    : Number(draftPrice);
               onPriceChange(sub.itemId, nextVal);
               setDraftPrice(null);
             }}
@@ -1171,7 +1357,28 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
       </div>
 
       {hasSubSubCraft && (
-        <div className="pt-1 border-t border-neutral-800/60">
+        <div className="pt-1.5 border-t border-neutral-800 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-neutral-400">Crafteo de Sub-receta:</span>
+            <span className="text-emerald-400 font-extrabold">
+              {subCraftCost.toLocaleString()} K
+            </span>
+          </div>
+
+          {currentPrice > 0 && (
+            <div className="text-[10px] font-mono font-bold">
+              {isSubCraftCheaper ? (
+                <span className="text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 px-1.5 py-0.5 rounded block text-center">
+                  Más rentable craftear (-{subSavings.toLocaleString()} K)
+                </span>
+              ) : (
+                <span className="text-blue-300 bg-blue-500/20 border border-blue-500/30 px-1.5 py-0.5 rounded block text-center">
+                  Más rentable comprar listo (-{subSavings.toLocaleString()} K)
+                </span>
+              )}
+            </div>
+          )}
+
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="w-full py-1 px-2 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-[10px] font-semibold flex items-center justify-between transition-colors"

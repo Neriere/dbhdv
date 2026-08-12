@@ -68,6 +68,7 @@ export interface CalculatedRecipeProfit {
   item: PresetCraftableItem;
   craftCost: number;
   salePrice: number;
+  saleTax: number;
   netProfit: number;
   roiPercent: number;
   jobName: string;
@@ -188,13 +189,15 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
       }
 
       const salePrice = marketPrices[item.id] || 0;
-      const netProfit = salePrice - craftCost;
+      const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.03) : 0;
+      const netProfit = salePrice > 0 ? (salePrice - saleTax - craftCost) : -craftCost;
       const roiPercent = craftCost > 0 ? (netProfit / craftCost) * 100 : 0;
 
       return {
         item,
         craftCost,
         salePrice,
+        saleTax,
         netProfit,
         roiPercent,
         jobName: item.jobNameEs,
@@ -492,7 +495,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   <th className="py-3 px-3">Objeto & Oficio</th>
                   <th className="py-3 px-3 text-right">Costo Crafteo</th>
                   <th className="py-3 px-3 text-right">Precio Venta</th>
-                  <th className="py-3 px-3 text-right">Ganancia Neta</th>
+                  <th className="py-3 px-3 text-right">Ganancia Neta (-3% imp.)</th>
                   <th className="py-3 px-3 text-center">ROI %</th>
                   <th className="py-3 px-3 text-center">Acción</th>
                 </tr>
@@ -640,6 +643,11 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           {isProfitable ? "+" : ""}
                           {entry.netProfit.toLocaleString()} K
                         </span>
+                        {entry.saleTax > 0 && (
+                          <span className="block text-[10px] text-neutral-500 font-medium font-mono">
+                            Imp. -{entry.saleTax.toLocaleString()} K
+                          </span>
+                        )}
                       </td>
 
                       {/* ROI Badge */}
