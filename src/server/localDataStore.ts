@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { isOmittedItem } from "../data/dofusJobs";
+import { isOmittedItem } from "../data/dofusJobs.js";
 import {
   DofusItem,
   DofusRecipe,

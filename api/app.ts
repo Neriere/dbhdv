@@ -19,7 +19,7 @@ import {
   updateAutomaticSyncSettings,
   initDB,
   database,
-} from "../src/server/localDataStore";
+} from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
 
@@ -336,12 +336,10 @@ app.get("/api/dofusdb/proxy/*", async (req, res) => {
     const data = await response.json();
     res.json({ success: true, targetUrl, queryExecuted: req.query, data });
   } catch (err: any) {
-    res
-      .status(500)
-      .json({
-        error: "Failed to communicate with DofusDB API",
-        message: err.message,
-      });
+    res.status(500).json({
+      error: "Failed to communicate with DofusDB API",
+      message: err.message,
+    });
   }
 });
 

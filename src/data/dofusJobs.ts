@@ -1,4 +1,4 @@
-import { DofusJob } from "../types";
+import { DofusJob } from "../types.js";
 import {
   JOB_CATEGORY_DATABASE,
   DOFUS_DB_TYPE_TO_JOB_MAP,
