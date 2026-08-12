@@ -3,7 +3,6 @@ import express from "express";
 import path from "path";
 import basicAuth from "express-basic-auth";
 import serverless from "serverless-http";
-import { createServer as createViteServer } from "vite";
 import {
   changeActivePriceProfile,
   deleteAllStoredPrices,
@@ -508,6 +507,8 @@ async function startServer() {
   });
 
   if (process.env.NODE_ENV !== "production") {
+    // Importación dinámica: Solo requiere Vite en desarrollo local
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -526,7 +527,6 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
   return app;
 }
 
