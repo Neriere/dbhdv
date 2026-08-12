@@ -1,7 +1,7 @@
 export default async function handler(req: any, res: any) {
   try {
-    // Importa la aplicación dinámicamente para atrapar errores de inicialización
-    const appModule = await import("./app");
+    // Añadimos explícitamente .js para cumplir con el estándar ESM
+    const appModule = await import("./app.js");
     const app = appModule.default;
     return app(req, res);
   } catch (error: any) {
