@@ -14,6 +14,10 @@ import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
 
 const LOCAL_DB_API_BASE = "/api/local-db";
 
+const CACHE_KEY = "dofus_db_bootstrap_cache_v1";
+const CACHE_TIMESTAMP_KEY = "dofus_db_bootstrap_timestamp_v1";
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+
 const DEFAULT_SYNC_STATUS: SyncStatus = {
   lastSyncTimestamp: null,
   totalImported: 0,
@@ -251,6 +255,38 @@ export async function initializeDatabase(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
+  if (typeof window !== "undefined" && !isDbInitialized) {
+    try {
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+
+      if (cachedData && cachedTimestamp) {
+        const isFresh = Date.now() - Number(cachedTimestamp) < CACHE_TTL;
+        const bootstrap: BootstrapResponse = JSON.parse(cachedData);
+
+        updateMemoryCache({
+          items: bootstrap.items,
+          recipes: bootstrap.recipes,
+          prices: bootstrap.prices,
+          priceUpdatedAt: bootstrap.priceUpdatedAt,
+          syncStatus: bootstrap.syncStatus,
+          syncSettings: bootstrap.syncSettings,
+          priceProfiles: bootstrap.priceProfiles,
+          activePriceProfileId: bootstrap.activePriceProfileId,
+        });
+
+        if (isFresh) {
+          return {
+            items: itemsMemoryCache,
+            recipes: recipesMemoryCache,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Error al leer la caché local:", e);
+    }
+  }
+
   if (bootstrapPromise) {
     const existingBootstrap = await bootstrapPromise;
     return {
@@ -265,6 +301,16 @@ export async function initializeDatabase(): Promise<{
 
   try {
     const bootstrap = await bootstrapPromise;
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(bootstrap));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, String(Date.now()));
+      } catch (e) {
+        console.warn("No se pudo guardar en la caché local:", e);
+      }
+    }
+
     updateMemoryCache({
       items: bootstrap.items,
       recipes: bootstrap.recipes,
@@ -539,6 +585,11 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
 export async function performFullItemImport(
   onProgress?: (status: SyncStatus) => void,
 ): Promise<{ items: DofusItem[]; status: SyncStatus }> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+  }
+
   const loadingStatus: SyncStatus = {
     ...syncStatusMemoryCache,
     isLoading: true,
@@ -579,6 +630,11 @@ export async function saveMarketPrice(
   itemId: number,
   price: number,
 ): Promise<MarketPriceMap> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+  }
+
   const response = await requestJson<{
     prices: MarketPriceMap;
     priceUpdatedAt: PriceUpdatedAtMap;
@@ -602,6 +658,11 @@ export async function saveMarketPrice(
 export async function saveAllMarketPrices(
   newPricesMap: MarketPriceMap,
 ): Promise<MarketPriceMap> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+  }
+
   const entries = Object.entries(newPricesMap);
   const chunkSize = 100;
 
@@ -655,6 +716,11 @@ export async function saveAllMarketPrices(
 export async function setActiveLocalPriceProfile(
   profileId: number,
 ): Promise<void> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+  }
+
   const response = await requestJson<{
     profiles: PriceProfile[];
     activePriceProfileId: number;
