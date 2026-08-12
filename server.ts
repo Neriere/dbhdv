@@ -24,10 +24,14 @@ import {
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
 
+// VERSIÓN SEGURA: No rompe el servidor al instante, sino que registra el error en Vercel
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    console.error(
+      `[CRITICAL ERROR] Missing required environment variable: ${name}`,
+    );
+    return "missing-env-var"; // Devuelve un string por defecto para evitar el crasheo fatal
   }
   return value;
 }
@@ -41,7 +45,7 @@ async function startServer() {
       "[Database Error] Failed to initialize Turso schemas:",
       error,
     );
-    process.exit(1);
+    // process.exit(1); Eliminado para evitar que Vercel mate el proceso abruptamente
   }
 
   const app = express();
