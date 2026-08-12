@@ -1,4 +1,4 @@
-import { DofusItem, DofusRecipe } from '../types';
+import { DofusItem, DofusRecipe } from "../types.js";
 
 export interface PresetCraftableItem extends DofusItem {
   jobId: number; // Profession ID
@@ -12,7 +12,10 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 2469,
     name: { es: "Gelanillo", fr: "Gelano", en: "Gelano" },
-    description: { es: "Este mítico anillo gelatinoso otorga un punto de acción crucial.", fr: "Cet anneau mythique donne 1 PA." },
+    description: {
+      es: "Este mítico anillo gelatinoso otorga un punto de acción crucial.",
+      fr: "Cet anneau mythique donne 1 PA.",
+    },
     level: 60,
     typeId: 9,
     type: { id: 9, name: { es: "Anillo", fr: "Anneau" }, superCategoryId: 1 },
@@ -21,7 +24,15 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
     jobNameEs: "Joyero",
     defaultMarketSalePrice: 180000,
     possibleEffects: [
-      { id: 1, effectId: 1, characteristic: 1, from: 1, to: 1, formatted: "+1 PA", runeWeight: 100 },
+      {
+        id: 1,
+        effectId: 1,
+        characteristic: 1,
+        from: 1,
+        to: 1,
+        formatted: "+1 PA",
+        runeWeight: 100,
+      },
     ],
     recipeData: {
       id: 1001,
@@ -35,19 +46,54 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 8432,
     name: { es: "Amuleto del Roble Blando", fr: "Amulette du Chêne Mou" },
-    description: { es: "Aporta enorme inteligencia, fuerza y vitalidad al portador.", fr: "Amulette très puissante." },
+    description: {
+      es: "Aporta enorme inteligencia, fuerza y vitalidad al portador.",
+      fr: "Amulette très puissante.",
+    },
     level: 145,
     typeId: 1,
-    type: { id: 1, name: { es: "Amuleto", fr: "Amulette" }, superCategoryId: 1 },
+    type: {
+      id: 1,
+      name: { es: "Amuleto", fr: "Amulette" },
+      superCategoryId: 1,
+    },
     iconId: 10034,
     jobId: 16, // Joyero
     jobNameEs: "Joyero",
     defaultMarketSalePrice: 650000,
     possibleEffects: [
-      { id: 2, effectId: 125, characteristic: 125, from: 200, to: 250, formatted: "+250 Vitalidad" },
-      { id: 3, effectId: 126, characteristic: 126, from: 40, to: 60, formatted: "+60 Inteligencia" },
-      { id: 4, effectId: 118, characteristic: 118, from: 40, to: 60, formatted: "+60 Fuerza" },
-      { id: 5, effectId: 117, characteristic: 117, from: 1, to: 1, formatted: "+1 Alcance" },
+      {
+        id: 2,
+        effectId: 125,
+        characteristic: 125,
+        from: 200,
+        to: 250,
+        formatted: "+250 Vitalidad",
+      },
+      {
+        id: 3,
+        effectId: 126,
+        characteristic: 126,
+        from: 40,
+        to: 60,
+        formatted: "+60 Inteligencia",
+      },
+      {
+        id: 4,
+        effectId: 118,
+        characteristic: 118,
+        from: 40,
+        to: 60,
+        formatted: "+60 Fuerza",
+      },
+      {
+        id: 5,
+        effectId: 117,
+        characteristic: 117,
+        from: 1,
+        to: 1,
+        formatted: "+1 Alcance",
+      },
     ],
     recipeData: {
       id: 1002,
@@ -61,7 +107,10 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 501,
     name: { es: "Poción de recuerdo", fr: "Potion de Rappel" },
-    description: { es: "Teletransporta al alquimista directamente a su punto de reaparición.", fr: "Téléporte à votre zaap." },
+    description: {
+      es: "Teletransporta al alquimista directamente a su punto de reaparición.",
+      fr: "Téléporte à votre zaap.",
+    },
     level: 20,
     typeId: 12,
     type: { id: 12, name: { es: "Pócima", fr: "Potion" }, superCategoryId: 2 },
@@ -81,18 +130,46 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 8435,
     name: { es: "Sombrero del Roble Blando", fr: "Chapeau du Chêne Mou" },
-    description: { es: "Un tocado de madera milenaria con hojas vivas.", fr: "Casque légendaire." },
+    description: {
+      es: "Un tocado de madera milenaria con hojas vivas.",
+      fr: "Casque légendaire.",
+    },
     level: 143,
     typeId: 16,
-    type: { id: 16, name: { es: "Sombrero", fr: "Chapeau" }, superCategoryId: 1 },
+    type: {
+      id: 16,
+      name: { es: "Sombrero", fr: "Chapeau" },
+      superCategoryId: 1,
+    },
     iconId: 12045,
     jobId: 27, // Sastre
     jobNameEs: "Sastre",
     defaultMarketSalePrice: 580000,
     possibleEffects: [
-      { id: 6, effectId: 125, characteristic: 125, from: 220, to: 280, formatted: "+280 Vitalidad" },
-      { id: 7, effectId: 126, characteristic: 126, from: 45, to: 65, formatted: "+65 Inteligencia" },
-      { id: 8, effectId: 115, characteristic: 115, from: 3, to: 5, formatted: "+5% Golpes Críticos" },
+      {
+        id: 6,
+        effectId: 125,
+        characteristic: 125,
+        from: 220,
+        to: 280,
+        formatted: "+280 Vitalidad",
+      },
+      {
+        id: 7,
+        effectId: 126,
+        characteristic: 126,
+        from: 45,
+        to: 65,
+        formatted: "+65 Inteligencia",
+      },
+      {
+        id: 8,
+        effectId: 115,
+        characteristic: 115,
+        from: 3,
+        to: 5,
+        formatted: "+5% Golpes Críticos",
+      },
     ],
     recipeData: {
       id: 1004,
@@ -106,7 +183,10 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 7210,
     name: { es: "Botas del Jefazo Bwork", fr: "Bottes du Chef Bwork" },
-    description: { es: "Ofrecen 1 PM indispensable y altos daños a tierra e inteligencia.", fr: "Bottes bwork." },
+    description: {
+      es: "Ofrecen 1 PM indispensable y altos daños a tierra e inteligencia.",
+      fr: "Bottes bwork.",
+    },
     level: 100,
     typeId: 11,
     type: { id: 11, name: { es: "Botas", fr: "Bottes" }, superCategoryId: 1 },
@@ -115,8 +195,22 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
     jobNameEs: "Zapatero",
     defaultMarketSalePrice: 220000,
     possibleEffects: [
-      { id: 9, effectId: 128, characteristic: 128, from: 1, to: 1, formatted: "+1 PM" },
-      { id: 10, effectId: 125, characteristic: 125, from: 100, to: 150, formatted: "+150 Vitalidad" },
+      {
+        id: 9,
+        effectId: 128,
+        characteristic: 128,
+        from: 1,
+        to: 1,
+        formatted: "+1 PM",
+      },
+      {
+        id: 10,
+        effectId: 125,
+        characteristic: 125,
+        from: 100,
+        to: 150,
+        formatted: "+150 Vitalidad",
+      },
     ],
     recipeData: {
       id: 1005,
@@ -130,7 +224,10 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 6410,
     name: { es: "Espada Sol", fr: "Épée Solaire" },
-    description: { es: "Arma radiante forjada con metales raros y gemas refinadas.", fr: "Épée puissante." },
+    description: {
+      es: "Arma radiante forjada con metales raros y gemas refinadas.",
+      fr: "Épée puissante.",
+    },
     level: 110,
     typeId: 6,
     type: { id: 6, name: { es: "Espada", fr: "Épée" }, superCategoryId: 1 },
@@ -139,7 +236,14 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
     jobNameEs: "Herrero",
     defaultMarketSalePrice: 340000,
     possibleEffects: [
-      { id: 11, effectId: 118, characteristic: 118, from: 50, to: 75, formatted: "+75 Fuerza" },
+      {
+        id: 11,
+        effectId: 118,
+        characteristic: 118,
+        from: 50,
+        to: 75,
+        formatted: "+75 Fuerza",
+      },
     ],
     recipeData: {
       id: 1006,
@@ -153,10 +257,17 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 7035,
     name: { es: "Piruta", fr: "Pyrute" },
-    description: { es: "Lingote fundido compuesto por múltiples minerales nobles.", fr: "Lingot de minerais." },
+    description: {
+      es: "Lingote fundido compuesto por múltiples minerales nobles.",
+      fr: "Lingot de minerais.",
+    },
     level: 60,
     typeId: 40,
-    type: { id: 40, name: { es: "Aleación", fr: "Alliage" }, superCategoryId: 3 },
+    type: {
+      id: 40,
+      name: { es: "Aleación", fr: "Alliage" },
+      superCategoryId: 3,
+    },
     iconId: 40708,
     jobId: 24, // Minero
     jobNameEs: "Minero",
@@ -173,7 +284,10 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 16489,
     name: { es: "Tabla de aglomerado", fr: "Planche d'aggloméré" },
-    description: { es: "Tabla refinada ensamblada con maderas nobles de los bosques de Amakna.", fr: "Planche en bois." },
+    description: {
+      es: "Tabla refinada ensamblada con maderas nobles de los bosques de Amakna.",
+      fr: "Planche en bois.",
+    },
     level: 50,
     typeId: 95,
     type: { id: 95, name: { es: "Tabla", fr: "Planche" }, superCategoryId: 3 },
@@ -193,10 +307,17 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 2539,
     name: { es: "Concentrado de matorral", fr: "Concentré de buisson" },
-    description: { es: "Concentrado maderero elaborado por leñadores expertos.", fr: "Substrat de buisson." },
+    description: {
+      es: "Concentrado maderero elaborado por leñadores expertos.",
+      fr: "Substrat de buisson.",
+    },
     level: 100,
     typeId: 183,
-    type: { id: 183, name: { es: "Concentrado", fr: "Concentré" }, superCategoryId: 3 },
+    type: {
+      id: 183,
+      name: { es: "Concentrado", fr: "Concentré" },
+      superCategoryId: 3,
+    },
     iconId: 26016,
     jobId: 2, // Leñador
     jobNameEs: "Leñador",
@@ -213,16 +334,30 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 12624,
     name: { es: "Placador mayor", fr: "Trophée Bloqueur Majeur" },
-    description: { es: "Otorga un bono masivo de Placaje para fijar a los enemigos en combate.", fr: "Trophée de tacle." },
+    description: {
+      es: "Otorga un bono masivo de Placaje para fijar a los enemigos en combate.",
+      fr: "Trophée de tacle.",
+    },
     level: 150,
     typeId: 151,
-    type: { id: 151, name: { es: "Trofeo", fr: "Trophée" }, superCategoryId: 1 },
+    type: {
+      id: 151,
+      name: { es: "Trofeo", fr: "Trophée" },
+      superCategoryId: 1,
+    },
     iconId: 151081,
     jobId: 60, // Fabricante
     jobNameEs: "Fabricante",
     defaultMarketSalePrice: 350000,
     possibleEffects: [
-      { id: 12, effectId: 1, characteristic: 1, from: 32, to: 32, formatted: "+32 Placaje" },
+      {
+        id: 12,
+        effectId: 1,
+        characteristic: 1,
+        from: 32,
+        to: 32,
+        formatted: "+32 Placaje",
+      },
     ],
     recipeData: {
       id: 1011,
@@ -236,16 +371,30 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 18661,
     name: { es: "Escudo Airedala", fr: "Bouclier d'Airedala" },
-    description: { es: "Escudo tradicional pandawa con resistencias de aire.", fr: "Bouclier pandawa." },
+    description: {
+      es: "Escudo tradicional pandawa con resistencias de aire.",
+      fr: "Bouclier pandawa.",
+    },
     level: 120,
     typeId: 82,
-    type: { id: 82, name: { es: "Escudo", fr: "Bouclier" }, superCategoryId: 1 },
+    type: {
+      id: 82,
+      name: { es: "Escudo", fr: "Bouclier" },
+      superCategoryId: 1,
+    },
     iconId: 82030,
     jobId: 60, // Fabricante
     jobNameEs: "Fabricante",
     defaultMarketSalePrice: 280000,
     possibleEffects: [
-      { id: 13, effectId: 1, characteristic: 1, from: 10, to: 15, formatted: "+15% Res. Aire" },
+      {
+        id: 13,
+        effectId: 1,
+        characteristic: 1,
+        from: 10,
+        to: 15,
+        formatted: "+15% Res. Aire",
+      },
     ],
     recipeData: {
       id: 1012,
@@ -258,8 +407,14 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   // 12. Manitas - Llave de la Mazmorra de los Bworks (Niv. 50)
   {
     id: 8135,
-    name: { es: "Llave de la Mazmorra de los Bworks", fr: "Clé du Donjon des Bworks" },
-    description: { es: "Permite el acceso directo al antro del Jefazo Bwork.", fr: "Clé de donjon." },
+    name: {
+      es: "Llave de la Mazmorra de los Bworks",
+      fr: "Clé du Donjon des Bworks",
+    },
+    description: {
+      es: "Permite el acceso directo al antro del Jefazo Bwork.",
+      fr: "Clé de donjon.",
+    },
     level: 50,
     typeId: 84,
     type: { id: 84, name: { es: "Llave", fr: "Clé" }, superCategoryId: 2 },
@@ -279,10 +434,17 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
   {
     id: 7851,
     name: { es: "Bebedero de fresno", fr: "Abreuvoir en frêne" },
-    description: { es: "Objeto de cría indispensable para aumentar la madurez de las monturas.", fr: "Objet d'élevage." },
+    description: {
+      es: "Objeto de cría indispensable para aumentar la madurez de las monturas.",
+      fr: "Objet d'élevage.",
+    },
     level: 30,
     typeId: 99,
-    type: { id: 99, name: { es: "Objeto de cría", fr: "Objet d'élevage" }, superCategoryId: 2 },
+    type: {
+      id: 99,
+      name: { es: "Objeto de cría", fr: "Objet d'élevage" },
+      superCategoryId: 2,
+    },
     iconId: 99001,
     jobId: 101, // Ganadero
     jobNameEs: "Ganadero",
@@ -298,4 +460,3 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
 
 // Default Market Prices dictionary for raw base materials & intermediate items (empty by default so users start with clean slate)
 export const DEFAULT_INGREDIENT_PRICES: Record<number, number> = {};
-

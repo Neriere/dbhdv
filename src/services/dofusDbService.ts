@@ -370,7 +370,7 @@ export function getItemFallbackIconUrl(
   if (!iconId) {
     return "https://placehold.co/64x64/111111/f59e0b?text=%3F";
   }
-  return `https://s.dofusdu.de/articles/dofus/es/100/${iconId}.png`;
+  return `https://api.dofusdb.fr/img/items/${iconId}.png`;
 }
 
 export function getStoredMarketPrices(): MarketPriceMap {
@@ -599,8 +599,6 @@ export async function saveMarketPrice(
   return pricesMemoryCache;
 }
 
-// OPTIMIZADO: Envía los precios en bloques masivos (batches de 100) si son muchos,
-// o realiza un único request optimizado para evitar saturar la red con Turso.
 export async function saveAllMarketPrices(
   newPricesMap: MarketPriceMap,
 ): Promise<MarketPriceMap> {
@@ -628,7 +626,6 @@ export async function saveAllMarketPrices(
     return pricesMemoryCache;
   }
 
-  // Si excede el tamaño ideal, se divide por bloques para asegurar estabilidad de red
   let latestResponse: any = null;
   for (let i = 0; i < entries.length; i += chunkSize) {
     const chunk = Object.fromEntries(entries.slice(i, i + chunkSize));
