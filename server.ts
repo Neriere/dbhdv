@@ -530,9 +530,10 @@ async function startServer() {
   return app;
 }
 
-const appPromise = startServer().then((app) => serverless(app));
+let cachedApp: express.Application | null = null;
 
-export default async (req: any, res: any) => {
-  const handler = await appPromise;
-  return handler(req, res);
-};
+export async function getApp() {
+  if (cachedApp) return cachedApp;
+  cachedApp = await startServer();
+  return cachedApp;
+}
