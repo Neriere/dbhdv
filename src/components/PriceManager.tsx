@@ -617,37 +617,37 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                         }}
                       />
                       {item.level && (
-                        <span className="absolute -bottom-1.5 -right-1.5 px-1 py-0.2 bg-neutral-900 border border-neutral-700 text-[9px] font-mono text-neutral-300 rounded font-bold">
+                        <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 bg-neutral-900 border border-neutral-700 text-xs font-mono text-amber-400 rounded-md font-bold shadow">
                           Nv.{item.level}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-1">
-                        <h4 className="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">
+                        <h4 className="text-sm font-extrabold text-white truncate group-hover:text-amber-400 transition-colors">
                           {getItemName(item)}
                         </h4>
                         {currentPrice > 0 ? (
                           <span
-                            className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold shrink-0 border border-amber-500/30"
+                            className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-mono text-xs font-bold shrink-0 border border-amber-500/30"
                             title={formatUpdatedAtLabel(item.id)}
                           >
                             Fijado
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-500 font-mono text-[9px] font-medium shrink-0 border border-neutral-800">
+                          <span className="px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-500 font-mono text-xs font-semibold shrink-0 border border-neutral-800">
                             Sin precio
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-neutral-400 flex-wrap">
-                        <span className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300 font-medium">
+                      <div className="flex items-center gap-1.5 text-xs text-neutral-300 flex-wrap">
+                        <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300 font-semibold">
                           {typeName}
                         </span>
                         {isUsedInCrafting && (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-semibold text-[9px] flex items-center gap-0.5">
+                          <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1">
                             🧪 Ingrediente
                           </span>
                         )}
@@ -656,7 +656,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                   </div>
 
                   {/* Price Input & Quick Adjust Controls */}
-                  <div className="space-y-1.5 pt-2 border-t border-neutral-800/80">
+                  <div className="space-y-2 pt-2.5 border-t border-neutral-800">
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <input
@@ -673,9 +673,9 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                           }}
                           placeholder="Precio en Kamas..."
                           title={formatUpdatedAtLabel(item.id)}
-                          className="w-full pl-3 pr-8 py-1.5 bg-[#0a0a0a] border border-neutral-700 rounded-lg text-xs font-mono font-bold text-amber-400 placeholder-neutral-600 focus:outline-none focus:border-amber-500 transition-colors"
+                          className="w-full pl-3 pr-8 py-2 bg-[#0a0a0a] border border-neutral-700 rounded-lg text-sm font-mono font-extrabold text-amber-300 placeholder-neutral-600 focus:outline-none focus:border-amber-400 transition-colors"
                         />
-                        <span className="absolute right-2.5 top-2 text-[10px] text-neutral-500 font-bold font-mono">
+                        <span className="absolute right-3 top-2.5 text-xs text-neutral-400 font-bold font-mono">
                           K
                         </span>
                       </div>

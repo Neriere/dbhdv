@@ -80,6 +80,20 @@ const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Heart,
 };
 
+const getJobBadgeStyle = (jobName: string) => {
+  const name = (jobName || '').toLowerCase();
+  if (name.includes('alquimista')) return 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300';
+  if (name.includes('campesino')) return 'bg-amber-500/20 border-amber-500/40 text-amber-300';
+  if (name.includes('cazador')) return 'bg-orange-500/20 border-orange-500/40 text-orange-300';
+  if (name.includes('leñador') || name.includes('lenador')) return 'bg-lime-500/20 border-lime-500/40 text-lime-300';
+  if (name.includes('minero')) return 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300';
+  if (name.includes('pescador')) return 'bg-blue-500/20 border-blue-500/40 text-blue-300';
+  if (name.includes('equipamiento') || name.includes('forjador') || name.includes('zapatero') || name.includes('sastre') || name.includes('joyero') || name.includes('escultor')) {
+    return 'bg-purple-500/20 border-purple-500/40 text-purple-300';
+  }
+  return 'bg-neutral-800 border-neutral-700 text-neutral-300';
+};
+
 export const RecipeCraftingCalculator: React.FC<{
   initialSelectedItem?: DofusItem | null;
 }> = ({ initialSelectedItem }) => {
@@ -194,6 +208,19 @@ export const RecipeCraftingCalculator: React.FC<{
     }
   }, [initialSelectedItem]);
 
+  useEffect(() => {
+    if (activePresetItem) {
+      const storedPrice = marketPrices[activePresetItem.id];
+      if (typeof storedPrice === 'number' && storedPrice > 0) {
+        setActiveSalePrice(storedPrice);
+      } else {
+        setActiveSalePrice('');
+      }
+    } else {
+      setActiveSalePrice('');
+    }
+  }, [activePresetItem?.id, marketPrices[activePresetItem?.id || 0]]);
+
   // Build recipe tree ONLY when activePresetItem ID changes, NOT on every price edit!
   useEffect(() => {
     if (!activePresetItem) {
@@ -203,12 +230,6 @@ export const RecipeCraftingCalculator: React.FC<{
 
     let isMounted = true;
     setLoadingTree(true);
-
-    const initialSalePrice =
-      marketPrices[activePresetItem.id] && marketPrices[activePresetItem.id] > 0
-        ? marketPrices[activePresetItem.id]
-        : '';
-    setActiveSalePrice(initialSalePrice);
 
     buildRecipeTree(activePresetItem.id, 1, 0, 3, new Set(), marketPrices)
       .then((tree) => {
@@ -377,7 +398,7 @@ export const RecipeCraftingCalculator: React.FC<{
     return (
       <div className="space-y-6 max-w-7xl mx-auto w-full">
         {/* Top Header Navigation Bar */}
-        <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+        <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 flex items-center justify-between gap-4 shadow-lg">
           <button
             onClick={() => setIsDetailView(false)}
             className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-amber-500/50 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md group"
@@ -385,30 +406,6 @@ export const RecipeCraftingCalculator: React.FC<{
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span>Volver al Catálogo de Recetas</span>
           </button>
-
-          {/* Quick Item Switcher Dropdown */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-neutral-400 text-xs font-mono whitespace-nowrap">
-              Cambiar Objeto:
-            </span>
-            <select
-              value={activePresetItem.id}
-              onChange={(e) => {
-                const targetId = Number(e.target.value);
-                const found = PRESET_CRAFTABLE_ITEMS.find((p) => p.id === targetId);
-                if (found) {
-                  handleSelectItemForDetail(found);
-                }
-              }}
-              className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white font-medium focus:border-amber-500 focus:outline-none w-full sm:w-64"
-            >
-              {PRESET_CRAFTABLE_ITEMS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {getItemName(item)} (Lvl {item.level})
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Hero Item Banner Card */}
@@ -583,11 +580,8 @@ export const RecipeCraftingCalculator: React.FC<{
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <Layers className="w-5 h-5 text-amber-400" />
-                Ingredientes y Precios de Mercadillo (Disposición Horizontal)
+                Ingredientes y Precios de Mercadillo
               </h2>
-              <span className="text-xs text-neutral-400 font-mono">
-                Cambia cualquier precio para recalcular la ganancia al instante (0ms)
-              </span>
             </div>
 
             {loadingTree ? (
@@ -684,9 +678,6 @@ export const RecipeCraftingCalculator: React.FC<{
                   {filteredItems.length} Objetos
                 </span>
               </h2>
-              <p className="text-xs text-neutral-400">
-                Selecciona cualquier objeto para ver su receta y desglose horizontal.
-              </p>
             </div>
           </div>
 
@@ -796,25 +787,26 @@ export const RecipeCraftingCalculator: React.FC<{
 
       {/* Catalog Items List Grid (25 items per page) */}
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedItems.map((item) => {
             const metrics = getItemMetrics(item);
             const itemName = getItemName(item);
             const iconUrl = getItemIconUrl(item);
+            const jobBadgeClass = getJobBadgeStyle(item.jobNameEs);
 
             return (
               <div
                 key={item.id}
                 onClick={() => handleSelectItemForDetail(item)}
-                className="bg-[#0f0f0f] border border-neutral-800 hover:border-amber-500/50 rounded-xl p-3.5 transition-all cursor-pointer shadow-md hover:shadow-amber-500/5 group flex flex-col justify-between gap-3"
+                className="bg-[#0f0f0f] border border-neutral-800 hover:border-amber-500/60 rounded-2xl p-4 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10 group flex flex-col justify-between gap-4"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg bg-[#0a0a0a] border border-neutral-800 p-1 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors">
+                <div className="flex items-start gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-[#0a0a0a] border border-neutral-800 p-1.5 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors shadow-inner">
                     {iconUrl ? (
                       <img
                         src={iconUrl}
                         alt={itemName}
-                        className="w-10 h-10 object-contain"
+                        className="w-11 h-11 object-contain"
                         onError={(e) => {
                           const fallback = getItemFallbackIconUrl(item);
                           if (fallback && (e.target as HTMLImageElement).src !== fallback) {
@@ -825,43 +817,45 @@ export const RecipeCraftingCalculator: React.FC<{
                         }}
                       />
                     ) : (
-                      <Wrench className="w-5 h-5 text-neutral-500" />
+                      <Wrench className="w-6 h-6 text-neutral-500" />
                     )}
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-white text-sm truncate group-hover:text-amber-400 transition-colors">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-extrabold text-white text-base leading-snug truncate group-hover:text-amber-400 transition-colors">
                         {itemName}
                       </span>
-                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-                        Lvl {item.level}
+                      <span className="text-xs font-bold font-mono px-2.5 py-0.5 rounded-full bg-neutral-900 text-amber-400 border border-neutral-800 shrink-0">
+                        Niv. {item.level}
                       </span>
                     </div>
-                    <div className="text-[11px] text-neutral-400 font-mono flex items-center gap-2 mt-0.5">
-                      <span>{item.jobNameEs}</span>
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${jobBadgeClass}`}>
+                        {item.jobNameEs}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-[#0a0a0a] border border-neutral-800/80 rounded-lg p-2.5 grid grid-cols-3 gap-2 text-center text-xs font-mono">
+                <div className="bg-[#0a0a0a] border border-neutral-800/80 rounded-xl p-3 grid grid-cols-3 gap-2 text-center font-mono">
                   <div>
-                    <span className="text-[10px] text-neutral-500 block">Costo</span>
-                    <span className="text-neutral-300 font-bold">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Costo</span>
+                    <span className="text-sm font-bold text-neutral-200">
                       {metrics.cost > 0 ? `${metrics.cost.toLocaleString()} K` : '---'}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-neutral-500 block">Venta</span>
-                    <span className="text-emerald-400 font-bold">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Venta</span>
+                    <span className="text-sm font-bold text-amber-300">
                       {metrics.salePrice > 0 ? `${metrics.salePrice.toLocaleString()} K` : '---'}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-neutral-500 block">Ganancia</span>
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-0.5">Ganancia</span>
                     <span
-                      className={`font-bold ${
-                        metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                      className={`text-sm font-extrabold block ${
+                        metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
                       {metrics.salePrice > 0
@@ -871,8 +865,15 @@ export const RecipeCraftingCalculator: React.FC<{
                   </div>
                 </div>
 
-                <div className="pt-1 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
-                  <span>Ver Receta y Crafteo</span>
+                <div className="pt-0.5 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
+                  <span className="flex items-center gap-1.5">
+                    {metrics.roi > 0 && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-mono border border-emerald-500/30 font-bold">
+                        +{metrics.roi.toFixed(0)}% ROI
+                      </span>
+                    )}
+                    <span>Ver Receta y Desglose</span>
+                  </span>
                   <ChevronRight className="w-4 h-4" />
                 </div>
               </div>
@@ -965,17 +966,17 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
   const savings = Math.abs(directBuyCost - subCraftCost);
 
   return (
-    <div className="bg-[#0a0a0a] border border-neutral-800 hover:border-neutral-700 rounded-xl p-3.5 space-y-3 text-xs shadow-md flex flex-col justify-between">
-      <div className="space-y-2">
+    <div className="bg-[#0a0a0a] border border-neutral-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-3.5 text-xs shadow-lg flex flex-col justify-between">
+      <div className="space-y-3">
         {/* Header with Icon, Quantity and Name */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-[#0f0f0f] border border-neutral-800 p-1 flex items-center justify-center shrink-0">
+        <div className="flex items-start justify-between gap-2.5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-[#0f0f0f] border border-neutral-800 p-1 flex items-center justify-center shrink-0 shadow-inner">
               {getItemIconUrl(node.item) ? (
                 <img
                   src={getItemIconUrl(node.item)}
                   alt={getItemName(node.item)}
-                  className="w-8 h-8 object-contain"
+                  className="w-9 h-9 object-contain"
                   onError={(e) => {
                     const fallback = getItemFallbackIconUrl(node.item);
                     if (fallback && (e.target as HTMLImageElement).src !== fallback) {
@@ -993,20 +994,20 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
             </div>
 
             <div className="min-w-0">
-              <span className="font-bold text-white block truncate leading-tight">
+              <span className="font-extrabold text-white text-sm sm:text-base block truncate leading-tight">
                 {getItemName(node.item)}
               </span>
             </div>
           </div>
 
-          <span className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold font-mono text-xs shrink-0">
+          <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-extrabold font-mono text-xs shrink-0 shadow-sm">
             x{node.quantity}
           </span>
         </div>
 
         {/* Real-time Interactive Unit Price Editor */}
-        <div className="bg-[#0f0f0f] border border-neutral-800/90 rounded-lg p-2.5 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-neutral-400">
+        <div className="bg-[#0f0f0f] border border-neutral-800/90 rounded-xl p-3 space-y-1.5">
+          <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
             <span>Precio Unitario:</span>
             <span className="font-mono font-bold text-amber-400">Kamas</span>
           </div>
@@ -1027,16 +1028,16 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               setDraftPrice(null);
             }}
             placeholder="0"
-            className="w-full bg-[#0a0a0a] border border-neutral-700 rounded px-2.5 py-1 text-right text-amber-400 font-mono font-bold text-sm focus:outline-none focus:border-amber-500"
+            className="w-full bg-[#0a0a0a] border border-neutral-700 rounded-lg px-3 py-1.5 text-right text-amber-300 font-mono font-extrabold text-base focus:outline-none focus:border-amber-400 transition-colors"
           />
         </div>
       </div>
 
-      <div className="space-y-2 pt-1 border-t border-neutral-800/80">
+      <div className="space-y-2.5 pt-2 border-t border-neutral-800">
         {/* Total Cost for required quantity */}
-        <div className="flex items-center justify-between text-xs font-mono">
-          <span className="text-neutral-400">Subtotal ({node.quantity}x):</span>
-          <span className="text-emerald-400 font-bold text-sm">
+        <div className="flex items-center justify-between font-mono">
+          <span className="text-xs font-semibold text-neutral-400">Subtotal ({node.quantity}x):</span>
+          <span className="text-emerald-400 font-extrabold text-base">
             {totalPriceForQuantity.toLocaleString()} K
           </span>
         </div>

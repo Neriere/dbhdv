@@ -23,8 +23,7 @@ const UNITY_SERVER_PROFILES: Array<{
   name: string;
   isDefault?: boolean;
 }> = [
-  { slug: "private", name: "Privado", isDefault: true },
-  { slug: "draconiros", name: "Draconiros" },
+  { slug: "draconiros", name: "Draconiros", isDefault: true },
   { slug: "mikhal", name: "Mikhal" },
   { slug: "tal-kasha", name: "Tal Kasha" },
   { slug: "rafal", name: "Rafal" },
@@ -322,13 +321,16 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
   }
 
   if (statements.length > 0) await database.batch(statements, "write");
-  await database.execute(
-    "UPDATE price_profiles SET is_default = CASE WHEN slug = 'private' THEN 1 ELSE 0 END",
-  );
+  const defaultSlug = UNITY_SERVER_PROFILES.find((p) => p.isDefault)?.slug || "draconiros";
+  await database.execute({
+    sql: "UPDATE price_profiles SET is_default = CASE WHEN slug = ? THEN 1 ELSE 0 END",
+    args: [defaultSlug],
+  });
 
-  const insertedResult = await database.execute(
-    `SELECT id, name, slug, is_default FROM price_profiles WHERE slug = 'private' LIMIT 1`,
-  );
+  const insertedResult = await database.execute({
+    sql: "SELECT id, name, slug, is_default FROM price_profiles WHERE slug = ? LIMIT 1",
+    args: [defaultSlug],
+  });
   const inserted = insertedResult.rows[0];
   return {
     id: inserted.id as number,

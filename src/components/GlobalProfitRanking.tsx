@@ -269,12 +269,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase tracking-wider">
             <Wrench className="w-4 h-4 text-amber-400" />
-            Selecciona un Oficio de Crafteo
-          </span>
-          <span className="text-[11px] font-mono text-neutral-500">
-            {selectedJobId === "all"
-              ? "Mostrando todos los oficios"
-              : `Filtrando por: ${DOFUS_JOBS.find((j) => j.id === selectedJobId)?.nameEs || ''}`}
+            Oficios de Crafteo
           </span>
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
@@ -324,9 +319,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   {filteredRankings.length} Recetas
                 </span>
               </h2>
-              <p className="text-xs text-neutral-400">
-                Paginado en bloques de 25 objetos.
-              </p>
             </div>
           </div>
 
@@ -553,25 +545,25 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       </td>
 
                       {/* Item Info */}
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-2.5">
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-3">
                           <img
                             src={iconUrl}
                             alt={itemName}
-                            className="w-9 h-9 rounded-lg bg-neutral-900 border border-neutral-800 p-0.5 object-contain shrink-0"
+                            className="w-10 h-10 rounded-xl bg-neutral-900 border border-neutral-800 p-1 object-contain shrink-0 shadow-inner"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = fallbackIcon;
                             }}
                           />
                           <div>
-                            <div className="font-bold text-white group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                            <div className="font-extrabold text-white text-sm sm:text-base group-hover:text-amber-400 transition-colors flex items-center gap-2">
                               {itemName}
-                              <span className="text-[10px] font-mono text-neutral-400 px-1.5 py-0.2 rounded bg-neutral-900 border border-neutral-800">
+                              <span className="text-xs font-mono font-bold text-amber-400 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700">
                                 Niv. {item.level}
                               </span>
                             </div>
-                            <div className="text-[11px] text-neutral-400 flex items-center gap-1">
-                              <JobIcon className="w-3 h-3 text-amber-500" />
+                            <div className="text-xs font-medium text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                              <JobIcon className="w-3.5 h-3.5 text-amber-400" />
                               <span>{entry.jobName}</span>
                             </div>
                           </div>
@@ -579,13 +571,13 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       </td>
 
                       {/* Craft Cost */}
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-neutral-300">
+                      <td className="py-3 px-3 text-right font-mono font-bold text-sm text-neutral-200">
                         {entry.craftCost.toLocaleString()} K
                       </td>
 
                       {/* Editable Sale Price */}
-                      <td className="py-2.5 px-3 text-right">
-                        <div className="inline-flex items-center justify-end gap-1">
+                      <td className="py-3 px-3 text-right">
+                        <div className="inline-flex items-center justify-end gap-1.5">
                           <input
                             type="number"
                             value={
@@ -629,17 +621,17 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                               }
                             }}
                             placeholder="0"
-                            className="w-24 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-right font-mono text-xs font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
+                            className="w-28 bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-right font-mono text-sm font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
                           />
-                          <span className="text-neutral-500 font-mono">K</span>
+                          <span className="text-neutral-400 font-bold font-mono text-xs">K</span>
                           {isSaved && (
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <Check className="w-4 h-4 text-emerald-400" />
                           )}
                         </div>
                       </td>
 
                       {/* Net Profit */}
-                      <td className="py-2.5 px-3 text-right font-mono font-black text-sm">
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-base">
                         <span
                           className={
                             isProfitable ? "text-emerald-400" : "text-rose-400"
@@ -651,13 +643,13 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       </td>
 
                       {/* ROI Badge */}
-                      <td className="py-2.5 px-3 text-center font-mono">
+                      <td className="py-3 px-3 text-center font-mono">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                          className={`inline-block px-2.5 py-1 rounded-lg text-xs font-extrabold border ${
                             entry.roiPercent >= 50
-                              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                               : entry.roiPercent > 0
-                                ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
                                 : "bg-rose-500/20 text-rose-400 border-rose-500/30"
                           }`}
                         >
