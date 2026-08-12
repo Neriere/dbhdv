@@ -1,5 +1,4 @@
 import { createClient } from "@libsql/client";
-import "dotenv/config";
 import { isOmittedItem } from "../data/dofusJobs";
 import {
   DofusItem,
