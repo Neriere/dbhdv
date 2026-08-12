@@ -10,13 +10,68 @@ import {
   SyncStatus,
 } from "../types";
 import { getJobForItem, isOmittedItem } from "../data/dofusJobs";
-import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
+import {
+  PRESET_CRAFTABLE_ITEMS,
+  PresetCraftableItem,
+} from "../data/presetCraftableItems";
 
 const LOCAL_DB_API_BASE = "/api/local-db";
 
-const CACHE_KEY = "dofus_db_bootstrap_cache_v1";
-const CACHE_TIMESTAMP_KEY = "dofus_db_bootstrap_timestamp_v1";
+const CACHE_KEY = "dofus_db_bootstrap_cache_v2";
+const CACHE_TIMESTAMP_KEY = "dofus_db_bootstrap_timestamp_v2";
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+
+// Native IndexedDB helper for ultra-fast non-blocking client persistence (no 5MB quota limit)
+const IDB_NAME = "dofus_app_idb";
+const IDB_STORE = "bootstrap_store";
+
+function openIDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB not supported"));
+      return;
+    }
+    const request = indexedDB.open(IDB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getIdbVal<T>(key: string): Promise<T | null> {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => resolve((req.result as T) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function setIdbVal(key: string, val: unknown): Promise<void> {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const store = tx.objectStore(IDB_STORE);
+      store.put(val, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // Ignore IDB write errors
+  }
+}
 
 const DEFAULT_SYNC_STATUS: SyncStatus = {
   lastSyncTimestamp: null,
@@ -255,38 +310,49 @@ export async function initializeDatabase(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
-  if (typeof window !== "undefined" && !isDbInitialized) {
+  if (isDbInitialized) {
+    return {
+      items: itemsMemoryCache,
+      recipes: recipesMemoryCache,
+    };
+  }
+
+  // Stale-While-Revalidate: Try loading instantly from IndexedDB cache first
+  if (typeof window !== "undefined") {
     try {
-      const cachedData = localStorage.getItem(CACHE_KEY);
-      const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
-
-      if (cachedData && cachedTimestamp) {
-        const isFresh = Date.now() - Number(cachedTimestamp) < CACHE_TTL;
-        const bootstrap: BootstrapResponse = JSON.parse(cachedData);
-
+      const cachedBootstrap = await getIdbVal<BootstrapResponse>(CACHE_KEY);
+      if (cachedBootstrap && cachedBootstrap.items && cachedBootstrap.recipes) {
         updateMemoryCache({
-          items: bootstrap.items,
-          recipes: bootstrap.recipes,
-          prices: bootstrap.prices,
-          priceUpdatedAt: bootstrap.priceUpdatedAt,
-          syncStatus: bootstrap.syncStatus,
-          syncSettings: bootstrap.syncSettings,
-          priceProfiles: bootstrap.priceProfiles,
-          activePriceProfileId: bootstrap.activePriceProfileId,
+          items: cachedBootstrap.items,
+          recipes: cachedBootstrap.recipes,
+          prices: cachedBootstrap.prices,
+          priceUpdatedAt: cachedBootstrap.priceUpdatedAt,
+          syncStatus: cachedBootstrap.syncStatus,
+          syncSettings: cachedBootstrap.syncSettings,
+          priceProfiles: cachedBootstrap.priceProfiles,
+          activePriceProfileId: cachedBootstrap.activePriceProfileId,
         });
 
-        if (isFresh) {
-          return {
-            items: itemsMemoryCache,
-            recipes: recipesMemoryCache,
-          };
-        }
+        // Trigger background sync silently to update prices/recipes without blocking UI
+        void fetchBootstrapInBackground();
+
+        return {
+          items: itemsMemoryCache,
+          recipes: recipesMemoryCache,
+        };
       }
     } catch (e) {
-      console.warn("Error al leer la caché local:", e);
+      console.warn("Error al leer la caché IndexedDB:", e);
     }
   }
 
+  return await fetchBootstrapInBackground();
+}
+
+async function fetchBootstrapInBackground(): Promise<{
+  items: DofusItem[];
+  recipes: Record<number, DofusRecipe>;
+}> {
   if (bootstrapPromise) {
     const existingBootstrap = await bootstrapPromise;
     return {
@@ -303,12 +369,7 @@ export async function initializeDatabase(): Promise<{
     const bootstrap = await bootstrapPromise;
 
     if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(bootstrap));
-        localStorage.setItem(CACHE_TIMESTAMP_KEY, String(Date.now()));
-      } catch (e) {
-        console.warn("No se pudo guardar en la caché local:", e);
-      }
+      void setIdbVal(CACHE_KEY, bootstrap);
     }
 
     updateMemoryCache({
@@ -322,6 +383,12 @@ export async function initializeDatabase(): Promise<{
       activePriceProfileId: bootstrap.activePriceProfileId,
     });
 
+    return {
+      items: itemsMemoryCache,
+      recipes: recipesMemoryCache,
+    };
+  } catch (err) {
+    console.warn("Falló la carga de bootstrap en segundo plano:", err);
     return {
       items: itemsMemoryCache,
       recipes: recipesMemoryCache,
@@ -470,6 +537,10 @@ export function getImportedItems(): DofusItem[] {
   });
 }
 
+const presetItemMap = new Map<number, PresetCraftableItem>(
+  PRESET_CRAFTABLE_ITEMS.map((item) => [item.id, item]),
+);
+
 export function getCraftableItemsSnapshot(): CraftableItem[] {
   const importedItems = getImportedItems();
   const storedRecipes = getStoredRecipes();
@@ -487,9 +558,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
 
     processedResultIds.add(resultId);
     const existingItem = importedMap.get(resultId);
-    const presetItem = PRESET_CRAFTABLE_ITEMS.find(
-      (item) => item.id === resultId,
-    );
+    const presetItem = presetItemMap.get(resultId);
     const itemToUse = existingItem || presetItem;
 
     if (itemToUse && isOmittedItem(itemToUse)) {

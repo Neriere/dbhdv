@@ -23,6 +23,8 @@ import {
   Hammer,
   AlertCircle,
   Database,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -71,8 +73,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const [activePriceProfileId, setActivePriceProfileId] = useState<number>(() => getActivePriceProfileId());
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeCategory, setActiveCategory] = useState<PriceFilterCategory>('all');
-  const [displayLimit, setDisplayLimit] = useState<number>(60);
+  const ITEMS_PER_PAGE = 50;
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
+
+  // Reset page whenever search or category changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeCategory]);
 
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
 
@@ -304,6 +312,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     return result;
   }, [items, searchTerm, activeCategory, marketPrices, recipeIngredientIds]);
 
+  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE) || 1;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedItems = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
+    return filteredItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredItems, safeCurrentPage]);
+
   // Compute live category item counts
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -460,7 +476,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                     key={cat.id}
                     onClick={() => {
                       setActiveCategory(isActive ? 'all' : cat.id);
-                      setDisplayLimit(60);
                     }}
                     className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between gap-1.5 ${
                       isActive
@@ -487,7 +502,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => { setActiveCategory('equipment'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('equipment')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
                   activeCategory === 'equipment'
                     ? 'bg-blue-500/20 border-blue-500 text-blue-300 shadow-sm'
@@ -497,7 +512,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 Equipables ({categoryCounts.equipment})
               </button>
               <button
-                onClick={() => { setActiveCategory('craft_ingredients'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('craft_ingredients')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'craft_ingredients'
                     ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
@@ -508,7 +523,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 Ingredientes ({categoryCounts.craft_ingredients})
               </button>
               <button
-                onClick={() => { setActiveCategory('monsters'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('monsters')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
                   activeCategory === 'monsters'
                     ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
@@ -526,7 +541,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => { setActiveCategory('without_price'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('without_price')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'without_price'
                     ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-sm'
@@ -537,7 +552,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 Sin precio ({categoryCounts.without_price})
               </button>
               <button
-                onClick={() => { setActiveCategory('has_price'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('has_price')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'has_price'
                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
@@ -548,7 +563,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 Con precio ({categoryCounts.has_price})
               </button>
               <button
-                onClick={() => { setActiveCategory('all'); setDisplayLimit(60); }}
+                onClick={() => setActiveCategory('all')}
                 className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
                   activeCategory === 'all'
                     ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
@@ -572,7 +587,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredItems.slice(0, displayLimit).map((item) => {
+            {paginatedItems.map((item) => {
               const currentPrice = Number(marketPrices[item.id]) || 0;
               const draftVal = priceDrafts[item.id] !== undefined ? priceDrafts[item.id] : currentPrice > 0 ? String(currentPrice) : '';
               const isSaved = savedFeedbackItemId === item.id;
@@ -636,7 +651,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                             🧪 Ingrediente
                           </span>
                         )}
-                        <span className="text-neutral-600">ID: {item.id}</span>
                       </div>
                     </div>
                   </div>
@@ -729,15 +743,45 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             })}
           </div>
 
-          {/* Load More Button */}
-          {filteredItems.length > displayLimit && (
-            <div className="text-center pt-4">
-              <button
-                onClick={() => setDisplayLimit((prev) => prev + 60)}
-                className="px-6 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 hover:text-white font-bold text-xs transition-all shadow-md"
-              >
-                Cargar más recursos ({filteredItems.length - displayLimit} restantes)
-              </button>
+          {/* Pagination Controls Bar */}
+          {filteredItems.length > 0 && (
+            <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md">
+              <span className="text-neutral-400 font-mono">
+                Mostrando{' '}
+                <strong className="text-white">
+                  {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
+                </strong>{' '}
+                a{' '}
+                <strong className="text-white">
+                  {Math.min(safeCurrentPage * ITEMS_PER_PAGE, filteredItems.length)}
+                </strong>{' '}
+                de <strong className="text-amber-400">{filteredItems.length}</strong> Objetos
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Atrás</span>
+                </button>
+
+                <span className="px-3 font-mono text-neutral-400 text-xs">
+                  Página <strong className="text-amber-400">{safeCurrentPage}</strong> de{' '}
+                  {totalPages}
+                </span>
+
+                <button
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                >
+                  <span>Siguiente</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
         </div>

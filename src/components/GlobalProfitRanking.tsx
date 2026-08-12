@@ -26,6 +26,8 @@ import {
   Drumstick,
   Fish,
   Heart,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { DofusItem, MarketPriceMap, RecipeTreeNode } from "../types";
 import { DOFUS_JOBS, getJobForItem, isOmittedItem } from "../data/dofusJobs";
@@ -79,6 +81,9 @@ interface GlobalProfitRankingProps {
 export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   onSelectRecipeForCalculator,
 }) => {
+  const ITEMS_PER_PAGE = 25;
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
   const [databaseVersion, setDatabaseVersion] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
@@ -90,6 +95,20 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   const [sortBy, setSortBy] = useState<
     "profit_desc" | "roi_desc" | "cost_asc" | "price_desc"
   >("profit_desc");
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    selectedJobId,
+    searchTerm,
+    minLevel,
+    maxLevel,
+    minProfit,
+    minRoi,
+    maxCraftCost,
+    sortBy,
+  ]);
 
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
   const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>(
@@ -234,8 +253,64 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
   ]);
 
+  // Compute total pages & current paginated rankings slice
+  const totalPages = Math.ceil(filteredRankings.length / ITEMS_PER_PAGE) || 1;
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedRankings = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
+    return filteredRankings.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredRankings, safeCurrentPage]);
+
   return (
     <div className="space-y-5">
+      {/* Job Selection Visual Cards Bar */}
+      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-3 shadow-lg space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase tracking-wider">
+            <Wrench className="w-4 h-4 text-amber-400" />
+            Selecciona un Oficio de Crafteo
+          </span>
+          <span className="text-[11px] font-mono text-neutral-500">
+            {selectedJobId === "all"
+              ? "Mostrando todos los oficios"
+              : `Filtrando por: ${DOFUS_JOBS.find((j) => j.id === selectedJobId)?.nameEs || ''}`}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+          <button
+            onClick={() => setSelectedJobId("all")}
+            className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+              selectedJobId === "all"
+                ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
+                : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Todos ({DOFUS_JOBS.length})</span>
+          </button>
+
+          {DOFUS_JOBS.map((job) => {
+            const isSelected = selectedJobId === job.id;
+            const JobIcon = JOB_ICON_MAP[job.icon] || Wrench;
+            return (
+              <button
+                key={job.id}
+                onClick={() => setSelectedJobId(job.id)}
+                className={`px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+                  isSelected
+                    ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
+                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
+                }`}
+              >
+                <JobIcon className="w-3.5 h-3.5" />
+                <span>{job.nameEs}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-4 shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2.5">
@@ -249,13 +324,15 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   {filteredRankings.length} Recetas
                 </span>
               </h2>
-              <p className="text-xs text-neutral-400">Mayor ganancia neta.</p>
+              <p className="text-xs text-neutral-400">
+                Paginado en bloques de 25 objetos.
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
             <span className="text-neutral-500 text-[11px] font-mono mr-1">
-              Rápido:
+              Filtro Rápido:
             </span>
             <button
               onClick={() => {
@@ -296,47 +373,37 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
             >
               &gt;25k K / +20% ROI
             </button>
-            <button
-              onClick={() => {
-                setMinProfit(100000);
-                setMinRoi(40);
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                minProfit === 100000
-                  ? "bg-emerald-500 text-black font-bold"
-                  : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800"
-              }`}
-            >
-              &gt;100k K / +40% ROI
-            </button>
           </div>
         </div>
 
         {/* Filter Controls Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-          {/* Job Dropdown Selector */}
+          {/* Level Preset Range Filter */}
           <div>
             <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
-              <Wrench className="w-3.5 h-3.5 text-amber-400" />
-              Oficio
+              <Tag className="w-3.5 h-3.5 text-amber-400" />
+              Rango de Nivel
             </label>
             <select
-              value={selectedJobId}
-              onChange={(e) =>
-                setSelectedJobId(
-                  e.target.value === "all" ? "all" : Number(e.target.value),
-                )
-              }
+              value={`${minLevel}-${maxLevel}`}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "all") {
+                  setMinLevel(1);
+                  setMaxLevel(200);
+                } else {
+                  const [min, max] = val.split("-").map(Number);
+                  setMinLevel(min);
+                  setMaxLevel(max);
+                }
+              }}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-medium focus:border-amber-500 focus:outline-none"
             >
-              <option value="all">
-                Todos los Oficios ({DOFUS_JOBS.length})
-              </option>
-              {DOFUS_JOBS.map((job) => (
-                <option key={job.id} value={job.id}>
-                  {job.nameEs}
-                </option>
-              ))}
+              <option value="all">Todos los Niveles (1-200)</option>
+              <option value="1-50">Nivel 1 - 50</option>
+              <option value="51-100">Nivel 51 - 100</option>
+              <option value="101-150">Nivel 101 - 150</option>
+              <option value="151-200">Nivel 151 - 200</option>
             </select>
           </div>
 
@@ -439,8 +506,9 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60 font-sans">
-                {filteredRankings.slice(0, 100).map((entry, idx) => {
-                  const rank = idx + 1;
+                {paginatedRankings.map((entry, idx) => {
+                  const absoluteIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE + idx;
+                  const rank = absoluteIndex + 1;
                   const item = entry.item;
                   const itemName = getItemName(item);
                   const iconUrl = getItemIconUrl(item);
@@ -614,6 +682,55 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Bar Footer */}
+        {filteredRankings.length > 0 && (
+          <div className="bg-[#141414] border-t border-neutral-800 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-neutral-400 font-mono">
+              Mostrando{" "}
+              <strong className="text-white">
+                {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
+              </strong>{" "}
+              a{" "}
+              <strong className="text-white">
+                {Math.min(
+                  safeCurrentPage * ITEMS_PER_PAGE,
+                  filteredRankings.length,
+                )}
+              </strong>{" "}
+              de <strong className="text-amber-400">{filteredRankings.length}</strong>{" "}
+              objetos
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={safeCurrentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Atrás</span>
+              </button>
+
+              <div className="flex items-center gap-1 font-mono px-2">
+                <span className="text-amber-400 font-bold">
+                  {safeCurrentPage}
+                </span>
+                <span className="text-neutral-500">/</span>
+                <span className="text-neutral-400">{totalPages}</span>
+              </div>
+
+              <button
+                disabled={safeCurrentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+              >
+                <span>Siguiente</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import path from "path";
 import basicAuth from "express-basic-auth";
 import {
@@ -42,27 +43,39 @@ initDB()
 
 const PORT = Number(process.env.PORT || process.env.APP_PORT || 3000);
 const HOST = process.env.APP_HOST || "0.0.0.0";
-const BASIC_AUTH_USER = getRequiredEnv("APP_BASIC_AUTH_USER");
-const BASIC_AUTH_PASSWORD = getRequiredEnv("APP_BASIC_AUTH_PASSWORD");
+const BASIC_AUTH_USER = process.env.APP_BASIC_AUTH_USER;
+const BASIC_AUTH_PASSWORD = process.env.APP_BASIC_AUTH_PASSWORD;
 const BASIC_AUTH_REALM =
   process.env.APP_BASIC_AUTH_REALM || "Acceso Privado DofusDB";
 
+app.use(compression());
 app.use(express.json());
-
-app.use(
-  basicAuth({
-    users: { [BASIC_AUTH_USER]: BASIC_AUTH_PASSWORD },
-    challenge: true,
-    realm: BASIC_AUTH_REALM,
-  }),
-);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
 });
 
+if (
+  BASIC_AUTH_USER &&
+  BASIC_AUTH_PASSWORD &&
+  BASIC_AUTH_USER !== "missing-env-var" &&
+  BASIC_AUTH_PASSWORD !== "missing-env-var"
+) {
+  app.use(
+    basicAuth({
+      users: { [BASIC_AUTH_USER]: BASIC_AUTH_PASSWORD },
+      challenge: true,
+      realm: BASIC_AUTH_REALM,
+    }),
+  );
+}
+
 app.get("/api/local-db/bootstrap", async (req, res) => {
   try {
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=5, s-maxage=30, stale-while-revalidate=300",
+    );
     const data = await getBootstrapData();
     res.json(data);
   } catch (error) {
@@ -437,22 +450,5 @@ app.get("/api/dofusdb/effects", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-if (process.env.NODE_ENV !== "production") {
-  import("vite").then(({ createServer: createViteServer }) => {
-    createViteServer({ server: { middlewareMode: true }, appType: "spa" }).then(
-      (vite) => {
-        app.use(vite.middlewares);
-        app.listen(PORT, HOST, () =>
-          console.log(`[DofusDB] running on http://localhost:${PORT}`),
-        );
-      },
-    );
-  });
-} else {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
-}
 
 export default app;

@@ -31,64 +31,69 @@ const UNITY_SERVER_PROFILES: Array<{
 ];
 
 export const database = createClient({
-  url: process.env.DATABASE_URL as string,
-  authToken: process.env.DATABASE_AUTH_TOKEN as string,
+  url: process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || "file:local.db",
+  authToken: process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || undefined,
 });
 
 export async function initDB() {
-  await database.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS items (
-      id INTEGER PRIMARY KEY,
-      level INTEGER NOT NULL DEFAULT 1,
-      type_id INTEGER NOT NULL DEFAULT 0,
-      super_category_id INTEGER NOT NULL DEFAULT 0,
-      icon_id INTEGER NOT NULL DEFAULT 0,
-      name_es TEXT NOT NULL DEFAULT '',
-      payload_json TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+  try {
+    await database.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS items (
+        id INTEGER PRIMARY KEY,
+        level INTEGER NOT NULL DEFAULT 1,
+        type_id INTEGER NOT NULL DEFAULT 0,
+        super_category_id INTEGER NOT NULL DEFAULT 0,
+        icon_id INTEGER NOT NULL DEFAULT 0,
+        name_es TEXT NOT NULL DEFAULT '',
+        payload_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS recipes (
-      result_id INTEGER PRIMARY KEY,
-      job_id INTEGER,
-      payload_json TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS recipes (
+        result_id INTEGER PRIMARY KEY,
+        job_id INTEGER,
+        payload_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS prices (
-      item_id INTEGER PRIMARY KEY,
-      price INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS prices (
+        item_id INTEGER PRIMARY KEY,
+        price INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY,
-      value_json TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS price_profiles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      slug TEXT NOT NULL UNIQUE,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS price_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS profile_prices (
-      profile_id INTEGER NOT NULL,
-      item_id INTEGER NOT NULL,
-      price INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (profile_id, item_id)
-    );
+      CREATE TABLE IF NOT EXISTS profile_prices (
+        profile_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, item_id)
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
-    CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
-    CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
-    CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
-  `);
+      CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
+      CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
+      CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
+      CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+    `);
+    console.log("[Database] Turso / LibSQL schemas initialized.");
+  } catch (e) {
+    console.warn("[Database] Database initialization error (fallback mode):", e);
+  }
 }
 
 let runningImportPromise: Promise<BootstrapData> | null = null;
@@ -278,7 +283,29 @@ async function getPriceProfiles(): Promise<PriceProfile[]> {
   ).filter((profile): profile is PriceProfile => Boolean(profile));
 }
 
+let serverBootstrapCache: { data: BootstrapData; expiresAt: number } | null = null;
+const SERVER_CACHE_TTL_MS = 60 * 1000; // 60s warm serverless context cache
+
+export function invalidateServerBootstrapCache(): void {
+  serverBootstrapCache = null;
+}
+
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
+  const existingResult = await database.execute(
+    `SELECT id, name, slug, is_default FROM price_profiles ORDER BY id ASC`,
+  );
+  if (existingResult.rows.length >= UNITY_SERVER_PROFILES.length) {
+    const defaultProfile =
+      existingResult.rows.find((r) => r.slug === "private") ||
+      existingResult.rows[0];
+    return {
+      id: defaultProfile.id as number,
+      name: defaultProfile.name as string,
+      slug: defaultProfile.slug as string,
+      isDefault: (defaultProfile.is_default as number) === 1,
+    };
+  }
+
   const validSlugs = UNITY_SERVER_PROFILES.map((p) => p.slug);
   await database.execute({
     sql: `DELETE FROM price_profiles WHERE slug NOT IN (${validSlugs.map(() => "?").join(", ")})`,
@@ -288,19 +315,13 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
   const now = Date.now();
   const statements = [];
   for (const profile of UNITY_SERVER_PROFILES) {
-    const existingResult = await database.execute({
-      sql: "SELECT id FROM price_profiles WHERE slug = ? LIMIT 1",
-      args: [profile.slug],
+    statements.push({
+      sql: `INSERT OR IGNORE INTO price_profiles (name, slug, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      args: [profile.name, profile.slug, profile.isDefault ? 1 : 0, now, now],
     });
-    if (!existingResult.rows.length) {
-      statements.push({
-        sql: `INSERT INTO price_profiles (name, slug, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-        args: [profile.name, profile.slug, profile.isDefault ? 1 : 0, now, now],
-      });
-    }
   }
 
-  if (statements.length > 0) await database.batch(statements);
+  if (statements.length > 0) await database.batch(statements, "write");
   await database.execute(
     "UPDATE price_profiles SET is_default = CASE WHEN slug = 'private' THEN 1 ELSE 0 END",
   );
@@ -539,17 +560,82 @@ async function maybeStartAutomaticSync(): Promise<void> {
 }
 
 async function buildBootstrapData(): Promise<BootstrapData> {
+  if (serverBootstrapCache && Date.now() < serverBootstrapCache.expiresAt) {
+    return serverBootstrapCache.data;
+  }
+
   const activeProfileId = await getActivePriceProfileId();
-  return {
-    items: await getAllItems(),
-    recipes: await getAllRecipes(),
-    prices: await getPricesMap(activeProfileId),
-    priceUpdatedAt: await getPriceUpdatedAtMap(activeProfileId),
-    syncStatus: await getSyncStatus(),
-    syncSettings: await getSyncSettings(),
-    priceProfiles: await getPriceProfiles(),
+
+  // Execute all bootstrap queries in 1 single HTTP round-trip to Turso
+  const batchResults = await database.batch([
+    { sql: "SELECT payload_json FROM items ORDER BY name_es COLLATE NOCASE ASC, id ASC", args: [] },
+    { sql: "SELECT payload_json FROM recipes ORDER BY result_id ASC", args: [] },
+    { sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ?", args: [activeProfileId] },
+    { sql: "SELECT value_json FROM meta WHERE key = 'sync_status'", args: [] },
+    { sql: "SELECT value_json FROM meta WHERE key = 'sync_settings'", args: [] },
+    { sql: "SELECT id, name, slug, is_default FROM price_profiles ORDER BY id ASC", args: [] },
+  ], "read");
+
+  const items: DofusItem[] = batchResults[0].rows.map((row) =>
+    parseJsonValue<DofusItem>(row.payload_json as string),
+  );
+
+  const recipes: Record<number, DofusRecipe> = {};
+  for (const row of batchResults[1].rows) {
+    const recipe = parseJsonValue<DofusRecipe>(row.payload_json as string);
+    recipes[recipe.resultId] = recipe;
+  }
+
+  const prices: MarketPriceMap = {};
+  const priceUpdatedAt: PriceUpdatedAtMap = {};
+  for (const row of batchResults[2].rows) {
+    const id = row.item_id as number;
+    prices[id] = row.price as number;
+    priceUpdatedAt[id] = row.updated_at as number;
+  }
+
+  const syncStatusRow = batchResults[3].rows[0];
+  const syncStatus: SyncStatus = syncStatusRow
+    ? parseJsonValue<SyncStatus>(syncStatusRow.value_json as string)
+    : getDefaultSyncStatus();
+
+  const syncSettingsRow = batchResults[4].rows[0];
+  const syncSettings: SyncSettings = syncSettingsRow
+    ? parseJsonValue<SyncSettings>(syncSettingsRow.value_json as string)
+    : DEFAULT_SYNC_SETTINGS;
+
+  const bySlug = new Map(
+    batchResults[5].rows.map((row) => [
+      row.slug as string,
+      {
+        id: row.id as number,
+        name: row.name as string,
+        slug: row.slug as string,
+        isDefault: (row.is_default as number) === 1,
+      } as PriceProfile,
+    ]),
+  );
+  const priceProfiles = UNITY_SERVER_PROFILES.map((profile) =>
+    bySlug.get(profile.slug),
+  ).filter((profile): profile is PriceProfile => Boolean(profile));
+
+  const resultData: BootstrapData = {
+    items,
+    recipes,
+    prices,
+    priceUpdatedAt,
+    syncStatus,
+    syncSettings,
+    priceProfiles,
     activePriceProfileId: activeProfileId,
   };
+
+  serverBootstrapCache = {
+    data: resultData,
+    expiresAt: Date.now() + SERVER_CACHE_TTL_MS,
+  };
+
+  return resultData;
 }
 
 async function importAllDofusDataInternal(): Promise<BootstrapData> {
@@ -769,6 +855,7 @@ export async function setItemPrice(
   price: number,
   profileId?: number,
 ) {
+  invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await upsertPrice(pid, itemId, price);
   return {
@@ -782,6 +869,7 @@ export async function overwritePrices(
   prices: MarketPriceMap,
   profileId?: number,
 ) {
+  invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await replaceAllPrices(pid, prices);
   return {
@@ -792,6 +880,7 @@ export async function overwritePrices(
 }
 
 export async function deleteAllStoredPrices(profileId?: number) {
+  invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await clearAllPrices(pid);
   return {
@@ -802,6 +891,7 @@ export async function deleteAllStoredPrices(profileId?: number) {
 }
 
 export async function changeActivePriceProfile(profileId: number) {
+  invalidateServerBootstrapCache();
   const pid = await setActivePriceProfileId(profileId);
   return {
     activePriceProfileId: pid,
