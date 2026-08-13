@@ -39,6 +39,7 @@ export interface DofusItem {
   recipeIds?: number[];
   itemTypeId?: number;
   price?: number;
+  hasRecipe?: boolean;
 }
 
 export interface DofusRecipeIngredient {

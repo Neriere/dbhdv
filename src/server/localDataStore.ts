@@ -44,6 +44,7 @@ export async function initDB() {
         super_category_id INTEGER NOT NULL DEFAULT 0,
         icon_id INTEGER NOT NULL DEFAULT 0,
         name_es TEXT NOT NULL DEFAULT '',
+        has_recipe INTEGER NOT NULL DEFAULT 0,
         payload_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -53,6 +54,13 @@ export async function initDB() {
         job_id INTEGER,
         payload_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS recipe_ingredients (
+        recipe_id INTEGER NOT NULL,
+        ingredient_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        PRIMARY KEY (recipe_id, ingredient_id)
       );
 
       CREATE TABLE IF NOT EXISTS prices (
@@ -86,9 +94,23 @@ export async function initDB() {
 
       CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
       CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
+      CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
+      CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
+      CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
     `);
+
+    try {
+      await database.execute("ALTER TABLE items ADD COLUMN has_recipe INTEGER NOT NULL DEFAULT 0;");
+    } catch {
+      // Column might already exist
+    }
+
+    await database.execute(`
+      UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes);
+    `);
+
     console.log("[Database] Turso / LibSQL schemas initialized.");
   } catch (e) {
     console.warn("[Database] Database initialization error (fallback mode):", e);
@@ -464,10 +486,29 @@ async function getPriceUpdatedAtMap(
   return updatedAtMap;
 }
 
+async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
+  const statements = [];
+  for (const recipe of recipes) {
+    if (!recipe.ingredientIds || !recipe.quantities) continue;
+    for (let i = 0; i < recipe.ingredientIds.length; i += 1) {
+      const ingId = recipe.ingredientIds[i];
+      const qty = recipe.quantities[i] || 1;
+      if (!ingId) continue;
+      statements.push({
+        sql: `INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity) VALUES (?, ?, ?) ON CONFLICT(recipe_id, ingredient_id) DO UPDATE SET quantity = excluded.quantity`,
+        args: [recipe.resultId, ingId, qty],
+      });
+    }
+  }
+  for (let i = 0; i < statements.length; i += 100) {
+    await database.batch(statements.slice(i, i + 100), "write");
+  }
+}
+
 async function upsertItems(items: DofusItem[]): Promise<void> {
   const now = Date.now();
   const statements = items.map((item) => ({
-    sql: `INSERT INTO items (id, level, type_id, super_category_id, icon_id, name_es, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET level = excluded.level, type_id = excluded.type_id, super_category_id = excluded.super_category_id, icon_id = excluded.icon_id, name_es = excluded.name_es, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
+    sql: `INSERT INTO items (id, level, type_id, super_category_id, icon_id, name_es, has_recipe, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET level = excluded.level, type_id = excluded.type_id, super_category_id = excluded.super_category_id, icon_id = excluded.icon_id, name_es = excluded.name_es, has_recipe = excluded.has_recipe, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
     args: [
       item.id,
       item.level || 1,
@@ -475,6 +516,7 @@ async function upsertItems(items: DofusItem[]): Promise<void> {
       item.type?.superCategoryId || 0,
       item.iconId || 0,
       item.name?.es || "",
+      item.hasRecipe ? 1 : 0,
       JSON.stringify(item),
       now,
     ],
@@ -496,11 +538,27 @@ async function upsertRecipes(recipes: DofusRecipe[]): Promise<void> {
   }));
   for (let i = 0; i < statements.length; i += 100)
     await database.batch(statements.slice(i, i + 100), "write");
+
+  await updateRecipeIngredients(recipes);
+
+  const resultIds = recipes.map((r) => r.resultId).filter(Boolean);
+  if (resultIds.length > 0) {
+    for (let i = 0; i < resultIds.length; i += 100) {
+      const chunk = resultIds.slice(i, i + 100);
+      const placeholders = chunk.map(() => "?").join(",");
+      await database.execute({
+        sql: `UPDATE items SET has_recipe = 1 WHERE id IN (${placeholders})`,
+        args: chunk,
+      });
+    }
+  }
 }
 
 async function replaceAllRecipes(recipes: DofusRecipe[]): Promise<void> {
   await database.execute("DELETE FROM recipes");
+  await database.execute("DELETE FROM recipe_ingredients");
   await upsertRecipes(recipes);
+  await database.execute("UPDATE items SET has_recipe = 0 WHERE id NOT IN (SELECT result_id FROM recipes)");
 }
 
 async function upsertPrice(
@@ -773,6 +831,10 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
   const importedItems = Array.from(itemsMap.values());
   const importedRecipes = Array.from(recipesMap.values());
 
+  for (const item of importedItems) {
+    item.hasRecipe = recipesMap.has(item.id);
+  }
+
   status.totalImported = importedItems.length;
   status.recipesCount = importedRecipes.length;
 
@@ -885,14 +947,47 @@ export async function getStoredRecipeByResultId(resultId: number) {
 export async function getOrFetchRecipeByResultId(resultId: number) {
   const stored = await getStoredRecipeByResultId(resultId);
   if (stored) return stored;
-  const res = await fetchJson<{ data?: Record<string, unknown>[] }>(
-    `${DOFUS_API_BASE}/recipes?resultId=${resultId}`,
-  );
-  const remote = res.data?.[0];
-  if (!remote) return null;
-  const norm = normalizeRecipe(remote);
-  if (norm) await upsertRecipes([norm]);
-  return norm;
+
+  try {
+    const itemCheck = await database.execute({
+      sql: "SELECT has_recipe FROM items WHERE id = ?",
+      args: [resultId],
+    });
+    if (itemCheck.rows.length > 0 && Number(itemCheck.rows[0].has_recipe) === 0) {
+      return null;
+    }
+  } catch {
+    // Ignore if table or column missing
+  }
+
+  try {
+    const res = await fetchJson<{ data?: Record<string, unknown>[] }>(
+      `${DOFUS_API_BASE}/recipes?resultId=${resultId}`,
+    );
+    const remote = res.data?.[0];
+    if (!remote) {
+      try {
+        await database.execute({
+          sql: "UPDATE items SET has_recipe = 0 WHERE id = ?",
+          args: [resultId],
+        });
+      } catch {}
+      return null;
+    }
+    const norm = normalizeRecipe(remote);
+    if (norm) {
+      await upsertRecipes([norm]);
+      try {
+        await database.execute({
+          sql: "UPDATE items SET has_recipe = 1 WHERE id = ?",
+          args: [resultId],
+        });
+      } catch {}
+    }
+    return norm;
+  } catch {
+    return null;
+  }
 }
 
 export async function resolveMissingNames(itemIds: number[]) {

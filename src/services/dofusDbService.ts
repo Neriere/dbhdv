@@ -232,15 +232,29 @@ function mergePresetData(
 
   const mergedRecipes: Record<number, DofusRecipe> = { ...recipes };
   for (const preset of PRESET_CRAFTABLE_ITEMS) {
+    const itemWithFlag = {
+      ...preset,
+      hasRecipe: true,
+    };
     if (!itemMap.has(preset.id)) {
-      itemMap.set(preset.id, preset);
+      itemMap.set(preset.id, itemWithFlag);
     }
     if (preset.recipeData && !mergedRecipes[preset.recipeData.resultId]) {
       mergedRecipes[preset.recipeData.resultId] = preset.recipeData;
     }
   }
 
-  return { items: Array.from(itemMap.values()), recipes: mergedRecipes };
+  const allItems = Array.from(itemMap.values()).map((item) => {
+    if (item.hasRecipe === undefined) {
+      return {
+        ...item,
+        hasRecipe: Boolean(mergedRecipes[item.id]),
+      };
+    }
+    return item;
+  });
+
+  return { items: allItems, recipes: mergedRecipes };
 }
 
 function updateMemoryCache(payload: {
@@ -912,6 +926,8 @@ export async function saveAutomaticSyncSettings(
   return syncSettingsMemoryCache;
 }
 
+const knownNoRecipeSet = new Set<number>();
+
 export async function fetchRecipeByResultId(
   resultId: number,
 ): Promise<DofusRecipe | null> {
@@ -919,16 +935,31 @@ export async function fetchRecipeByResultId(
     return recipesMemoryCache[resultId];
   }
 
+  if (knownNoRecipeSet.has(resultId)) {
+    return null;
+  }
+
+  const cachedItem = itemsMemoryCache.find((item) => item.id === resultId);
+  if (cachedItem && cachedItem.hasRecipe === false) {
+    knownNoRecipeSet.add(resultId);
+    return null;
+  }
+
   try {
     const recipe = await requestJson<DofusRecipe>(
       `${LOCAL_DB_API_BASE}/recipes/${resultId}`,
     );
-    updateMemoryCache({
-      recipes: { ...recipesMemoryCache, [resultId]: recipe },
-    });
-    return recipe;
+    if (recipe) {
+      updateMemoryCache({
+        recipes: { ...recipesMemoryCache, [resultId]: recipe },
+      });
+      return recipe;
+    } else {
+      knownNoRecipeSet.add(resultId);
+      return null;
+    }
   } catch (error) {
-    console.warn(`No se pudo obtener la receta ${resultId}:`, error);
+    knownNoRecipeSet.add(resultId);
     return null;
   }
 }
@@ -1038,7 +1069,12 @@ export async function buildRecipeTree(
     return null;
   }
 
-  const recipe = await fetchRecipeByResultId(itemId);
+  const isCraftableByFlag = item.hasRecipe;
+  let recipe: DofusRecipe | null = null;
+  if (isCraftableByFlag !== false) {
+    recipe = await fetchRecipeByResultId(itemId);
+  }
+
   const isCraftable = !!recipe && recipe.ingredientIds.length > 0;
   const currentPrice = marketPrices[itemId] || item.price || 0;
 
