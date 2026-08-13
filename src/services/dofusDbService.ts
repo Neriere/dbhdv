@@ -170,6 +170,7 @@ export const CATEGORY_TYPE_IDS_MAP: Record<string, number[]> = {
   pescador: [41, 49, 134, 135, 64],
   cazador: [63, 69, 187, 56, 59, 150],
   ganadero: [99, 323, 326, 327],
+  fabricante: [82, 188, 271, 112, 217],
   monsters: [
     47, 48, 53, 54, 55, 56, 57, 59, 103, 104, 105, 106, 107, 108, 109, 110, 111,
     119, 15, 74, 96, 98, 152, 219, 229, 278,
@@ -253,10 +254,18 @@ function updateMemoryCache(payload: {
   activePriceProfileId?: number;
 }): void {
   if (payload.items || payload.recipes) {
-    const merged = mergePresetData(
-      payload.items ?? itemsMemoryCache,
-      payload.recipes ?? recipesMemoryCache,
-    );
+    const existingItemsMap = new Map<number, DofusItem>();
+    itemsMemoryCache.forEach((item) => existingItemsMap.set(item.id, item));
+    if (payload.items) {
+      payload.items.forEach((item) => existingItemsMap.set(item.id, item));
+    }
+    const combinedItems = Array.from(existingItemsMap.values());
+    const combinedRecipes = {
+      ...recipesMemoryCache,
+      ...(payload.recipes || {}),
+    };
+
+    const merged = mergePresetData(combinedItems, combinedRecipes);
     itemsMemoryCache = merged.items;
     recipesMemoryCache = merged.recipes;
   }
@@ -286,6 +295,20 @@ function updateMemoryCache(payload: {
   }
 
   isDbInitialized = true;
+
+  if (typeof window !== "undefined") {
+    void setIdbVal(CACHE_KEY, {
+      items: itemsMemoryCache,
+      recipes: recipesMemoryCache,
+      prices: pricesMemoryCache,
+      priceUpdatedAt: priceUpdatedAtMemoryCache,
+      syncStatus: syncStatusMemoryCache,
+      syncSettings: syncSettingsMemoryCache,
+      priceProfiles: priceProfilesMemoryCache,
+      activePriceProfileId: activePriceProfileIdMemoryCache,
+    });
+  }
+
   emitDatabaseUpdated();
 }
 
@@ -361,8 +384,16 @@ async function fetchBootstrapInBackground(): Promise<{
     };
   }
 
+  let profileQuery = "";
+  if (typeof window !== "undefined") {
+    const savedProfileId = localStorage.getItem("selected_dofus_price_profile_id");
+    if (savedProfileId && Number(savedProfileId) > 0) {
+      profileQuery = `?profileId=${savedProfileId}`;
+    }
+  }
+
   bootstrapPromise = requestJson<BootstrapResponse>(
-    `${LOCAL_DB_API_BASE}/bootstrap`,
+    `${LOCAL_DB_API_BASE}/bootstrap${profileQuery}`,
   );
 
   try {
@@ -513,6 +544,13 @@ export function getPriceProfiles(): PriceProfile[] {
 }
 
 export function getActivePriceProfileId(): number {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("selected_dofus_price_profile_id");
+    if (saved) {
+      const parsed = Number(saved);
+      if (parsed > 0) return parsed;
+    }
+  }
   return activePriceProfileIdMemoryCache;
 }
 
@@ -552,7 +590,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
 
   for (const [resultIdStr, recipe] of Object.entries(storedRecipes)) {
     const resultId = Number(resultIdStr);
-    if (!resultId) {
+    if (!resultId || !recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
       continue;
     }
 
@@ -648,7 +686,54 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     });
   }
 
+  const unresolvedIds = resultList
+    .filter((item) => !item.name?.es || item.name.es.startsWith("Objeto #"))
+    .map((item) => item.id);
+
+  if (unresolvedIds.length > 0) {
+    void resolveMissingItemNamesInBatch(unresolvedIds);
+  }
+
   return resultList;
+}
+
+const attemptedItemIds = new Set<number>();
+let isResolvingMissingNames = false;
+
+export async function resolveMissingItemNamesInBatch(
+  itemIds: number[],
+): Promise<DofusItem[]> {
+  if (!itemIds || itemIds.length === 0 || isResolvingMissingNames) return [];
+
+  const idsToResolve = itemIds.filter((itemId) => {
+    const cachedItem = itemsMemoryCache.find((item) => item.id === itemId);
+    if (!cachedItem) return true;
+    const name = getItemName(cachedItem);
+    return !name || name.startsWith("Objeto #");
+  });
+
+  if (idsToResolve.length === 0) return [];
+
+  isResolvingMissingNames = true;
+  try {
+    const response = await requestJson<{ items?: DofusItem[]; updatedItems?: DofusItem[] }>(
+      `${LOCAL_DB_API_BASE}/items/batch-resolve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ itemIds: idsToResolve }),
+      },
+    );
+    const resolvedItems = response.updatedItems || response.items || [];
+    if (resolvedItems.length > 0) {
+      updateMemoryCache({ items: resolvedItems });
+    }
+    return resolvedItems;
+  } catch (error) {
+    console.warn("Error resolviendo nombres de ítems en lote:", error);
+    return [];
+  } finally {
+    isResolvingMissingNames = false;
+  }
 }
 
 export async function performFullItemImport(
@@ -786,6 +871,7 @@ export async function setActiveLocalPriceProfile(
   profileId: number,
 ): Promise<void> {
   if (typeof window !== "undefined") {
+    localStorage.setItem("selected_dofus_price_profile_id", String(profileId));
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
@@ -878,45 +964,6 @@ export async function fetchItemDetailsById(
   }
 }
 
-export async function resolveMissingItemNamesInBatch(
-  itemIds: number[],
-  onUpdated?: () => void,
-): Promise<void> {
-  const idsToResolve = itemIds.filter((itemId) => {
-    const cachedItem = itemsMemoryCache.find((item) => item.id === itemId);
-    return (
-      !cachedItem ||
-      !cachedItem.name?.es ||
-      cachedItem.name.es.startsWith("Objeto #")
-    );
-  });
-
-  if (idsToResolve.length === 0) {
-    return;
-  }
-
-  const response = await requestJson<{ updatedItems: DofusItem[] }>(
-    `${LOCAL_DB_API_BASE}/items/resolve-names`,
-    {
-      method: "POST",
-      body: JSON.stringify({ itemIds: idsToResolve }),
-    },
-  );
-
-  if (response.updatedItems.length === 0) {
-    return;
-  }
-
-  const itemsMap = new Map<number, DofusItem>();
-  itemsMemoryCache.forEach((item) => itemsMap.set(item.id, item));
-  response.updatedItems.forEach((item) => itemsMap.set(item.id, item));
-  updateMemoryCache({ items: Array.from(itemsMap.values()) });
-
-  if (onUpdated) {
-    onUpdated();
-  }
-}
-
 export async function fetchCategoryItemsFromApi(
   categoryKey: string,
 ): Promise<DofusItem[]> {
@@ -946,6 +993,9 @@ export async function seedCoreResourcesAndRecipes(): Promise<void> {
     "minero",
     "pescador",
     "cazador",
+    "ganadero",
+    "fabricante",
+    "equipment",
     "monsters",
     "craft_ingredients",
   ];

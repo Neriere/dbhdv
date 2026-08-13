@@ -76,6 +76,10 @@ app.get("/api/local-db/bootstrap", async (req, res) => {
       "Cache-Control",
       "public, max-age=5, s-maxage=30, stale-while-revalidate=300",
     );
+    const profileIdParam = Number(req.query.profileId);
+    if (profileIdParam && !Number.isNaN(profileIdParam) && profileIdParam > 0) {
+      await changeActivePriceProfile(profileIdParam);
+    }
     const data = await getBootstrapData();
     res.json(data);
   } catch (error) {
@@ -222,6 +226,30 @@ app.put("/api/local-db/price-profiles/active", async (req, res) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Active profile update failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/items/batch-resolve", async (req, res) => {
+  try {
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    const items = await resolveMissingNames(itemIds);
+    res.json({ items, updatedItems: items });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Batch resolve failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/items/resolve-names", async (req, res) => {
+  try {
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    const items = await resolveMissingNames(itemIds);
+    res.json({ items, updatedItems: items });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Resolve names failed";
     res.status(500).json({ error: message });
   }
 });

@@ -339,9 +339,9 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
       fr: "Trophée de tacle.",
     },
     level: 150,
-    typeId: 151,
+    typeId: 271,
     type: {
-      id: 151,
+      id: 271,
       name: { es: "Trofeo", fr: "Trophée" },
       superCategoryId: 1,
     },
@@ -364,6 +364,80 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
       resultId: 12624,
       ingredientIds: [16489, 7035, 14684],
       quantities: [10, 5, 2],
+    },
+  },
+
+  // 10b. Fabricante - Trofeo Espabilador (Niv. 150)
+  {
+    id: 15410,
+    name: { es: "Espabilador", fr: "Remueur" },
+    description: {
+      es: "Otorga 1 PA siempre que los bonos de conjunto sean inferiores a 2.",
+      fr: "Donne 1 PA si bonus de panoplie < 2.",
+    },
+    level: 150,
+    typeId: 271,
+    type: {
+      id: 271,
+      name: { es: "Trofeo", fr: "Trophée" },
+      superCategoryId: 1,
+    },
+    iconId: 151082,
+    jobId: 60, // Fabricante
+    jobNameEs: "Fabricante",
+    defaultMarketSalePrice: 1200000,
+    possibleEffects: [
+      {
+        id: 1201,
+        effectId: 1,
+        characteristic: 1,
+        from: 1,
+        to: 1,
+        formatted: "+1 PA",
+      },
+    ],
+    recipeData: {
+      id: 10110,
+      resultId: 15410,
+      ingredientIds: [16489, 7035, 14684],
+      quantities: [15, 10, 3],
+    },
+  },
+
+  // 10c. Fabricante - Trofeo Nómada (Niv. 150)
+  {
+    id: 15411,
+    name: { es: "Nómada", fr: "Nomade" },
+    description: {
+      es: "Otorga 1 PM y PM suplementarios si no hay bono de conjunto.",
+      fr: "Donne 1 PM si bonus de panoplie < 2.",
+    },
+    level: 150,
+    typeId: 271,
+    type: {
+      id: 271,
+      name: { es: "Trofeo", fr: "Trophée" },
+      superCategoryId: 1,
+    },
+    iconId: 151083,
+    jobId: 60, // Fabricante
+    jobNameEs: "Fabricante",
+    defaultMarketSalePrice: 1100000,
+    possibleEffects: [
+      {
+        id: 1202,
+        effectId: 1,
+        characteristic: 1,
+        from: 1,
+        to: 1,
+        formatted: "+1 PM",
+      },
+    ],
+    recipeData: {
+      id: 10111,
+      resultId: 15411,
+      ingredientIds: [16489, 7035, 14684],
+      quantities: [15, 10, 3],
     },
   },
 

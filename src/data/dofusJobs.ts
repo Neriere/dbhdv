@@ -59,7 +59,7 @@ export function isOmittedItem(item: {
   // 4. Cosmetics, Appearance, Roleplay, Roleplay Buffs, Titles, Emotes, Quests type IDs
   if (
     [
-      113, 166, 173, 188, 199, 200, 203, 204, 214, 222, 246, 247, 248, 249, 250,
+      113, 166, 173, 199, 200, 203, 204, 214, 222, 246, 247, 248, 249, 250,
       251, 252, 304, 324,
     ].includes(typeId)
   ) {
@@ -310,7 +310,6 @@ export const COSMETIC_TYPE_IDS = [
   121, // Arnes
   139, // Escudo Ceremonial
   140, // Sombrero Ceremonial
-  151, // Capa Ceremonial
   190, // Mascota Ceremonial
   202, // Traje Ceremonial
   224, // Dofus Ceremonial
@@ -345,6 +344,12 @@ export function isCosmeticItem(item: {
 }): boolean {
   if (!item) return false;
 
+  const typeId = item.typeId || item.type?.id;
+  // Never treat Trophies (151, 271), Idols (188), Shields (82), or Prisms (112, 217) as cosmetic!
+  if (typeId && [151, 271, 188, 82, 112, 217].includes(typeId)) {
+    return false;
+  }
+
   // Check superCategoryId
   if (
     item.type?.superCategoryId &&
@@ -354,7 +359,6 @@ export function isCosmeticItem(item: {
   }
 
   // Check typeId
-  const typeId = item.typeId || item.type?.id;
   if (typeId && COSMETIC_TYPE_IDS.includes(typeId)) {
     return true;
   }

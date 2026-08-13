@@ -127,20 +127,38 @@ function parseJsonValue<T>(rawValue: string): T {
 }
 
 function getLocalizedText(value: unknown, fallback: string): string {
-  if (typeof value === "string") return value;
+  if (typeof value === "string" && value.trim().length > 0) return value;
   if (value && typeof value === "object") {
     const localized = value as Record<string, unknown>;
-    return (
-      (typeof localized.es === "string" && localized.es) ||
-      (typeof localized.fr === "string" && localized.fr) ||
-      (typeof localized.en === "string" && localized.en) ||
-      fallback
-    );
+    const es = typeof localized.es === "string" ? localized.es.trim() : "";
+    const fr = typeof localized.fr === "string" ? localized.fr.trim() : "";
+    const en = typeof localized.en === "string" ? localized.en.trim() : "";
+    if (es.length > 0) return es;
+    if (fr.length > 0) return fr;
+    if (en.length > 0) return en;
   }
   return fallback;
 }
 
-function normalizeSpanishItem(rawItem: Record<string, unknown>): DofusItem {
+function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusItem {
+  if (!rawInput) {
+    return {
+      id: 0,
+      level: 1,
+      typeId: 0,
+      iconId: 0,
+      name: { es: "Objeto Desconocido", fr: "", en: "" },
+      type: { id: 0, superCategoryId: 0, name: { es: "", fr: "", en: "" } },
+    };
+  }
+
+  let rawItem = rawInput;
+  if (Array.isArray(rawInput.data) && rawInput.data.length > 0) {
+    rawItem = rawInput.data[0] as Record<string, unknown>;
+  } else if (rawInput.item && typeof rawInput.item === "object") {
+    rawItem = rawInput.item as Record<string, unknown>;
+  }
+
   const extractedId = Number(
     rawItem.ankama_id ??
       rawItem.ankamaId ??
@@ -237,12 +255,18 @@ function normalizeRecipe(
   }
 
   if (ingredientIds.length === 0) return null;
+  const extractedJobId = Number(
+    rawRecipe.jobId ??
+      rawRecipe.job_id ??
+      (rawRecipe.job as Record<string, unknown> | undefined)?.id ??
+      0,
+  );
   return {
     id: Number(rawRecipe.id) || resultId,
     resultId,
     ingredientIds,
     quantities,
-    jobId: Number(rawRecipe.jobId ?? 0) || undefined,
+    jobId: extractedJobId > 0 ? extractedJobId : undefined,
   };
 }
 
@@ -812,12 +836,40 @@ export async function getOrFetchItemById(itemId: number) {
   const stored = await getStoredItemById(itemId);
   if (stored && stored.name?.es && !stored.name.es.startsWith("Objeto #"))
     return stored;
-  const remote = await fetchJson<Record<string, unknown>>(
-    `${DOFUS_API_BASE}/items/${itemId}?lang=es`,
-  );
-  const normalized = normalizeSpanishItem(remote);
-  await upsertItems([normalized]);
-  return normalized;
+
+  try {
+    const queryRes = await fetchJson<{ data?: Record<string, unknown>[] }>(
+      `${DOFUS_API_BASE}/items?id=${itemId}&lang=es`,
+    );
+    if (queryRes.data && queryRes.data.length > 0) {
+      const normalized = normalizeSpanishItem(queryRes.data[0]);
+      if (
+        normalized.id &&
+        normalized.name?.es &&
+        !normalized.name.es.startsWith("Objeto #")
+      ) {
+        await upsertItems([normalized]);
+        return normalized;
+      }
+    }
+
+    const remote = await fetchJson<Record<string, unknown>>(
+      `${DOFUS_API_BASE}/items/${itemId}?lang=es`,
+    );
+    const normalized = normalizeSpanishItem(remote);
+    if (
+      normalized.id &&
+      normalized.name?.es &&
+      !normalized.name.es.startsWith("Objeto #")
+    ) {
+      await upsertItems([normalized]);
+      return normalized;
+    }
+  } catch (e) {
+    console.warn(`Error al consultar item remoto ${itemId}:`, e);
+  }
+
+  return stored;
 }
 
 export async function getStoredRecipeByResultId(resultId: number) {
@@ -844,11 +896,27 @@ export async function getOrFetchRecipeByResultId(resultId: number) {
 }
 
 export async function resolveMissingNames(itemIds: number[]) {
+  if (!itemIds || itemIds.length === 0) return [];
+  const uniqueIds = Array.from(new Set(itemIds)).filter((id) => Number(id) > 0);
   const resolved: DofusItem[] = [];
-  for (const id of itemIds) {
-    const item = await getOrFetchItemById(id);
-    if (item) resolved.push(item);
+  const chunkSize = 15;
+
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunk = uniqueIds.slice(i, i + chunkSize);
+    const results = await Promise.allSettled(
+      chunk.map((id) => getOrFetchItemById(id)),
+    );
+    for (const res of results) {
+      if (res.status === "fulfilled" && res.value && res.value.name?.es && !res.value.name.es.startsWith("Objeto #")) {
+        resolved.push(res.value);
+      }
+    }
   }
+
+  if (resolved.length > 0) {
+    invalidateServerBootstrapCache();
+  }
+
   return resolved;
 }
 

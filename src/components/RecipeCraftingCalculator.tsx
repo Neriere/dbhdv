@@ -384,14 +384,27 @@ export const RecipeCraftingCalculator: React.FC<{
     return filteredItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [filteredItems, safeCurrentPage]);
 
-  useEffect(() => {
-    const visibleIds = paginatedItems.map((item) => item.id);
-    if (visibleIds.length > 0) {
-      resolveMissingItemNamesInBatch(visibleIds, () => {
-        setResolvedNamesTrigger((prev) => prev + 1);
-      });
-    }
+  const paginatedIdsString = React.useMemo(() => {
+    return paginatedItems.map((item) => item.id).join(",");
   }, [paginatedItems]);
+
+  useEffect(() => {
+    if (!paginatedIdsString) return;
+    const visibleIds = paginatedIdsString
+      .split(",")
+      .map(Number)
+      .filter(Boolean);
+
+    const missingIds = visibleIds.filter((id) => {
+      const item = paginatedItems.find((i) => i.id === id);
+      const name = item ? getItemName(item) : "";
+      return !name || name.startsWith("Objeto #");
+    });
+
+    if (missingIds.length > 0) {
+      void resolveMissingItemNamesInBatch(missingIds);
+    }
+  }, [paginatedIdsString]);
 
   // Real-time synchronous calculation using marketPrices
   const directCraftCost = recipeTree

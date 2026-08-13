@@ -188,7 +188,7 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
         id: "pociones",
         nameEs: "Pócima",
         nameFr: "Potion",
-        dofusDbTypes: [12, 26, 79, 96],
+        dofusDbTypes: [26, 79, 96],
         dofusDuTypes: [96],
         keywords: [
           "pocima",
@@ -374,7 +374,7 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
         id: "lanzas",
         nameEs: "Lanza",
         nameFr: "Lance",
-        dofusDbTypes: [271],
+        dofusDbTypes: [212],
         dofusDuTypes: [],
         keywords: ["lanza", "lance"],
       },
@@ -528,8 +528,8 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
         id: "trofeos",
         nameEs: "Trofeo",
         nameFr: "Trophée",
-        dofusDbTypes: [151],
-        dofusDuTypes: [],
+        dofusDbTypes: [151, 271],
+        dofusDuTypes: [151, 271],
         keywords: ["trofeo", "trophée"],
       },
       {
