@@ -970,7 +970,7 @@ const EXTRA_CHAR_MAP: Record<number, number> = {
   182: 7442,
   18: 7433, // Cri
   115: 7433,
-  // Damages
+  // Damages (Fixed: Removed weapon attack effectIds 95-99 that collided with elemental damage runes)
   16: 7435, // Da
   112: 7435,
   49: 7434, // Cu
@@ -980,19 +980,18 @@ const EXTRA_CHAR_MAP: Record<number, number> = {
   70: 11653,
   220: 11653,
   89: 11659, // Da Fue
-  96: 11659,
   226: 11659,
+  424: 11659,
   88: 11657, // Da Tie
-  95: 11657,
   225: 11657,
+  422: 11657,
   90: 11661, // Da Agu
-  97: 11661,
   227: 11661,
+  426: 11661,
   91: 11663, // Da Air
-  98: 11663,
   228: 11663,
+  428: 11663,
   92: 11665, // Da Neu
-  99: 11665,
   229: 11665,
   84: 11649, // Da Emp
   223: 11649,
@@ -1068,6 +1067,11 @@ const EXTRA_CHAR_MAP: Record<number, number> = {
   66: 10057,
 };
 
+// Set of effect IDs that represent weapon attack damage lines (daño con el que pega el arma, NO estadísticas que dan runas)
+export const WEAPON_ATTACK_EFFECT_IDS = new Set([
+  91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 108
+]);
+
 /**
  * Match a DofusEffect or raw effect definition to its corresponding BaseRuneDefinition
  */
@@ -1115,9 +1119,14 @@ export function findRuneForEffect(
     return BASE_RUNES_BY_ID[10057] || null;
   }
 
-  // 1. Filter out weapon attack damage and negative malus
-  if (effect.category === 2 || effect.characteristic === -1) {
-    return null; // Weapon hit lines (daño de arma) never yield runes
+  // 1. Filter out weapon attack damage (category 2, weapon attack effect IDs, or characteristic -1/0)
+  if (
+    effect.category === 2 ||
+    effect.characteristic === -1 ||
+    (effect.category !== undefined && effect.category !== 0 && effect.category !== 1) ||
+    WEAPON_ATTACK_EFFECT_IDS.has(effId)
+  ) {
+    return null; // Weapon hit lines (daño de ataque del arma) never yield runes
   }
   const fromVal = Number(effect.from ?? effect.diceNum ?? 0);
   const toVal = Number(effect.to ?? effect.diceSide ?? 0);
@@ -1135,8 +1144,8 @@ export function findRuneForEffect(
     }
   }
 
-  // 3. Direct effect ID match
-  if (effId > 0) {
+  // 3. Direct effect ID match (only if not a weapon attack effect)
+  if (effId > 0 && !WEAPON_ATTACK_EFFECT_IDS.has(effId)) {
     const found = DOFUS_BASE_RUNES.find((r) => r.effectIds.includes(effId));
     if (found) return found;
     if (EXTRA_CHAR_MAP[effId] && BASE_RUNES_BY_ID[EXTRA_CHAR_MAP[effId]]) {
@@ -1146,7 +1155,7 @@ export function findRuneForEffect(
 
   // 4. Keyword / formatted text matching fallback
   if (rawText.length > 0) {
-    if (rawText.startsWith("-") || rawText.includes("malus") || rawText.includes("retira")) {
+    if (rawText.startsWith("-") || rawText.includes("malus") || rawText.includes("retira") || rawText.includes("(daños") || rawText.includes("(daño)")) {
       return null;
     }
 
@@ -1221,8 +1230,14 @@ export function extractItemStats(item: DofusItem): ExtractedItemStat[] {
       formatted.toLowerCase().includes("chasse") ||
       formatted.toLowerCase().includes("hunting");
 
-    // Filter out weapon attack damage (category 2) and negative malus unless it's Hunting Weapon
-    if (!isHuntingEffect && (rawEff.category === 2 || rawEff.characteristic === -1)) {
+    // Filter out weapon attack damage (category 2, weapon attack effect IDs, or characteristic -1/0) unless it's Hunting Weapon
+    if (
+      !isHuntingEffect &&
+      (rawEff.category === 2 ||
+        rawEff.characteristic === -1 ||
+        (rawEff.category !== undefined && rawEff.category !== 0 && rawEff.category !== 1) ||
+        WEAPON_ATTACK_EFFECT_IDS.has(effId))
+    ) {
       continue;
     }
 
