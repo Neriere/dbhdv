@@ -438,7 +438,7 @@ export const RecipeCraftingCalculator: React.FC<{
   // ---------------------------------------------------------------------------
   if (isDetailView && activePresetItem) {
     return (
-      <div className="space-y-4 max-w-7xl mx-auto w-full">
+      <div className="space-y-4 w-full">
         {/* Top Header Navigation Bar */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-lg">
           <button
@@ -710,7 +710,7 @@ export const RecipeCraftingCalculator: React.FC<{
   // VIEW MODE B: FULL CATALOG & SEARCH PAGE (MODO CATÁLOGO)
   // ---------------------------------------------------------------------------
   return (
-    <div className="space-y-4 max-w-7xl mx-auto w-full">
+    <div className="space-y-4 w-full">
       {/* Job Selection Cards Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-2">
         <div className="flex items-center justify-between px-1">

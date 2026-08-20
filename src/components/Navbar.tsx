@@ -56,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4 min-h-16 py-3">
           
           <div className="flex items-center gap-3">
@@ -67,10 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black text-white tracking-tight">DofusDB <span className="text-amber-400">HDV</span></h1>
-                <span className="px-2 py-0.5 text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded-full">
-                  Dofus 3.0 / 2.x
-                </span>
+                <h1 className="text-xl font-black text-white tracking-tight">Dofus <span className="text-amber-400">HDV</span></h1>
               </div>
             </div>
           </div>
