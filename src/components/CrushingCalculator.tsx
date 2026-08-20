@@ -2058,6 +2058,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                                         [yieldItem.rune.id]: e.target.value,
                                       }))
                                     }
+                                    onBlur={() => {
+                                      handleUpdateRunePrice(
+                                        yieldItem.rune.id,
+                                        draftPrice,
+                                      );
+                                    }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         handleUpdateRunePrice(
@@ -2278,6 +2284,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                             [rune.id]: e.target.value,
                           }))
                         }
+                        onBlur={() => {
+                          handleUpdateRunePrice(rune.id, draftVal);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             handleUpdateRunePrice(rune.id, draftVal);
