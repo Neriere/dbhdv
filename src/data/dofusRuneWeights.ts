@@ -1661,11 +1661,24 @@ export function calculateItemCrushing(
 
 // LocalStorage helpers to remember found coefficients for items (Kamaskope history)
 const COEFFICIENTS_STORAGE_KEY = "dofus_user_item_coefficients";
+const COEFFICIENTS_TIMESTAMPS_KEY = "dofus_user_item_coeff_timestamps";
 
 export function getSavedItemCoefficient(itemId: number): number | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getItemCoefficientTimestamp(itemId: number): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
@@ -1681,6 +1694,14 @@ export function saveItemCoefficient(itemId: number, coeff: number): void {
     const parsed = raw ? JSON.parse(raw) : {};
     parsed[itemId] = Math.max(1, Math.min(2000, Number(coeff) || 100));
     localStorage.setItem(COEFFICIENTS_STORAGE_KEY, JSON.stringify(parsed));
+
+    const rawTs = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const parsedTs = rawTs ? JSON.parse(rawTs) : {};
+    parsedTs[itemId] = Date.now();
+    localStorage.setItem(COEFFICIENTS_TIMESTAMPS_KEY, JSON.stringify(parsedTs));
+    
+    // Dispatch custom event for real-time reactivity
+    window.dispatchEvent(new CustomEvent('dofus_coefficients_updated', { detail: { itemId, coeff } }));
   } catch {}
 }
 
@@ -1688,6 +1709,16 @@ export function getAllSavedItemCoefficients(): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getAllSavedItemCoefficientTimestamps(): Record<number, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
