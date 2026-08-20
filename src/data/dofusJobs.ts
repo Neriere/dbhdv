@@ -25,6 +25,20 @@ export const DOFUS_JOBS: DofusJob[] = JOB_CATEGORY_DATABASE.map((job) => {
 });
 
 /**
+ * Los únicos 6 oficios de equipamiento válidos para machacado y generación de runas:
+ * Sastre (27), Joyero (16), Zapatero (15), Fabricante (60), Herrero (11), Escultor (13).
+ */
+export const CRUSHING_ALLOWED_JOB_IDS: number[] = [27, 16, 15, 60, 11, 13];
+
+export const CRUSHING_ALLOWED_JOBS: DofusJob[] = DOFUS_JOBS.filter((job) =>
+  CRUSHING_ALLOWED_JOB_IDS.includes(job.id),
+);
+
+export function isCrushableJob(jobId: number): boolean {
+  return CRUSHING_ALLOWED_JOB_IDS.includes(jobId);
+}
+
+/**
  * Helper to test if an item is omitted (runes, maps, elemental stones, cosmetics, etc.)
  */
 export function isOmittedItem(item: {
@@ -41,6 +55,11 @@ export function isOmittedItem(item: {
 
   // 1. Ejecutar inmediatamente el filtro de cosméticos
   if (isCosmeticItem(item as any)) {
+    return true;
+  }
+
+  // 1.1 Omitir Objetos de Clase (No generan runas y se omiten para evitar confusión)
+  if (isClassItem(item as any)) {
     return true;
   }
 
@@ -408,3 +427,222 @@ export function isCosmeticItem(item: {
 
   return false;
 }
+
+/**
+ * Helper to test if an item is a Class Item (Objetos de clase / Panoplias de clase)
+ * These items modify spells and generate 0 runes, and must be completely omitted.
+ */
+export function isClassItem(item: {
+  id?: number;
+  name?: { es?: string; fr?: string; en?: string } | string;
+  description?: { es?: string; fr?: string; en?: string } | string;
+  typeId?: number;
+  type?: {
+    id?: number;
+    superCategoryId?: number;
+    name?: { es?: string; fr?: string; en?: string } | string;
+  };
+  possibleEffects?: Array<{
+    id?: number;
+    effectId?: number;
+    characteristic?: number;
+    from?: number;
+    to?: number;
+    formatted?: string;
+  }>;
+}): boolean {
+  if (!item) return false;
+
+  const nameStr = typeof item.name === "string" ? item.name : "";
+  const nameEs = (
+    typeof item.name === "object" ? item.name?.es || "" : nameStr
+  ).toLowerCase().trim();
+  const nameFr = (
+    typeof item.name === "object" ? item.name?.fr || "" : ""
+  ).toLowerCase().trim();
+  const nameEn = (
+    typeof item.name === "object" ? item.name?.en || "" : ""
+  ).toLowerCase().trim();
+
+  const descStr = typeof item.description === "string" ? item.description : "";
+  const descEs = (
+    typeof item.description === "object" ? item.description?.es || "" : descStr
+  ).toLowerCase();
+
+  const fullText = `${nameEs} ${nameFr} ${nameEn} ${descEs}`;
+
+  // Patterns for class items and class sets in Dofus
+  const CLASS_ITEM_PATTERNS = [
+    "de clase",
+    "de los feca",
+    "de los yopuka",
+    "de los ocra",
+    "de los sram",
+    "de los eniripsa",
+    "de los osamodas",
+    "de los enutrof",
+    "de los xelor",
+    "de los xélor",
+    "de los zurcarak",
+    "de los zurcarák",
+    "de los sadida",
+    "de los sacrogrito",
+    "de los sacrógrito",
+    "de los pandawa",
+    "de los tymador",
+    "de los zobal",
+    "de los steamer",
+    "de los selotrop",
+    "de los hipermago",
+    "de los uginak",
+    "de los forjalanzas",
+    "panoplie de classe",
+    "panoplia de clase",
+    "objet de classe",
+    "objeto de clase",
+    // Spanish class set item names
+    "birrete tador",
+    "capa teur",
+    "cinturón steur",
+    "cinturon steur",
+    "botas tifas",
+    "sortija lero",
+    "boina turón",
+    "boina turon",
+    "capa razón",
+    "capa razon",
+    "cinturón fante",
+    "cinturon fante",
+    "botas tijas",
+    "sortija gole",
+    "sombrero lito",
+    "capa lita",
+    "cinturón toro",
+    "cinturon toro",
+    "botas tero",
+    "sortija lejo",
+    "sombrero tura",
+    "capa tura",
+    "cinturón tura",
+    "cinturon tura",
+    "botas tura",
+    "sortija tura",
+    "casco hondo",
+    "capa yente",
+    "sombrero lero",
+    "capa lero",
+    "cinturón lero",
+    "cinturon lero",
+    "botas leras",
+    "sortija lera",
+    "sombrero miau",
+    "capa miau",
+    "cinturón miau",
+    "cinturon miau",
+    "botas miau",
+    "sortija miau",
+    "corona tula",
+    "capa tula",
+    "cinturón tulo",
+    "cinturon tulo",
+    "botas tula",
+    "sortija tula",
+    "casco leado",
+    "capa lada",
+    "sombrero rero",
+    "capa rera",
+    "cinturón rero",
+    "cinturon rero",
+    "botas reras",
+    "sortija rera",
+    "sombrero nudo",
+    "capa nuda",
+    "cinturón nudo",
+    "cinturon nudo",
+    "botas nudas",
+    "sortija nuda",
+    "capa pucha",
+    "gorro pucho",
+    "cinturón pucho",
+    "cinturon pucho",
+    "botas puchas",
+    "sortija pucha",
+    "corona txi",
+    "capa txi",
+    "cinturón txi",
+    "cinturon txi",
+    "botas txi",
+    "sortija txi",
+    "boina parda",
+    "capa parda",
+    "cinturón pardo",
+    "cinturon pardo",
+    "botas pardas",
+    "sortija parda",
+    "máscara parda",
+    "mascara parda",
+    "sombrero mero",
+    "capa mera",
+    "cinturón mero",
+    "cinturon mero",
+    "botas meras",
+    "sortija mera",
+    "tocado toro",
+    "capa toro",
+    "cinturón toro",
+    "cinturon toro",
+    "botas toras",
+    "sortija tora",
+    "birrete mágico",
+    "birrete magico",
+    "capa mágica",
+    "capa magica",
+    "sombrero ladro",
+    "capa ladra",
+    "cinturón ladro",
+    "cinturon ladro",
+    "botas ladras",
+    "sortija ladra",
+    "casco lanza",
+    "capa lanza",
+    "cinturón lanza",
+    "cinturon lanza",
+    "botas lanzas",
+    "sortija lanza",
+  ];
+
+  for (const pat of CLASS_ITEM_PATTERNS) {
+    if (fullText.includes(pat)) {
+      return true;
+    }
+  }
+
+  // Spell-modification effects check (Dofus effectIds 281-294)
+  if (Array.isArray(item.possibleEffects) && item.possibleEffects.length > 0) {
+    const spellModifierCount = item.possibleEffects.filter((eff) => {
+      const effId = Number(eff.effectId || eff.id || 0);
+      const isSpellMod = effId >= 281 && effId <= 294;
+      const formatted = (eff.formatted || "").toLowerCase();
+      const mentionsSpell =
+        formatted.includes("hechizo") ||
+        formatted.includes("sort ") ||
+        formatted.includes("spell ") ||
+        formatted.includes("línea de visión") ||
+        formatted.includes("linea de vision") ||
+        formatted.includes("alcance del hechizo") ||
+        formatted.includes("coste en pa del hechizo") ||
+        formatted.includes("cooldown");
+      return isSpellMod || mentionsSpell;
+    }).length;
+
+    if (
+      spellModifierCount > 0 &&
+      (spellModifierCount === item.possibleEffects.length || spellModifierCount >= 3)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+

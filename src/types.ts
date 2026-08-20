@@ -10,14 +10,15 @@ export interface DofusText {
 }
 
 export interface DofusEffect {
-  id: number;
-  effectId: number;
+  id?: number;
+  effectId?: number;
   characteristic?: number;
   from?: number;
   to?: number;
   formatted?: string;
   characteristicName?: string;
   runeWeight?: number;
+  [key: string]: unknown;
 }
 
 export interface DofusItemType {
@@ -36,6 +37,7 @@ export interface DofusItem {
   level: number;
   iconId: number;
   possibleEffects?: DofusEffect[];
+  effects?: DofusEffect[];
   recipeIds?: number[];
   itemTypeId?: number;
   price?: number;

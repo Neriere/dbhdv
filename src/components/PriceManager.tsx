@@ -23,6 +23,7 @@ import {
   Hammer,
   AlertCircle,
   Database,
+  Zap,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -44,9 +45,12 @@ import {
   initializeDatabase,
 } from '../services/dofusDbService';
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
+import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
+import { RuneIcon } from './RuneIcon';
 
 type PriceFilterCategory =
   | 'all'
+  | 'runes'
   | 'craft_ingredients'
   | 'campesino'
   | 'lenador'
@@ -87,7 +91,26 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   useEffect(() => {
     const hydrateState = () => {
       const storedPrices = getStoredMarketPrices();
-      setItems(getImportedItems());
+      const baseRuneItems: DofusItem[] = DOFUS_BASE_RUNES.map((r) => ({
+        id: r.id,
+        name: { es: r.name, fr: r.name, en: r.name },
+        level: 1,
+        typeId: 78,
+        type: { id: 78, name: { es: 'Runa', fr: 'Rune', en: 'Rune' } },
+        iconId: r.iconId,
+        description: { es: `${r.description} (Peso: ${r.unitWeight})` },
+      }));
+
+      const imported = getImportedItems();
+      const existingIds = new Set(imported.map((i) => i.id));
+      const combined = [...imported];
+      for (const runeItem of baseRuneItems) {
+        if (!existingIds.has(runeItem.id)) {
+          combined.push(runeItem);
+        }
+      }
+
+      setItems(combined);
       setMarketPrices(storedPrices);
       setPriceUpdatedAt(getStoredPriceUpdatedAt());
       setPriceProfiles(getPriceProfiles());
@@ -258,6 +281,9 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     const typeId = Number(item.typeId || item.type?.id || 0);
 
     if (cat === 'all') return true;
+    if (cat === 'runes') {
+      return typeId === 78 || typeId === 18 || DOFUS_BASE_RUNES.some((r) => r.id === item.id);
+    }
     if (cat === 'has_price') return (Number(marketPrices[item.id]) || 0) > 0;
     if (cat === 'without_price') return !marketPrices[item.id] || Number(marketPrices[item.id]) === 0;
 
@@ -324,6 +350,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: items.length,
+      runes: 0,
       craft_ingredients: 0,
       campesino: 0,
       lenador: 0,
@@ -339,6 +366,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     };
 
     for (const item of items) {
+      if (matchCategory(item, 'runes')) counts.runes++;
       if (recipeIngredientIds.has(item.id) || allResourceTypesSet.has(Number(item.typeId || item.type?.id || 0))) {
         counts.craft_ingredients++;
       }
@@ -359,31 +387,31 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   }, [items, marketPrices, recipeIngredientIds]);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+    <div className="space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
         <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="flex items-center gap-2 text-amber-400 font-mono text-xs uppercase tracking-wider mb-1 font-bold">
-              <Coins className="w-4 h-4" /> Precios
+            <div className="flex items-center gap-2 text-amber-400 font-mono text-xs uppercase tracking-wider mb-1 font-black">
+              <Coins className="w-4 h-4" /> Gestor de Precios
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              Recursos y ventas
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Precios de Mercadillo (HDV)
             </h2>
-            <p className="text-xs text-neutral-400 mt-1">
-              Perfil activo: {priceProfiles.find((profile) => profile.id === activePriceProfileId)?.name || 'General'}
+            <p className="text-xs text-slate-400 mt-1">
+              Perfil activo: <strong className="text-slate-200">{priceProfiles.find((profile) => profile.id === activePriceProfileId)?.name || 'General'}</strong>
             </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-xs font-bold flex items-center gap-1.5">
+            <span className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-xs font-black flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-amber-400" />
-              {categoryCounts.has_price} Precios Fijados
+              {categoryCounts.has_price} Precios Guardados
             </span>
 
             <button
               onClick={handleExportPricesJSON}
-              className="px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
               title="Exportar copia de seguridad de precios en JSON"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" /> Exportar JSON
@@ -391,13 +419,13 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
 
             <button
               onClick={handleExportDatabase}
-              className="px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
               title="Descargar la base SQLite completa"
             >
               <Database className="w-3.5 h-3.5 text-amber-400" /> Exportar .db
             </button>
 
-            <label className="px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
+            <label className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
               <Upload className="w-3.5 h-3.5 text-amber-400" /> Importar JSON
               <input type="file" accept=".json" onChange={handleImportPricesJSON} className="hidden" />
             </label>
@@ -405,7 +433,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             {categoryCounts.has_price > 0 && (
               <button
                 onClick={handleClearAllPrices}
-                className="px-2.5 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 text-red-300 text-xs font-bold transition-all flex items-center gap-1"
+                className="px-2.5 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 text-red-300 text-xs font-bold transition-all flex items-center gap-1"
                 title="Vaciar todos los precios guardados"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -415,21 +443,21 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         </div>
       </div>
 
-      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-lg">
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px_auto] gap-3">
           <div className="relative">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3.5" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por nombre o ID"
-              className="w-full pl-10 pr-10 py-2.5 bg-[#0a0a0a] border border-neutral-800 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors shadow-inner font-sans"
+              placeholder="Buscar recurso por nombre o ID..."
+              className="w-full pl-10 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-medium text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors shadow-inner font-sans"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3.5 top-3 text-xs text-neutral-500 hover:text-neutral-300 font-bold bg-neutral-800/60 px-1.5 py-0.5 rounded"
+                className="absolute right-3.5 top-2.5 text-xs text-slate-500 hover:text-slate-300 font-bold bg-slate-850 px-1.5 py-0.5 rounded"
               >
                 ✕
               </button>
@@ -441,11 +469,11 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             onChange={(event) => {
               void handleChangeProfile(Number(event.target.value));
             }}
-            className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-neutral-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
-            title="Servidor o perfil privado"
+            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500"
+            title="Servidor o perfil de precios"
           >
             {priceProfiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
+              <option key={profile.id} value={profile.id} className="bg-slate-900 text-white">
                 {profile.name}
               </option>
             ))}
@@ -453,17 +481,17 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-neutral-400 font-bold uppercase tracking-wider">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider">
             <span className="flex items-center gap-1.5 text-amber-400">
-              <Filter className="w-3.5 h-3.5" /> Filtros
+              <Filter className="w-3.5 h-3.5" /> Categorías y Filtros
             </span>
-            <span className="text-neutral-500 font-normal normal-case">
-              {filteredItems.length} / {items.length}
+            <span className="text-slate-400 font-mono text-[11px] font-bold">
+              {filteredItems.length} / {items.length} Objetos
             </span>
           </div>
 
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Recolección
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
@@ -477,17 +505,17 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                     onClick={() => {
                       setActiveCategory(isActive ? 'all' : cat.id);
                     }}
-                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between gap-1.5 ${
+                    className={`p-2 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between gap-1.5 ${
                       isActive
-                        ? `${cat.color} border-current shadow-md`
-                        : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                        ? `${cat.color} border-current shadow-md bg-amber-500/20 text-amber-300 font-black`
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate">
-                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-400' : 'text-neutral-400'}`} />
-                      <span className="truncate">{cat.label}</span>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-400' : 'text-slate-400'}`} />
+                      <span className="truncate text-xs">{cat.label}</span>
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/40 border border-neutral-800 text-neutral-300">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/40 border border-slate-800 text-slate-300">
                       {count}
                     </span>
                   </button>
@@ -497,26 +525,37 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           </div>
 
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Producción y uso
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
+                onClick={() => setActiveCategory('runes')}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  activeCategory === 'runes'
+                    ? 'bg-purple-500/20 border-purple-500 text-purple-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-purple-400" />
+                Runas Base ({categoryCounts.runes})
+              </button>
+              <button
                 onClick={() => setActiveCategory('equipment')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
                   activeCategory === 'equipment'
-                    ? 'bg-blue-500/20 border-blue-500 text-blue-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white'
+                    ? 'bg-sky-500/20 border-sky-500 text-sky-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 Equipables ({categoryCounts.equipment})
               </button>
               <button
                 onClick={() => setActiveCategory('craft_ingredients')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'craft_ingredients'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white'
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 <Hammer className="w-3.5 h-3.5 text-amber-400" />
@@ -524,10 +563,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               </button>
               <button
                 onClick={() => setActiveCategory('monsters')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
                   activeCategory === 'monsters'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white'
+                    ? 'bg-orange-500/20 border-orange-500 text-orange-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 Monstruos ({categoryCounts.monsters})
@@ -536,16 +575,16 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           </div>
 
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-              Estado
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Estado de Precios
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => setActiveCategory('without_price')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'without_price'
-                    ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white'
+                    ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
@@ -553,10 +592,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               </button>
               <button
                 onClick={() => setActiveCategory('has_price')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeCategory === 'has_price'
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-emerald-400 hover:text-white'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-emerald-400 hover:text-white'
                 }`}
               >
                 <Tag className="w-3.5 h-3.5 text-emerald-400" />
@@ -564,10 +603,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               </button>
               <button
                 onClick={() => setActiveCategory('all')}
-                className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
                   activeCategory === 'all'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
-                    : 'bg-[#0a0a0a] border-neutral-800 text-neutral-400 hover:text-white'
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm font-black'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 Todo ({items.length})
@@ -579,10 +618,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       </div>
 
       {filteredItems.length === 0 ? (
-        <div className="bg-[#0f0f0f] border border-neutral-800 rounded-2xl p-12 text-center text-neutral-400 space-y-3">
-          <Package className="w-10 h-10 text-neutral-600 mx-auto" />
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
+          <Package className="w-10 h-10 text-slate-600 mx-auto" />
           <h3 className="text-base font-bold text-white">Sin resultados</h3>
-          <p className="text-xs text-neutral-500 max-w-md mx-auto">Ajusta la búsqueda o el filtro.</p>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">Ajusta la búsqueda o el filtro seleccionado.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -597,27 +636,31 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               return (
                 <div
                   key={item.id}
-                  className={`bg-[#0f0f0f] border rounded-xl p-3.5 transition-all flex flex-col justify-between gap-3 relative ${
+                  className={`bg-slate-900 border rounded-2xl p-3.5 transition-all flex flex-col justify-between gap-3 relative shadow-md ${
                     currentPrice > 0
-                      ? 'border-amber-500/40 bg-gradient-to-b from-amber-950/10 to-[#0f0f0f]'
-                      : 'border-neutral-800 hover:border-neutral-700'
+                      ? 'border-amber-500/40 bg-gradient-to-b from-amber-950/20 to-slate-900'
+                      : 'border-slate-800 hover:border-slate-700'
                   }`}
                 >
                   {/* Top Item Row */}
                   <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-[#0a0a0a] border border-neutral-800 p-1 shrink-0 flex items-center justify-center relative">
-                      <img
-                        src={getItemIconUrl(item)}
-                        alt={getItemName(item)}
-                        className="max-w-full max-h-full object-contain"
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          const fallback = getItemFallbackIconUrl(item);
-                          if (target.src !== fallback) target.src = fallback;
-                        }}
-                      />
-                      {item.level && (
-                        <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 bg-neutral-900 border border-neutral-700 text-xs font-mono text-amber-400 rounded-md font-bold shadow">
+                    <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 shrink-0 flex items-center justify-center relative">
+                      {BASE_RUNES_BY_ID[item.id] ? (
+                        <RuneIcon rune={BASE_RUNES_BY_ID[item.id]} size="md" />
+                      ) : (
+                        <img
+                          src={getItemIconUrl(item)}
+                          alt={getItemName(item)}
+                          className="max-w-full max-h-full object-contain"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            const fallback = getItemFallbackIconUrl(item);
+                            if (target.src !== fallback) target.src = fallback;
+                          }}
+                        />
+                      )}
+                      {item.level && !BASE_RUNES_BY_ID[item.id] && (
+                        <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 bg-slate-900 border border-slate-700 text-[10px] font-mono text-amber-400 rounded-md font-bold shadow">
                           Nv.{item.level}
                         </span>
                       )}
@@ -625,29 +668,29 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
 
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-1">
-                        <h4 className="text-sm font-extrabold text-white truncate group-hover:text-amber-400 transition-colors">
+                        <h4 className="text-sm font-black text-white truncate group-hover:text-amber-400 transition-colors">
                           {getItemName(item)}
                         </h4>
                         {currentPrice > 0 ? (
                           <span
-                            className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-mono text-xs font-bold shrink-0 border border-amber-500/30"
+                            className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold shrink-0 border border-amber-500/30"
                             title={formatUpdatedAtLabel(item.id)}
                           >
                             Fijado
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-500 font-mono text-xs font-semibold shrink-0 border border-neutral-800">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-950 text-slate-500 font-mono text-[10px] font-bold shrink-0 border border-slate-800">
                             Sin precio
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs text-neutral-300 flex-wrap">
-                        <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300 font-semibold">
+                      <div className="flex items-center gap-1.5 text-xs text-slate-300 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-slate-300 font-bold text-[11px]">
                           {typeName}
                         </span>
                         {isUsedInCrafting && (
-                          <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[10px] flex items-center gap-1">
                             🧪 Ingrediente
                           </span>
                         )}
@@ -656,7 +699,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                   </div>
 
                   {/* Price Input & Quick Adjust Controls */}
-                  <div className="space-y-2 pt-2.5 border-t border-neutral-800">
+                  <div className="space-y-2 pt-2.5 border-t border-slate-800">
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <input
@@ -673,9 +716,9 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                           }}
                           placeholder="Precio en Kamas..."
                           title={formatUpdatedAtLabel(item.id)}
-                          className="w-full pl-3 pr-8 py-2 bg-[#0a0a0a] border border-neutral-700 rounded-lg text-sm font-mono font-extrabold text-amber-300 placeholder-neutral-600 focus:outline-none focus:border-amber-400 transition-colors"
+                          className="w-full pl-3 pr-8 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono font-black text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-400 transition-colors"
                         />
-                        <span className="absolute right-3 top-2.5 text-xs text-neutral-400 font-bold font-mono">
+                        <span className="absolute right-3 top-1.5 text-xs text-slate-400 font-bold font-mono">
                           K
                         </span>
                       </div>
@@ -683,7 +726,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       {/* Instant Save Feedback */}
                       {isSaved && (
                         <span
-                          className="px-2 py-1.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold flex items-center gap-1 border border-emerald-500/30 shrink-0"
+                          className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-bold flex items-center gap-1 border border-emerald-500/30 shrink-0"
                           title={formatUpdatedAtLabel(item.id)}
                         >
                           <Check className="w-3 h-3 text-emerald-400" /> Guardado
@@ -692,25 +735,25 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                     </div>
 
                     {/* Quick Add Buttons Bar */}
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400 gap-1 pt-0.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 gap-1 pt-0.5">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleQuickAddPrice(item.id, 100)}
-                          className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 font-mono transition-all"
+                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
                           title="Sumar +100 Kamas"
                         >
                           +100
                         </button>
                         <button
                           onClick={() => handleQuickAddPrice(item.id, 1000)}
-                          className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 font-mono transition-all"
+                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
                           title="Sumar +1,000 Kamas"
                         >
                           +1k
                         </button>
                         <button
                           onClick={() => handleQuickAddPrice(item.id, 10000)}
-                          className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 font-mono transition-all"
+                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
                           title="Sumar +10,000 Kamas"
                         >
                           +10k
@@ -718,7 +761,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                         {currentPrice > 0 && (
                           <button
                             onClick={() => handleClearPrice(item.id)}
-                            className="px-1.5 py-0.5 rounded bg-red-950/30 hover:bg-red-900/40 border border-red-900/40 text-red-300 transition-all"
+                            className="px-1.5 py-0.5 rounded-lg bg-red-950/30 hover:bg-red-900/40 border border-red-900/40 text-red-300 transition-all"
                             title="Reiniciar precio a 0"
                           >
                             <RotateCcw className="w-2.5 h-2.5" />
@@ -730,10 +773,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       {onSelectItemForRecipe && (
                         <button
                           onClick={() => onSelectItemForRecipe(item)}
-                          className="text-[10px] text-amber-400/80 hover:text-amber-300 hover:underline flex items-center gap-0.5 font-medium ml-auto"
+                          className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-0.5 font-bold ml-auto"
                           title="Calcular recetas con este objeto"
                         >
-                          Recetas <ExternalLink className="w-2.5 h-2.5" />
+                          Recetas <ExternalLink className="w-3 h-3" />
                         </button>
                       )}
                     </div>
@@ -745,8 +788,8 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
 
           {/* Pagination Controls Bar */}
           {filteredItems.length > 0 && (
-            <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md">
-              <span className="text-neutral-400 font-mono">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md">
+              <span className="text-slate-400 font-mono">
                 Mostrando{' '}
                 <strong className="text-white">
                   {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
@@ -762,13 +805,13 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 <button
                   disabled={safeCurrentPage <= 1}
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   <span>Atrás</span>
                 </button>
 
-                <span className="px-3 font-mono text-neutral-400 text-xs">
+                <span className="px-3 font-mono text-slate-400 text-xs">
                   Página <strong className="text-amber-400">{safeCurrentPage}</strong> de{' '}
                   {totalPages}
                 </span>
@@ -776,7 +819,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 <button
                   disabled={safeCurrentPage >= totalPages}
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
                 >
                   <span>Siguiente</span>
                   <ChevronRight className="w-4 h-4" />

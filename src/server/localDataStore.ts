@@ -1,5 +1,6 @@
 import { createClient } from "@libsql/client";
 import { isOmittedItem } from "../data/dofusJobs.js";
+import { extractItemStats } from "../data/dofusRuneWeights.js";
 import {
   DofusItem,
   DofusRecipe,
@@ -49,6 +50,22 @@ export async function initDB() {
         updated_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS item_stats (
+        item_id INTEGER NOT NULL,
+        rune_id INTEGER NOT NULL,
+        stat_order INTEGER NOT NULL DEFAULT 0,
+        characteristic_id INTEGER NOT NULL DEFAULT 0,
+        effect_id INTEGER NOT NULL DEFAULT 0,
+        rune_name TEXT NOT NULL,
+        rune_weight REAL NOT NULL,
+        stat_min REAL NOT NULL,
+        stat_max REAL NOT NULL,
+        stat_avg REAL NOT NULL,
+        formatted_text TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (item_id, rune_id)
+      );
+
       CREATE TABLE IF NOT EXISTS recipes (
         result_id INTEGER PRIMARY KEY,
         job_id INTEGER,
@@ -95,6 +112,8 @@ export async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
       CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
       CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
+      CREATE INDEX IF NOT EXISTS idx_item_stats_item ON item_stats(item_id);
+      CREATE INDEX IF NOT EXISTS idx_item_stats_rune ON item_stats(rune_id);
       CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
       CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
@@ -110,6 +129,17 @@ export async function initDB() {
     await database.execute(`
       UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes);
     `);
+
+    // Sync stats for items already in DB if item_stats is empty
+    const statsCountRes = await database.execute("SELECT COUNT(*) as cnt FROM item_stats");
+    const count = Number(statsCountRes.rows[0]?.cnt ?? 0);
+    if (count === 0) {
+      const itemsRes = await database.execute("SELECT payload_json FROM items");
+      const currentItems = itemsRes.rows.map(r => JSON.parse(r.payload_json as string) as DofusItem);
+      if (currentItems.length > 0) {
+        await syncItemStats(currentItems);
+      }
+    }
 
     console.log("[Database] Turso / LibSQL schemas initialized.");
   } catch (e) {
@@ -505,6 +535,53 @@ async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
   }
 }
 
+export async function syncItemStats(items: DofusItem[]): Promise<void> {
+  const statements: Array<{ sql: string; args: any[] }> = [];
+  const now = Date.now();
+
+  for (const item of items) {
+    if (!item || !item.id) continue;
+    const stats = extractItemStats(item);
+    if (!stats || stats.length === 0) continue;
+
+    stats.forEach((st, idx) => {
+      statements.push({
+        sql: `INSERT INTO item_stats (item_id, rune_id, stat_order, characteristic_id, effect_id, rune_name, rune_weight, stat_min, stat_max, stat_avg, formatted_text, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(item_id, rune_id) DO UPDATE SET
+                stat_order = excluded.stat_order,
+                characteristic_id = excluded.characteristic_id,
+                effect_id = excluded.effect_id,
+                rune_name = excluded.rune_name,
+                rune_weight = excluded.rune_weight,
+                stat_min = excluded.stat_min,
+                stat_max = excluded.stat_max,
+                stat_avg = excluded.stat_avg,
+                formatted_text = excluded.formatted_text,
+                updated_at = excluded.updated_at`,
+        args: [
+          item.id,
+          st.rune.id,
+          idx,
+          Number((st.effect as any)?.characteristic ?? st.rune.characteristicId ?? 0),
+          Number((st.effect as any)?.effectId ?? st.rune.effectIds[0] ?? 0),
+          st.rune.name,
+          st.rune.unitWeight,
+          st.statMin,
+          st.statMax,
+          st.statAvg,
+          st.formattedText,
+          now,
+        ],
+      });
+    });
+  }
+
+  for (let i = 0; i < statements.length; i += 100) {
+    await database.batch(statements.slice(i, i + 100), "write");
+  }
+}
+
 async function upsertItems(items: DofusItem[]): Promise<void> {
   const now = Date.now();
   const statements = items.map((item) => ({
@@ -523,10 +600,14 @@ async function upsertItems(items: DofusItem[]): Promise<void> {
   }));
   for (let i = 0; i < statements.length; i += 100)
     await database.batch(statements.slice(i, i + 100), "write");
+
+  // Also persist stats into item_stats table for fast querying
+  await syncItemStats(items);
 }
 
 async function replaceAllItems(items: DofusItem[]): Promise<void> {
   await database.execute("DELETE FROM items");
+  await database.execute("DELETE FROM item_stats");
   await upsertItems(items);
 }
 
@@ -882,6 +963,25 @@ export async function importAllDofusData() {
       runningImportPromise = null;
     });
   return runningImportPromise;
+}
+
+export async function getItemStatsFromDb(itemId: number) {
+  const result = await database.execute({
+    sql: "SELECT rune_id, stat_order, characteristic_id, effect_id, rune_name, rune_weight, stat_min, stat_max, stat_avg, formatted_text FROM item_stats WHERE item_id = ? ORDER BY stat_order ASC",
+    args: [itemId],
+  });
+  return result.rows.map((row) => ({
+    runeId: Number(row.rune_id),
+    statOrder: Number(row.stat_order),
+    characteristicId: Number(row.characteristic_id),
+    effectId: Number(row.effect_id),
+    runeName: String(row.rune_name),
+    runeWeight: Number(row.rune_weight),
+    statMin: Number(row.stat_min),
+    statMax: Number(row.stat_max),
+    statAvg: Number(row.stat_avg),
+    formattedText: String(row.formatted_text),
+  }));
 }
 
 export async function getStoredItemById(itemId: number) {

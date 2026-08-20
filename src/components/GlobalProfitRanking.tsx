@@ -77,10 +77,12 @@ export interface CalculatedRecipeProfit {
 
 interface GlobalProfitRankingProps {
   onSelectRecipeForCalculator: (item: PresetCraftableItem) => void;
+  onSelectForCrushing?: (item: PresetCraftableItem) => void;
 }
 
 export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   onSelectRecipeForCalculator,
+  onSelectForCrushing,
 }) => {
   const ITEMS_PER_PAGE = 25;
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -266,11 +268,11 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   }, [filteredRankings, safeCurrentPage]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Job Selection Visual Cards Bar */}
-      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-3 shadow-lg space-y-2">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-lg space-y-2">
         <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-bold text-neutral-300 flex items-center gap-1.5 uppercase tracking-wider">
+          <span className="text-xs font-black text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
             <Wrench className="w-4 h-4 text-amber-400" />
             Oficios de Crafteo
           </span>
@@ -278,10 +280,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           <button
             onClick={() => setSelectedJobId("all")}
-            className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+            className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
               selectedJobId === "all"
-                ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
-                : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -295,10 +297,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               <button
                 key={job.id}
                 onClick={() => setSelectedJobId(job.id)}
-                className={`px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+                className={`px-2.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
                   isSelected
-                    ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
-                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700"
+                    ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black"
+                    : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
                 }`}
               >
                 <JobIcon className="w-3.5 h-3.5" />
@@ -309,16 +311,16 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         </div>
       </div>
 
-      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl p-4 space-y-4 shadow-lg">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-neutral-800 pb-3">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400">
+            <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
               <Trophy className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                Ranking
-                <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono font-semibold border border-emerald-500/30">
+              <h2 className="text-base font-black text-white flex items-center gap-2">
+                Ranking de Rentabilidad
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold border border-emerald-500/30">
                   {filteredRankings.length} Recetas
                 </span>
               </h2>
@@ -326,18 +328,18 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
-            <span className="text-neutral-500 text-[11px] font-mono mr-1">
-              Filtro Rápido:
+            <span className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mr-1">
+              Filtro:
             </span>
             <button
               onClick={() => {
                 setMinProfit(0);
                 setMinRoi(0);
               }}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 minProfit === 0 && minRoi === 0
-                  ? "bg-amber-500 text-black font-bold"
-                  : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800"
+                  ? "bg-amber-500 text-slate-950 font-black"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
               Todas
@@ -347,10 +349,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMinProfit(1);
                 setMinRoi(0);
               }}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 minProfit === 1 && minRoi === 0
-                  ? "bg-emerald-500 text-black font-bold"
-                  : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800"
+                  ? "bg-emerald-500 text-slate-950 font-black"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
               Solo Rentables (&gt;0 K)
@@ -360,10 +362,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMinProfit(25000);
                 setMinRoi(20);
               }}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 minProfit === 25000
-                  ? "bg-emerald-500 text-black font-bold"
-                  : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800"
+                  ? "bg-emerald-500 text-slate-950 font-black"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
               &gt;25k K / +20% ROI
@@ -375,7 +377,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
           {/* Level Preset Range Filter */}
           <div>
-            <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Tag className="w-3.5 h-3.5 text-amber-400" />
               Rango de Nivel
             </label>
@@ -392,7 +394,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   setMaxLevel(max);
                 }
               }}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-medium focus:border-amber-500 focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none"
             >
               <option value="all">Todos los Niveles (1-200)</option>
               <option value="1-50">Nivel 1 - 50</option>
@@ -404,7 +406,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
           {/* Search Input */}
           <div>
-            <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Search className="w-3.5 h-3.5 text-amber-400" />
               Buscar Objeto
             </label>
@@ -413,20 +415,20 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               placeholder="ej. Gelano, Anillo..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white placeholder-neutral-500 focus:border-amber-500 focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none font-medium"
             />
           </div>
 
           {/* Sort By Dropdown */}
           <div>
-            <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
               Ordenar Por
             </label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-medium focus:border-amber-500 focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none"
             >
               <option value="profit_desc">Mayor Ganancia (Kamas)</option>
               <option value="roi_desc">Mayor Rentabilidad (% ROI)</option>
@@ -437,7 +439,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
           {/* Min Profit Input */}
           <div>
-            <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
               Ganancia Mín. (K)
             </label>
@@ -449,13 +451,13 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMinProfit(val === "" ? "" : Number(val));
               }}
               step={5000}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500 focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
             />
           </div>
 
           {/* Max Craft Cost Budget */}
           <div>
-            <label className="block text-neutral-400 font-medium mb-1 flex items-center gap-1">
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Coins className="w-3.5 h-3.5 text-amber-400" />
               Presupuesto Máx. (K)
             </label>
@@ -467,29 +469,28 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMaxCraftCost(val === "" ? "" : Number(val));
               }}
               step={50000}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500 focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
             />
           </div>
         </div>
       </div>
 
       {/* Global Profit Rankings Table */}
-      <div className="bg-[#0f0f0f] border border-neutral-800 rounded-xl overflow-hidden shadow-lg">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
         {filteredRankings.length === 0 ? (
-          <div className="p-12 text-center text-neutral-500">
-            <Trophy className="w-10 h-10 mx-auto text-neutral-600 mb-2 opacity-40" />
-            <p className="text-sm font-semibold text-neutral-400">
+          <div className="p-12 text-center text-slate-500">
+            <Trophy className="w-10 h-10 mx-auto text-slate-600 mb-2 opacity-40" />
+            <p className="text-sm font-bold text-slate-400">
               No se encontraron recetas con los filtros aplicados.
             </p>
             <p className="text-xs mt-1">
-              Prueba a reducir la ganancia mínima o seleccionar "Todos los
-              Oficios".
+              Prueba a reducir la ganancia mínima o seleccionar "Todos los Oficios".
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#141414] border-b border-neutral-800 text-neutral-400 uppercase font-mono tracking-wider">
+              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-mono tracking-wider text-[10px]">
                 <tr>
                   <th className="py-3 px-3 w-12 text-center">#</th>
                   <th className="py-3 px-3">Objeto & Oficio</th>
@@ -500,7 +501,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   <th className="py-3 px-3 text-center">Acción</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800/60 font-sans">
+              <tbody className="divide-y divide-slate-800/60 font-sans">
                 {paginatedRankings.map((entry, idx) => {
                   const absoluteIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE + idx;
                   const rank = absoluteIndex + 1;
@@ -521,17 +522,17 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-neutral-800/40 transition-colors group"
+                      className="hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Rank Badge */}
                       <td className="py-2.5 px-3 text-center font-mono font-bold">
                         {rank === 1 && (
-                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-500 text-black flex items-center justify-center font-black shadow-md shadow-amber-500/20">
+                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20">
                             1
                           </span>
                         )}
                         {rank === 2 && (
-                          <span className="w-7 h-7 mx-auto rounded-full bg-slate-300 text-black flex items-center justify-center font-black shadow-md">
+                          <span className="w-7 h-7 mx-auto rounded-full bg-slate-300 text-slate-950 flex items-center justify-center font-black shadow-md">
                             2
                           </span>
                         )}
@@ -541,7 +542,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           </span>
                         )}
                         {rank > 3 && (
-                          <span className="text-neutral-500 font-mono">
+                          <span className="text-slate-500 font-mono">
                             #{rank}
                           </span>
                         )}
@@ -553,7 +554,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           <img
                             src={iconUrl}
                             alt={itemName}
-                            className="w-10 h-10 rounded-xl bg-neutral-900 border border-neutral-800 p-1 object-contain shrink-0 shadow-inner"
+                            className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 p-1 object-contain shrink-0 shadow-inner"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = fallbackIcon;
                             }}
@@ -561,11 +562,11 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           <div>
                             <div className="font-extrabold text-white text-sm sm:text-base group-hover:text-amber-400 transition-colors flex items-center gap-2">
                               {itemName}
-                              <span className="text-xs font-mono font-bold text-amber-400 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700">
+                              <span className="text-[11px] font-mono font-bold text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                                 Niv. {item.level}
                               </span>
                             </div>
-                            <div className="text-xs font-medium text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                            <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5 mt-0.5">
                               <JobIcon className="w-3.5 h-3.5 text-amber-400" />
                               <span>{entry.jobName}</span>
                             </div>
@@ -574,7 +575,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       </td>
 
                       {/* Craft Cost */}
-                      <td className="py-3 px-3 text-right font-mono font-bold text-sm text-neutral-200">
+                      <td className="py-3 px-3 text-right font-mono font-bold text-sm text-slate-200">
                         {entry.craftCost.toLocaleString()} K
                       </td>
 
@@ -624,9 +625,9 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                               }
                             }}
                             placeholder="0"
-                            className="w-28 bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-right font-mono text-sm font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
+                            className="w-28 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1 text-right font-mono text-xs font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
                           />
-                          <span className="text-neutral-400 font-bold font-mono text-xs">K</span>
+                          <span className="text-slate-400 font-bold font-mono text-xs">K</span>
                           {isSaved && (
                             <Check className="w-4 h-4 text-emerald-400" />
                           )}
@@ -634,17 +635,17 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       </td>
 
                       {/* Net Profit */}
-                      <td className="py-3 px-3 text-right font-mono font-extrabold text-base">
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-sm">
                         <span
                           className={
-                            isProfitable ? "text-emerald-400" : "text-rose-400"
+                            isProfitable ? "text-emerald-400 font-black" : "text-rose-400"
                           }
                         >
                           {isProfitable ? "+" : ""}
                           {entry.netProfit.toLocaleString()} K
                         </span>
                         {entry.saleTax > 0 && (
-                          <span className="block text-[10px] text-neutral-500 font-medium font-mono">
+                          <span className="block text-[10px] text-slate-500 font-medium font-mono">
                             Imp. -{entry.saleTax.toLocaleString()} K
                           </span>
                         )}
@@ -668,14 +669,26 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
                       {/* Inspect Action */}
                       <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => onSelectRecipeForCalculator(item)}
-                          className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-amber-500 hover:text-black border border-neutral-800 text-neutral-300 font-semibold text-xs transition-all flex items-center gap-1 mx-auto"
-                          title="Ver desglose completo de ingredientes en la calculadora"
-                        >
-                          <span>Calcular</span>
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5 mx-auto">
+                          <button
+                            onClick={() => onSelectRecipeForCalculator(item)}
+                            className="px-2.5 py-1 rounded-xl bg-slate-950 hover:bg-amber-500 hover:text-slate-950 border border-slate-800 text-slate-300 font-bold text-xs transition-all flex items-center gap-1"
+                            title="Ver desglose completo de ingredientes en la calculadora"
+                          >
+                            <span>Craftear</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </button>
+                          {onSelectForCrushing && (
+                            <button
+                              onClick={() => onSelectForCrushing(item)}
+                              className="px-2 py-1 rounded-xl bg-slate-950 hover:bg-purple-500/20 border border-slate-800 hover:border-purple-500/40 text-purple-300 font-bold text-xs transition-all flex items-center gap-1"
+                              title="Romper en Rompedora de Runas"
+                            >
+                              <Zap className="w-3 h-3 text-purple-400" />
+                              <span>Romper</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -687,8 +700,8 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
         {/* Pagination Bar Footer */}
         {filteredRankings.length > 0 && (
-          <div className="bg-[#141414] border-t border-neutral-800 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <div className="text-neutral-400 font-mono">
+          <div className="bg-slate-950 border-t border-slate-800 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-slate-400 font-mono">
               Mostrando{" "}
               <strong className="text-white">
                 {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
@@ -708,7 +721,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               <button
                 disabled={safeCurrentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
               >
                 <ChevronLeft className="w-4 h-4" />
                 <span>Atrás</span>
@@ -718,14 +731,14 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 <span className="text-amber-400 font-bold">
                   {safeCurrentPage}
                 </span>
-                <span className="text-neutral-500">/</span>
-                <span className="text-neutral-400">{totalPages}</span>
+                <span className="text-slate-600">/</span>
+                <span className="text-slate-400">{totalPages}</span>
               </div>
 
               <button
                 disabled={safeCurrentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-neutral-800 text-neutral-300 font-medium flex items-center gap-1 transition-all"
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
               >
                 <span>Siguiente</span>
                 <ChevronRight className="w-4 h-4" />

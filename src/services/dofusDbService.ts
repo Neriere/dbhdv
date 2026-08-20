@@ -1,5 +1,5 @@
 import {
-  CraftStrategyMode,
+  DofusEffect,
   DofusItem,
   DofusRecipe,
   MarketPriceMap,
@@ -9,29 +9,39 @@ import {
   SyncSettings,
   SyncStatus,
 } from "../types";
-import { getJobForItem, isOmittedItem } from "../data/dofusJobs";
+import {
+  isClassItem,
+  isCrushableJob,
+  isOmittedItem,
+  getJobForItem,
+  DOFUS_JOBS,
+} from "../data/dofusJobs";
 import {
   PRESET_CRAFTABLE_ITEMS,
+  DEFAULT_INGREDIENT_PRICES,
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
+import {
+  BASE_RUNES_BY_ID,
+  DOFUS_BASE_RUNES,
+  extractItemStats,
+} from "../data/dofusRuneWeights";
 
 const LOCAL_DB_API_BASE = "/api/local-db";
+const CACHE_KEY = "dofus_database_cache_v4";
+const CACHE_TIMESTAMP_KEY = "dofus_database_cache_timestamp_v4";
 
-const CACHE_KEY = "dofus_db_bootstrap_cache_v2";
-const CACHE_TIMESTAMP_KEY = "dofus_db_bootstrap_timestamp_v2";
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+// IndexedDB lightweight storage for instant startup
+const IDB_NAME = "DofusDB_ClientCache";
+const IDB_STORE = "keyval";
 
-// Native IndexedDB helper for ultra-fast non-blocking client persistence (no 5MB quota limit)
-const IDB_NAME = "dofus_app_idb";
-const IDB_STORE = "bootstrap_store";
-
-function openIDB(): Promise<IDBDatabase> {
+function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
+    if (typeof window === "undefined" || !window.indexedDB) {
       reject(new Error("IndexedDB not supported"));
       return;
     }
-    const request = indexedDB.open(IDB_NAME, 1);
+    const request = window.indexedDB.open(IDB_NAME, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) {
@@ -45,7 +55,7 @@ function openIDB(): Promise<IDBDatabase> {
 
 async function getIdbVal<T>(key: string): Promise<T | null> {
   try {
-    const db = await openIDB();
+    const db = await openIdb();
     return new Promise((resolve) => {
       const tx = db.transaction(IDB_STORE, "readonly");
       const store = tx.objectStore(IDB_STORE);
@@ -58,13 +68,13 @@ async function getIdbVal<T>(key: string): Promise<T | null> {
   }
 }
 
-async function setIdbVal(key: string, val: unknown): Promise<void> {
+async function setIdbVal(key: string, value: unknown): Promise<void> {
   try {
-    const db = await openIDB();
-    return new Promise((resolve) => {
+    const db = await openIdb();
+    new Promise<void>((resolve) => {
       const tx = db.transaction(IDB_STORE, "readwrite");
       const store = tx.objectStore(IDB_STORE);
-      store.put(val, key);
+      store.put(value, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
     });
@@ -217,6 +227,10 @@ let activePriceProfileIdMemoryCache = 0;
 let isDbInitialized = false;
 let bootstrapPromise: Promise<BootstrapResponse> | null = null;
 
+// Pre-computed and cached snapshots for ultra-fast UI rendering
+let cachedCraftableSnapshot: CraftableItem[] | null = null;
+let cachedCrushableSnapshot: CraftableItem[] | null = null;
+
 function emitDatabaseUpdated(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("dofus_database_updated"));
@@ -257,6 +271,11 @@ function mergePresetData(
   return { items: allItems, recipes: mergedRecipes };
 }
 
+function invalidateDerivedCaches(): void {
+  cachedCraftableSnapshot = null;
+  cachedCrushableSnapshot = null;
+}
+
 function updateMemoryCache(payload: {
   items?: DofusItem[];
   recipes?: Record<number, DofusRecipe>;
@@ -267,6 +286,7 @@ function updateMemoryCache(payload: {
   priceProfiles?: PriceProfile[];
   activePriceProfileId?: number;
 }): void {
+  let changedStructure = false;
   if (payload.items || payload.recipes) {
     const existingItemsMap = new Map<number, DofusItem>();
     itemsMemoryCache.forEach((item) => existingItemsMap.set(item.id, item));
@@ -282,6 +302,7 @@ function updateMemoryCache(payload: {
     const merged = mergePresetData(combinedItems, combinedRecipes);
     itemsMemoryCache = merged.items;
     recipesMemoryCache = merged.recipes;
+    changedStructure = true;
   }
 
   if (payload.prices) {
@@ -306,6 +327,10 @@ function updateMemoryCache(payload: {
 
   if (typeof payload.activePriceProfileId === "number") {
     activePriceProfileIdMemoryCache = payload.activePriceProfileId;
+  }
+
+  if (changedStructure) {
+    invalidateDerivedCaches();
   }
 
   isDbInitialized = true;
@@ -347,7 +372,7 @@ export async function initializeDatabase(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
-  if (isDbInitialized) {
+  if (isDbInitialized && itemsMemoryCache.length > 0) {
     return {
       items: itemsMemoryCache,
       recipes: recipesMemoryCache,
@@ -494,11 +519,10 @@ export function getItemTypeName(item: unknown): string {
     };
   };
 
-  if (typeof typedItem.type?.name === "string") {
-    return typedItem.type.name;
-  }
-
-  if (typedItem.type?.name && typeof typedItem.type.name === "object") {
+  if (typedItem.type?.name) {
+    if (typeof typedItem.type.name === "string") {
+      return typedItem.type.name;
+    }
     return (
       typedItem.type.name.es ||
       typedItem.type.name.fr ||
@@ -507,28 +531,116 @@ export function getItemTypeName(item: unknown): string {
     );
   }
 
-  const typeId = typedItem.typeId || typedItem.type?.id || 0;
-  return TYPE_NAME_MAP[typeId] || "";
+  const typeId = typedItem.typeId || typedItem.type?.id;
+  if (typeId && TYPE_NAME_MAP[typeId]) {
+    return TYPE_NAME_MAP[typeId];
+  }
+
+  return "";
 }
 
-export function getItemIconUrl(
-  item: { iconId?: number } | null | undefined,
-): string {
-  const iconId = Number(item?.iconId || 0);
-  if (!iconId) {
-    return getItemFallbackIconUrl(item);
+export function getItemIconUrl(item: unknown): string {
+  if (!item || typeof item !== "object") {
+    return "https://api.dofusdb.fr/img/items/0.png";
   }
+
+  const typed = item as {
+    iconId?: number;
+    icon_id?: number;
+    id?: number;
+    img?: string;
+  };
+
+  if (typeof typed.img === "string" && typed.img.startsWith("http")) {
+    return typed.img;
+  }
+
+  let iconId = typed.iconId || typed.icon_id;
+  if (!iconId && typed.id && itemsMemoryCache.length > 0) {
+    const found = itemsMemoryCache.find((i) => i.id === typed.id);
+    if (found) {
+      iconId = found.iconId || (found as any).icon_id;
+    }
+  }
+
+  if (!iconId) {
+    iconId = typed.id || 0;
+  }
+
   return `https://api.dofusdb.fr/img/items/${iconId}.png`;
 }
 
-export function getItemFallbackIconUrl(
-  item: { iconId?: number } | null | undefined,
-): string {
-  const iconId = Number(item?.iconId || 0);
-  if (!iconId) {
-    return "https://placehold.co/64x64/111111/f59e0b?text=%3F";
+export function getItemFallbackIconUrl(item: unknown): string {
+  if (!item || typeof item !== "object") {
+    return "https://api.dofusdb.fr/img/items/0.png";
   }
-  return `https://api.dofusdb.fr/img/items/${iconId}.png`;
+
+  const typed = item as { id?: number; iconId?: number; icon_id?: number };
+  let iconId = typed.iconId || typed.icon_id;
+  if (!iconId && typed.id && itemsMemoryCache.length > 0) {
+    const found = itemsMemoryCache.find((i) => i.id === typed.id);
+    if (found) {
+      iconId = found.iconId || (found as any).icon_id;
+    }
+  }
+
+  const finalId = iconId || typed.id || 0;
+  return `https://api.dofusdb.fr/img/items/${finalId}.png`;
+}
+
+/**
+ * Computes the lowest detected unit price for an ingredient/item (either direct buy price
+ * or subcraft cost if craftable). Does not output sub-trees or UI labels, only pure lowest price.
+ */
+export function getLowestDetectedPrice(
+  itemId: number,
+  marketPrices: MarketPriceMap = getStoredMarketPrices(),
+  recipes: Record<number, DofusRecipe> = getStoredRecipes(),
+  visited: Set<number> = new Set()
+): number {
+  const directBuyPrice = marketPrices[itemId] || 0;
+  if (visited.has(itemId)) {
+    return directBuyPrice;
+  }
+
+  const recipe = recipes[itemId];
+  if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+    return directBuyPrice;
+  }
+
+  visited.add(itemId);
+  let subCraftCost = 0;
+  let hasCalculableCost = false;
+
+  for (let i = 0; i < recipe.ingredientIds.length; i++) {
+    const ingId = recipe.ingredientIds[i];
+    const qty = recipe.quantities?.[i] || 1;
+    const ingPrice = getLowestDetectedPrice(
+      ingId,
+      marketPrices,
+      recipes,
+      new Set(visited)
+    );
+    if (ingPrice > 0) {
+      hasCalculableCost = true;
+      subCraftCost += ingPrice * qty;
+    }
+  }
+
+  if (directBuyPrice > 0 && hasCalculableCost && subCraftCost > 0) {
+    return Math.min(directBuyPrice, subCraftCost);
+  }
+  if (hasCalculableCost && subCraftCost > 0) {
+    return subCraftCost;
+  }
+  return directBuyPrice;
+}
+
+export function getImportedItems(): DofusItem[] {
+  if (!isDbInitialized) {
+    void initializeDatabase();
+  }
+  return itemsMemoryCache;
 }
 
 export function getStoredMarketPrices(): MarketPriceMap {
@@ -545,48 +657,24 @@ export function getStoredPriceUpdatedAt(): PriceUpdatedAtMap {
   return priceUpdatedAtMemoryCache;
 }
 
-export function getSyncStatus(): SyncStatus {
+export function getStoredSyncStatus(): SyncStatus {
   return syncStatusMemoryCache;
 }
 
-export function getSyncSettings(): SyncSettings {
+export const getSyncStatus = getStoredSyncStatus;
+
+export function getStoredSyncSettings(): SyncSettings {
   return syncSettingsMemoryCache;
 }
+
+export const getSyncSettings = getStoredSyncSettings;
 
 export function getPriceProfiles(): PriceProfile[] {
   return priceProfilesMemoryCache;
 }
 
 export function getActivePriceProfileId(): number {
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("selected_dofus_price_profile_id");
-    if (saved) {
-      const parsed = Number(saved);
-      if (parsed > 0) return parsed;
-    }
-  }
   return activePriceProfileIdMemoryCache;
-}
-
-export function getImportedItems(): DofusItem[] {
-  if (!isDbInitialized) {
-    void initializeDatabase();
-  }
-  return itemsMemoryCache.filter((item) => {
-    if (isOmittedItem(item)) {
-      return false;
-    }
-
-    const spanishName = item.name?.es || item.name?.fr || item.name?.en || "";
-    if (
-      (item.typeId || item.type?.id || 0) === 0 &&
-      spanishName.startsWith("Objeto #")
-    ) {
-      return false;
-    }
-
-    return true;
-  });
 }
 
 const presetItemMap = new Map<number, PresetCraftableItem>(
@@ -594,6 +682,10 @@ const presetItemMap = new Map<number, PresetCraftableItem>(
 );
 
 export function getCraftableItemsSnapshot(): CraftableItem[] {
+  if (cachedCraftableSnapshot) {
+    return cachedCraftableSnapshot;
+  }
+
   const importedItems = getImportedItems();
   const storedRecipes = getStoredRecipes();
   const importedMap = new Map<number, DofusItem>();
@@ -623,11 +715,20 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     }
 
     if (itemToUse) {
+      const mergedEffects = [
+        ...(itemToUse.effects && itemToUse.effects.length > 0 ? itemToUse.effects : []),
+        ...(itemToUse.possibleEffects && itemToUse.possibleEffects.length > 0 ? itemToUse.possibleEffects : []),
+        ...(presetItem?.effects || []),
+        ...(presetItem?.possibleEffects || []),
+      ];
+
       resultList.push({
         ...itemToUse,
+        possibleEffects: mergedEffects.length > 0 ? mergedEffects : (presetItem?.possibleEffects || presetItem?.effects || []),
+        effects: mergedEffects.length > 0 ? mergedEffects : (presetItem?.effects || presetItem?.possibleEffects || []),
         jobId: job.jobId,
         jobNameEs: job.jobNameEs,
-        defaultMarketSalePrice: itemToUse.price || 0,
+        defaultMarketSalePrice: itemToUse.price || presetItem?.defaultMarketSalePrice || 0,
         recipeData: recipe,
       });
       continue;
@@ -678,11 +779,21 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
       continue;
     }
 
+    const presetItem = presetItemMap.get(item.id);
+    const mergedEffects = [
+      ...(item.effects && item.effects.length > 0 ? item.effects : []),
+      ...(item.possibleEffects && item.possibleEffects.length > 0 ? item.possibleEffects : []),
+      ...(presetItem?.effects || []),
+      ...(presetItem?.possibleEffects || []),
+    ];
+
     resultList.push({
       ...item,
+      possibleEffects: mergedEffects.length > 0 ? mergedEffects : (presetItem?.possibleEffects || presetItem?.effects || []),
+      effects: mergedEffects.length > 0 ? mergedEffects : (presetItem?.effects || presetItem?.possibleEffects || []),
       jobId: job.jobId,
       jobNameEs: job.jobNameEs,
-      defaultMarketSalePrice: 0,
+      defaultMarketSalePrice: item.price || presetItem?.defaultMarketSalePrice || 0,
       recipeData: rawRecipe,
     });
   }
@@ -700,18 +811,34 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     });
   }
 
-  const unresolvedIds = resultList
-    .filter((item) => !item.name?.es || item.name.es.startsWith("Objeto #"))
-    .map((item) => item.id);
-
-  if (unresolvedIds.length > 0) {
-    void resolveMissingItemNamesInBatch(unresolvedIds);
-  }
-
+  cachedCraftableSnapshot = resultList;
   return resultList;
 }
 
-const attemptedItemIds = new Set<number>();
+/**
+ * Obtiene el listado exclusivo de objetos válidos para machacado y generación de runas.
+ * Filtra estrictamente por los 6 oficios requeridos:
+ * Sastre (27), Joyero (16), Zapatero (15), Fabricante (60), Herrero (11), Escultor (13).
+ * Omite objetos cosméticos, mascotas, consumibles y objetos de clase.
+ * Solo incluye objetos que tengan estadísticas positivas extraíbles que generen runas.
+ */
+export function getCrushableItemsSnapshot(): CraftableItem[] {
+  if (cachedCrushableSnapshot) {
+    return cachedCrushableSnapshot;
+  }
+
+  const allCraftable = getCraftableItemsSnapshot();
+  const crushables = allCraftable.filter((item) => {
+    if (isOmittedItem(item) || isClassItem(item)) return false;
+    if (!isCrushableJob(item.jobId)) return false;
+    const stats = extractItemStats(item);
+    return stats.length > 0;
+  });
+
+  cachedCrushableSnapshot = crushables;
+  return crushables;
+}
+
 let isResolvingMissingNames = false;
 
 export async function resolveMissingItemNamesInBatch(
@@ -750,59 +877,10 @@ export async function resolveMissingItemNamesInBatch(
   }
 }
 
-export async function performFullItemImport(
-  onProgress?: (status: SyncStatus) => void,
-): Promise<{ items: DofusItem[]; status: SyncStatus }> {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(CACHE_KEY);
-    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-  }
-
-  const loadingStatus: SyncStatus = {
-    ...syncStatusMemoryCache,
-    isLoading: true,
-    progressMessage: "Importando a la base local...",
-  };
-  syncStatusMemoryCache = loadingStatus;
-  if (onProgress) {
-    onProgress(loadingStatus);
-  }
-  emitDatabaseUpdated();
-
-  const response = await requestJson<BootstrapResponse>(
-    `${LOCAL_DB_API_BASE}/import`,
-    {
-      method: "POST",
-    },
-  );
-
-  updateMemoryCache({
-    items: response.items,
-    recipes: response.recipes,
-    prices: response.prices,
-    priceUpdatedAt: response.priceUpdatedAt,
-    syncStatus: response.syncStatus,
-    syncSettings: response.syncSettings,
-    priceProfiles: response.priceProfiles,
-    activePriceProfileId: response.activePriceProfileId,
-  });
-
-  if (onProgress) {
-    onProgress(syncStatusMemoryCache);
-  }
-
-  return { items: getImportedItems(), status: syncStatusMemoryCache };
-}
-
 export async function saveMarketPrice(
   itemId: number,
   price: number,
 ): Promise<MarketPriceMap> {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(CACHE_KEY);
-    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-  }
-
   const response = await requestJson<{
     prices: MarketPriceMap;
     priceUpdatedAt: PriceUpdatedAtMap;
@@ -826,58 +904,23 @@ export async function saveMarketPrice(
 export async function saveAllMarketPrices(
   newPricesMap: MarketPriceMap,
 ): Promise<MarketPriceMap> {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(CACHE_KEY);
-    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-  }
+  const response = await requestJson<{
+    prices: MarketPriceMap;
+    priceUpdatedAt: PriceUpdatedAtMap;
+    activePriceProfileId: number;
+  }>(`${LOCAL_DB_API_BASE}/prices`, {
+    method: "PUT",
+    body: JSON.stringify({
+      prices: newPricesMap,
+      profileId: activePriceProfileIdMemoryCache,
+    }),
+  });
 
-  const entries = Object.entries(newPricesMap);
-  const chunkSize = 100;
-
-  if (entries.length <= chunkSize) {
-    const response = await requestJson<{
-      prices: MarketPriceMap;
-      priceUpdatedAt: PriceUpdatedAtMap;
-      activePriceProfileId: number;
-    }>(`${LOCAL_DB_API_BASE}/prices`, {
-      method: "PUT",
-      body: JSON.stringify({
-        prices: newPricesMap,
-        profileId: activePriceProfileIdMemoryCache,
-      }),
-    });
-
-    updateMemoryCache({
-      prices: response.prices,
-      priceUpdatedAt: response.priceUpdatedAt,
-      activePriceProfileId: response.activePriceProfileId,
-    });
-    return pricesMemoryCache;
-  }
-
-  let latestResponse: any = null;
-  for (let i = 0; i < entries.length; i += chunkSize) {
-    const chunk = Object.fromEntries(entries.slice(i, i + chunkSize));
-    latestResponse = await requestJson<{
-      prices: MarketPriceMap;
-      priceUpdatedAt: PriceUpdatedAtMap;
-      activePriceProfileId: number;
-    }>(`${LOCAL_DB_API_BASE}/prices`, {
-      method: "PUT",
-      body: JSON.stringify({
-        prices: chunk,
-        profileId: activePriceProfileIdMemoryCache,
-      }),
-    });
-  }
-
-  if (latestResponse) {
-    updateMemoryCache({
-      prices: latestResponse.prices,
-      priceUpdatedAt: latestResponse.priceUpdatedAt,
-      activePriceProfileId: latestResponse.activePriceProfileId,
-    });
-  }
+  updateMemoryCache({
+    prices: response.prices,
+    priceUpdatedAt: response.priceUpdatedAt,
+    activePriceProfileId: response.activePriceProfileId,
+  });
   return pricesMemoryCache;
 }
 
@@ -926,23 +969,11 @@ export async function saveAutomaticSyncSettings(
   return syncSettingsMemoryCache;
 }
 
-const knownNoRecipeSet = new Set<number>();
-
 export async function fetchRecipeByResultId(
   resultId: number,
 ): Promise<DofusRecipe | null> {
   if (recipesMemoryCache[resultId]) {
     return recipesMemoryCache[resultId];
-  }
-
-  if (knownNoRecipeSet.has(resultId)) {
-    return null;
-  }
-
-  const cachedItem = itemsMemoryCache.find((item) => item.id === resultId);
-  if (cachedItem && cachedItem.hasRecipe === false) {
-    knownNoRecipeSet.add(resultId);
-    return null;
   }
 
   try {
@@ -954,12 +985,9 @@ export async function fetchRecipeByResultId(
         recipes: { ...recipesMemoryCache, [resultId]: recipe },
       });
       return recipe;
-    } else {
-      knownNoRecipeSet.add(resultId);
-      return null;
     }
+    return null;
   } catch (error) {
-    knownNoRecipeSet.add(resultId);
     return null;
   }
 }
@@ -990,67 +1018,59 @@ export async function fetchItemDetailsById(
     updateMemoryCache({ items: nextItems });
     return item;
   } catch (error) {
-    console.warn(`No se pudo obtener el item ${itemId}:`, error);
     return localItem || null;
   }
 }
 
-export async function fetchCategoryItemsFromApi(
-  categoryKey: string,
-): Promise<DofusItem[]> {
-  const typeIds = CATEGORY_TYPE_IDS_MAP[categoryKey];
-  if (!typeIds || typeIds.length === 0) {
-    return getImportedItems();
+export async function performFullItemImport(
+  onProgress?: (status: SyncStatus) => void,
+): Promise<{ items: DofusItem[]; status: SyncStatus }> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
 
-  const response = await requestJson<{ items: DofusItem[] }>(
-    `${LOCAL_DB_API_BASE}/category-items`,
+  const loadingStatus: SyncStatus = {
+    ...syncStatusMemoryCache,
+    isLoading: true,
+    progressMessage: "Importando a la base local...",
+  };
+  syncStatusMemoryCache = loadingStatus;
+  if (onProgress) {
+    onProgress(loadingStatus);
+  }
+  emitDatabaseUpdated();
+
+  const response = await requestJson<BootstrapResponse>(
+    `${LOCAL_DB_API_BASE}/import`,
     {
       method: "POST",
-      body: JSON.stringify({ typeIds }),
     },
   );
 
-  updateMemoryCache({ items: response.items });
-  return getImportedItems();
-}
+  updateMemoryCache({
+    items: response.items,
+    recipes: response.recipes,
+    prices: response.prices,
+    priceUpdatedAt: response.priceUpdatedAt,
+    syncStatus: response.syncStatus,
+    syncSettings: response.syncSettings,
+    priceProfiles: response.priceProfiles,
+    activePriceProfileId: response.activePriceProfileId,
+  });
 
-export async function seedCoreResourcesAndRecipes(): Promise<void> {
-  await initializeDatabase();
-  const categoriesToSeed = [
-    "campesino",
-    "lenador",
-    "alquimista",
-    "minero",
-    "pescador",
-    "cazador",
-    "ganadero",
-    "fabricante",
-    "equipment",
-    "monsters",
-    "craft_ingredients",
-  ];
-
-  for (const category of categoriesToSeed) {
-    await fetchCategoryItemsFromApi(category);
-  }
-}
-
-export async function searchItemsFromApi(
-  searchTerm: string,
-): Promise<DofusItem[]> {
-  const trimmedTerm = searchTerm.trim();
-  if (!trimmedTerm || trimmedTerm.length < 2) {
-    return getImportedItems();
+  if (onProgress) {
+    onProgress(syncStatusMemoryCache);
   }
 
-  const response = await requestJson<{ items: DofusItem[] }>(
-    `${LOCAL_DB_API_BASE}/search-items?term=${encodeURIComponent(trimmedTerm)}`,
-  );
-
-  updateMemoryCache({ items: response.items });
-  return getImportedItems();
+  return { items: getImportedItems(), status: syncStatusMemoryCache };
 }
+
+export type CraftStrategyMode =
+  | "direct_buy"
+  | "full_subcraft"
+  | "auto_optimal"
+  | "custom_hybrid";
 
 export async function buildRecipeTree(
   itemId: number,
@@ -1194,40 +1214,4 @@ export function calculateTreeCraftCost(
 
     return total + calculateTreeCraftCost(child, "custom_hybrid", marketPrices);
   }, 0);
-}
-
-export function autoOptimizeTreeDecisions(
-  node: RecipeTreeNode,
-  marketPrices: MarketPriceMap,
-): RecipeTreeNode {
-  if (
-    !node.subIngredients ||
-    node.subIngredients.length === 0 ||
-    !node.isCraftable
-  ) {
-    return { ...node, decision: "buy" };
-  }
-
-  const updatedSubIngredients = node.subIngredients.map((child) =>
-    autoOptimizeTreeDecisions(child, marketPrices),
-  );
-
-  const buyCost =
-    (marketPrices[node.itemId] || node.marketPrice || 0) * node.quantity;
-  const craftCost = updatedSubIngredients.reduce((total, child) => {
-    if (child.decision === "buy" || !child.isCraftable) {
-      return (
-        total +
-        (marketPrices[child.itemId] || child.marketPrice || 0) * child.quantity
-      );
-    }
-
-    return total + calculateTreeCraftCost(child, "custom_hybrid", marketPrices);
-  }, 0);
-
-  return {
-    ...node,
-    decision: craftCost < buyCost ? "craft" : "buy",
-    subIngredients: updatedSubIngredients,
-  };
 }

@@ -20,6 +20,7 @@ import {
   updateAutomaticSyncSettings,
   initDB,
   database,
+  getItemStatsFromDb,
 } from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -157,6 +158,20 @@ app.get("/api/local-db/items/:id", async (req, res) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to fetch item";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/local-db/item-stats/:id", async (req, res) => {
+  try {
+    const itemId = Number(req.params.id);
+    if (!itemId) return res.status(400).json({ error: "Invalid item id" });
+
+    const stats = await getItemStatsFromDb(itemId);
+    res.json({ itemId, stats });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch item stats";
     res.status(500).json({ error: message });
   }
 });
