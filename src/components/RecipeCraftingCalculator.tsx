@@ -887,7 +887,7 @@ export const RecipeCraftingCalculator: React.FC<{
 
       {/* Catalog Items List Grid (25 items per page) */}
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {paginatedItems.map((item) => {
             const metrics = getItemMetrics(item);
             const itemName = getItemName(item);
@@ -898,15 +898,15 @@ export const RecipeCraftingCalculator: React.FC<{
               <div
                 key={item.id}
                 onClick={() => handleSelectItemForDetail(item)}
-                className="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-4 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10 group flex flex-col justify-between gap-4"
+                className="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-3.5 sm:p-4 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10 group flex flex-col justify-between gap-3"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 p-1.5 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors shadow-inner">
+                  <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors shadow-inner">
                     {iconUrl ? (
                       <img
                         src={iconUrl}
                         alt={itemName}
-                        className="w-11 h-11 object-contain"
+                        className="w-10 h-10 object-contain"
                         onError={(e) => {
                           const fallback = getItemFallbackIconUrl(item);
                           if (
@@ -920,22 +920,22 @@ export const RecipeCraftingCalculator: React.FC<{
                         }}
                       />
                     ) : (
-                      <Wrench className="w-6 h-6 text-slate-500" />
+                      <Wrench className="w-5 h-5 text-slate-500" />
                     )}
                   </div>
 
                   <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-black text-white text-sm leading-snug truncate group-hover:text-amber-400 transition-colors">
+                    <div className="flex items-start justify-between gap-1.5">
+                      <span className="font-black text-white text-base leading-snug truncate group-hover:text-amber-400 transition-colors">
                         {itemName}
                       </span>
-                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-slate-950 text-amber-400 border border-slate-800 shrink-0">
+                      <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-slate-950 text-amber-400 border border-slate-800 shrink-0">
                         Nv. {item.level}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 pt-0.5">
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${jobBadgeClass}`}
+                        className={`text-xs font-bold px-2.5 py-0.5 rounded-md border ${jobBadgeClass}`}
                       >
                         {item.jobNameEs}
                       </span>
@@ -943,33 +943,33 @@ export const RecipeCraftingCalculator: React.FC<{
                   </div>
                 </div>
 
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 grid grid-cols-3 gap-2 text-center font-mono">
+                <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 grid grid-cols-3 gap-2 text-center font-mono">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                       Costo
                     </span>
-                    <span className="text-xs font-bold text-slate-200">
+                    <span className="text-sm font-bold text-slate-200">
                       {metrics.cost > 0
                         ? `${metrics.cost.toLocaleString()} K`
                         : "---"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                       Venta
                     </span>
-                    <span className="text-xs font-bold text-amber-300">
+                    <span className="text-sm font-bold text-amber-300">
                       {metrics.salePrice > 0
                         ? `${metrics.salePrice.toLocaleString()} K`
                         : "---"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                       Ganancia
                     </span>
                     <span
-                      className={`text-xs font-black block ${
+                      className={`text-sm font-black block ${
                         metrics.netProfit >= 0
                           ? "text-emerald-400"
                           : "text-rose-400"
@@ -983,13 +983,13 @@ export const RecipeCraftingCalculator: React.FC<{
                 </div>
 
                 <div className="pt-0.5 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex items-center gap-2">
                     {metrics.roi > 0 && (
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30 font-bold">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-mono border border-emerald-500/30 font-bold">
                         +{metrics.roi.toFixed(0)}% ROI
                       </span>
                     )}
-                    <span className="text-xs font-black">Ver Receta y Desglose</span>
+                    <span className="text-xs sm:text-sm font-black">Ver Receta y Desglose</span>
                   </span>
                   <ChevronRight className="w-4 h-4" />
                 </div>

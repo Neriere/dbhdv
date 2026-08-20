@@ -625,7 +625,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
             {paginatedItems.map((item) => {
               const currentPrice = Number(marketPrices[item.id]) || 0;
               const draftVal = priceDrafts[item.id] !== undefined ? priceDrafts[item.id] : currentPrice > 0 ? String(currentPrice) : '';
@@ -644,7 +644,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 >
                   {/* Top Item Row */}
                   <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 shrink-0 flex items-center justify-center relative">
+                    <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 p-1 shrink-0 flex items-center justify-center relative">
                       {BASE_RUNES_BY_ID[item.id] ? (
                         <RuneIcon rune={BASE_RUNES_BY_ID[item.id]} size="md" />
                       ) : (
@@ -660,15 +660,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                         />
                       )}
                       {item.level && !BASE_RUNES_BY_ID[item.id] && (
-                        <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.5 bg-slate-900 border border-slate-700 text-[10px] font-mono text-amber-400 rounded-md font-bold shadow">
+                        <span className="absolute -bottom-1 -right-1 px-1.5 py-0.2 bg-slate-900 border border-slate-700 text-[10px] font-mono text-amber-400 rounded-md font-bold shadow">
                           Nv.{item.level}
                         </span>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <h4 className="text-sm font-black text-white truncate group-hover:text-amber-400 transition-colors">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h4 className="text-sm sm:text-base font-black text-white truncate group-hover:text-amber-400 transition-colors">
                           {getItemName(item)}
                         </h4>
                         {currentPrice > 0 ? (
@@ -686,11 +686,11 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       </div>
 
                       <div className="flex items-center gap-1.5 text-xs text-slate-300 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-slate-300 font-bold text-[11px]">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-slate-300 font-bold text-xs">
                           {typeName}
                         </span>
                         {isUsedInCrafting && (
-                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[10px] flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1">
                             🧪 Ingrediente
                           </span>
                         )}
@@ -698,8 +698,8 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                     </div>
                   </div>
 
-                  {/* Price Input & Quick Adjust Controls */}
-                  <div className="space-y-2 pt-2.5 border-t border-slate-800">
+                  {/* Price Input Controls */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-800">
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <input
@@ -716,9 +716,9 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                           }}
                           placeholder="Precio en Kamas..."
                           title={formatUpdatedAtLabel(item.id)}
-                          className="w-full pl-3 pr-8 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono font-black text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-400 transition-colors"
+                          className="w-full pl-3 pr-8 py-2 bg-slate-950 border border-slate-700 rounded-xl text-sm font-mono font-black text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-400 transition-colors"
                         />
-                        <span className="absolute right-3 top-1.5 text-xs text-slate-400 font-bold font-mono">
+                        <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold font-mono">
                           K
                         </span>
                       </div>
@@ -726,60 +726,36 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       {/* Instant Save Feedback */}
                       {isSaved && (
                         <span
-                          className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-bold flex items-center gap-1 border border-emerald-500/30 shrink-0"
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1 border border-emerald-500/30 shrink-0"
                           title={formatUpdatedAtLabel(item.id)}
                         >
-                          <Check className="w-3 h-3 text-emerald-400" /> Guardado
+                          <Check className="w-3.5 h-3.5 text-emerald-400" /> Guardado
                         </span>
                       )}
-                    </div>
 
-                    {/* Quick Add Buttons Bar */}
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 gap-1 pt-0.5">
-                      <div className="flex items-center gap-1">
+                      {currentPrice > 0 && !isSaved && (
                         <button
-                          onClick={() => handleQuickAddPrice(item.id, 100)}
-                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
-                          title="Sumar +100 Kamas"
+                          onClick={() => handleClearPrice(item.id)}
+                          className="p-2 rounded-xl bg-slate-950 hover:bg-red-950/40 border border-slate-800 hover:border-red-900/50 text-slate-400 hover:text-red-300 transition-all shrink-0"
+                          title="Reiniciar precio a 0"
                         >
-                          +100
-                        </button>
-                        <button
-                          onClick={() => handleQuickAddPrice(item.id, 1000)}
-                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
-                          title="Sumar +1,000 Kamas"
-                        >
-                          +1k
-                        </button>
-                        <button
-                          onClick={() => handleQuickAddPrice(item.id, 10000)}
-                          className="px-1.5 py-0.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono transition-all font-bold"
-                          title="Sumar +10,000 Kamas"
-                        >
-                          +10k
-                        </button>
-                        {currentPrice > 0 && (
-                          <button
-                            onClick={() => handleClearPrice(item.id)}
-                            className="px-1.5 py-0.5 rounded-lg bg-red-950/30 hover:bg-red-900/40 border border-red-900/40 text-red-300 transition-all"
-                            title="Reiniciar precio a 0"
-                          >
-                            <RotateCcw className="w-2.5 h-2.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Direct jump to Recipe Calculator */}
-                      {onSelectItemForRecipe && (
-                        <button
-                          onClick={() => onSelectItemForRecipe(item)}
-                          className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-0.5 font-bold ml-auto"
-                          title="Calcular recetas con este objeto"
-                        >
-                          Recetas <ExternalLink className="w-3 h-3" />
+                          <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
+
+                    {/* Direct jump to Recipe Calculator */}
+                    {onSelectItemForRecipe && (
+                      <div className="flex justify-end pt-0.5">
+                        <button
+                          onClick={() => onSelectItemForRecipe(item)}
+                          className="text-xs text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 font-bold"
+                          title="Calcular recetas con este objeto"
+                        >
+                          Ver Recetas <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
