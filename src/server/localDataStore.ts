@@ -809,55 +809,132 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
     ...getDefaultSyncStatus(),
     lastSyncTimestamp: previousStatus.lastSyncTimestamp,
     isLoading: true,
-    progressMessage: "Iniciando importación desde DofusDB...",
+    progressMessage: "Iniciando importación concurrente desde DofusDB...",
   };
   await setSyncStatus(status);
 
   const itemsMap = new Map<number, DofusItem>();
   const recipesMap = new Map<number, DofusRecipe>();
 
-  let itemTotal = 100;
+  const itemLimit = 50;
+  const itemConcurrency = 6;
+  let itemTotal = 50;
   let itemSkip = 0;
-  const itemLimit = 100;
+
+  // 1. Initial probe to know exact total
+  try {
+    const probe = await fetchJson<{ total?: number; data?: Record<string, unknown>[] }>(
+      `${DOFUS_API_BASE}/items?$limit=1&lang=es`
+    );
+    if (typeof probe.total === "number" && probe.total > 0) {
+      itemTotal = probe.total;
+    }
+  } catch {}
 
   while (itemSkip < itemTotal) {
-    const params = new URLSearchParams({
-      $limit: String(itemLimit),
-      $skip: String(itemSkip),
-      lang: "es",
-    });
-    const body = await fetchJson<{
-      total?: number;
-      data?: Record<string, unknown>[];
-    }>(`${DOFUS_API_BASE}/items?${params.toString()}`);
-
-    const items = body.data ?? [];
-    if (typeof body.total === "number") {
-      itemTotal = body.total;
+    const fetchPromises = [];
+    for (let c = 0; c < itemConcurrency && itemSkip + c * itemLimit < itemTotal; c++) {
+      const currentSkip = itemSkip + c * itemLimit;
+      const params = new URLSearchParams({
+        $limit: String(itemLimit),
+        $skip: String(currentSkip),
+        lang: "es",
+      });
+      fetchPromises.push(
+        fetchJson<{ total?: number; data?: Record<string, unknown>[] }>(
+          `${DOFUS_API_BASE}/items?${params.toString()}`
+        ).catch(() => ({ total: itemTotal, data: [] }))
+      );
     }
-    if (items.length === 0) {
+
+    const chunkResults = await Promise.all(fetchPromises);
+    let itemsInBatch = 0;
+
+    for (const body of chunkResults) {
+      const items = body.data ?? [];
+      if (typeof body.total === "number" && body.total > itemTotal) {
+        itemTotal = body.total;
+      }
+      itemsInBatch += items.length;
+
+      for (const rawItem of items) {
+        const normalizedItem = normalizeSpanishItem(rawItem);
+        if (!normalizedItem.id) continue;
+
+        if (isOmittedItem(normalizedItem)) {
+          status.cosmeticsOmittedCount += 1;
+          continue;
+        }
+
+        itemsMap.set(normalizedItem.id, normalizedItem);
+
+        const rawRecipe =
+          (rawItem.recipe as Record<string, unknown> | undefined) ??
+          (rawItem.craft as Record<string, unknown> | undefined) ??
+          (Array.isArray(rawItem.recipes)
+            ? (rawItem.recipes[0] as Record<string, unknown> | undefined)
+            : (rawItem.recipes as Record<string, unknown> | undefined));
+
+        if (rawRecipe) {
+          const normalizedRecipe = normalizeRecipe(rawRecipe);
+          if (normalizedRecipe) {
+            recipesMap.set(normalizedRecipe.resultId, normalizedRecipe);
+          }
+        }
+      }
+    }
+
+    itemSkip += itemConcurrency * itemLimit;
+    status.totalImported = itemsMap.size;
+    status.progressMessage = `Descargando ítems: ${Math.min(itemSkip, itemTotal)} de ${itemTotal}...`;
+    await setSyncStatus(status);
+
+    if (itemsInBatch === 0 && itemSkip >= itemTotal) {
       break;
     }
+  }
 
-    for (const rawItem of items) {
-      const normalizedItem = normalizeSpanishItem(rawItem);
-      if (!normalizedItem.id) continue;
+  // 2. Fetch recipes concurrently
+  let recipeTotal = 50;
+  let recipeSkip = 0;
+  const recipeLimit = 50;
+  const recipeConcurrency = 6;
 
-      if (isOmittedItem(normalizedItem)) {
-        status.cosmeticsOmittedCount += 1;
-        continue;
+  try {
+    const probeRecipe = await fetchJson<{ total?: number }>(
+      `${DOFUS_API_BASE}/recipes?$limit=1`
+    );
+    if (typeof probeRecipe.total === "number" && probeRecipe.total > 0) {
+      recipeTotal = probeRecipe.total;
+    }
+  } catch {}
+
+  while (recipeSkip < recipeTotal) {
+    const fetchPromises = [];
+    for (let c = 0; c < recipeConcurrency && recipeSkip + c * recipeLimit < recipeTotal; c++) {
+      const currentSkip = recipeSkip + c * recipeLimit;
+      const params = new URLSearchParams({
+        $limit: String(recipeLimit),
+        $skip: String(currentSkip),
+      });
+      fetchPromises.push(
+        fetchJson<{ total?: number; data?: Record<string, unknown>[] }>(
+          `${DOFUS_API_BASE}/recipes?${params.toString()}`
+        ).catch(() => ({ total: recipeTotal, data: [] }))
+      );
+    }
+
+    const chunkResults = await Promise.all(fetchPromises);
+    let recipesInBatch = 0;
+
+    for (const body of chunkResults) {
+      const recipes = body.data ?? [];
+      if (typeof body.total === "number" && body.total > recipeTotal) {
+        recipeTotal = body.total;
       }
+      recipesInBatch += recipes.length;
 
-      itemsMap.set(normalizedItem.id, normalizedItem);
-
-      const rawRecipe =
-        (rawItem.recipe as Record<string, unknown> | undefined) ??
-        (rawItem.craft as Record<string, unknown> | undefined) ??
-        (Array.isArray(rawItem.recipes)
-          ? (rawItem.recipes[0] as Record<string, unknown> | undefined)
-          : (rawItem.recipes as Record<string, unknown> | undefined));
-
-      if (rawRecipe) {
+      for (const rawRecipe of recipes) {
         const normalizedRecipe = normalizeRecipe(rawRecipe);
         if (normalizedRecipe) {
           recipesMap.set(normalizedRecipe.resultId, normalizedRecipe);
@@ -865,48 +942,17 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
       }
     }
 
-    itemSkip += items.length;
-    status.totalImported = itemsMap.size;
-    status.progressMessage = `Descargando ítems: ${itemSkip} de ${itemTotal}...`;
+    recipeSkip += recipeConcurrency * recipeLimit;
+    status.recipesCount = recipesMap.size;
+    status.progressMessage = `Descargando recetas: ${Math.min(recipeSkip, recipeTotal)} de ${recipeTotal}...`;
     await setSyncStatus(status);
-  }
 
-  let recipeTotal = 50;
-  let recipeSkip = 0;
-  const recipeLimit = 50;
-
-  while (recipeSkip < recipeTotal) {
-    const params = new URLSearchParams({
-      $limit: String(recipeLimit),
-      $skip: String(recipeSkip),
-    });
-    const body = await fetchJson<{
-      total?: number;
-      data?: Record<string, unknown>[];
-    }>(`${DOFUS_API_BASE}/recipes?${params.toString()}`);
-
-    const recipes = body.data ?? [];
-    if (typeof body.total === "number") {
-      recipeTotal = body.total;
-    }
-    if (recipes.length === 0) {
+    if (recipesInBatch === 0 && recipeSkip >= recipeTotal) {
       break;
     }
-
-    for (const rawRecipe of recipes) {
-      const normalizedRecipe = normalizeRecipe(rawRecipe);
-      if (normalizedRecipe) {
-        recipesMap.set(normalizedRecipe.resultId, normalizedRecipe);
-      }
-    }
-
-    recipeSkip += recipes.length;
-    status.recipesCount = recipesMap.size;
-    status.progressMessage = `Descargando recetas: ${recipeSkip} de ${recipeTotal}...`;
-    await setSyncStatus(status);
   }
 
-  status.progressMessage = "Guardando ítems y recetas en Turso...";
+  status.progressMessage = "Guardando datos y sincronizando estadísticas en Turso...";
   await setSyncStatus(status);
 
   const importedItems = Array.from(itemsMap.values());
@@ -940,7 +986,7 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
 
   status.lastSyncTimestamp = Date.now();
   status.isLoading = false;
-  status.progressMessage = `Importación completada: ${status.totalImported} ítems y ${status.recipesCount || 0} recetas.`;
+  status.progressMessage = `Importación completada: ${status.totalImported} ítems y ${status.recipesCount || 0} recetas guardadas.`;
   await setSyncStatus(status);
 
   return buildBootstrapData();
