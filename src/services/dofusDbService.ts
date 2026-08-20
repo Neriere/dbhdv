@@ -592,6 +592,52 @@ export function getItemFallbackIconUrl(item: unknown): string {
  * Computes the lowest detected unit price for an ingredient/item (either direct buy price
  * or subcraft cost if craftable). Does not output sub-trees or UI labels, only pure lowest price.
  */
+export function calculateSubCraftCost(
+  itemId: number,
+  marketPrices: MarketPriceMap = getStoredMarketPrices(),
+  recipes: Record<number, DofusRecipe> = getStoredRecipes(),
+  visited: Set<number> = new Set(),
+): number {
+  if (visited.has(itemId)) {
+    return marketPrices[itemId] || 0;
+  }
+
+  const recipe = recipes[itemId];
+  if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+    return 0;
+  }
+
+  visited.add(itemId);
+  let subCraftCost = 0;
+  let hasCalculableCost = false;
+
+  for (let i = 0; i < recipe.ingredientIds.length; i++) {
+    const ingId = recipe.ingredientIds[i];
+    const qty = recipe.quantities?.[i] || 1;
+    const directPrice = marketPrices[ingId] || 0;
+    const childCraftCost = calculateSubCraftCost(
+      ingId,
+      marketPrices,
+      recipes,
+      new Set(visited),
+    );
+
+    let bestPrice = directPrice;
+    if (childCraftCost > 0 && directPrice > 0) {
+      bestPrice = Math.min(directPrice, childCraftCost);
+    } else if (childCraftCost > 0) {
+      bestPrice = childCraftCost;
+    }
+
+    if (bestPrice > 0) {
+      hasCalculableCost = true;
+      subCraftCost += bestPrice * qty;
+    }
+  }
+
+  return hasCalculableCost && subCraftCost > 0 ? subCraftCost : 0;
+}
+
 export function getLowestDetectedPrice(
   itemId: number,
   marketPrices: MarketPriceMap = getStoredMarketPrices(),
@@ -609,28 +655,17 @@ export function getLowestDetectedPrice(
   }
 
   visited.add(itemId);
-  let subCraftCost = 0;
-  let hasCalculableCost = false;
+  const subCraftCost = calculateSubCraftCost(
+    itemId,
+    marketPrices,
+    recipes,
+    new Set(visited),
+  );
 
-  for (let i = 0; i < recipe.ingredientIds.length; i++) {
-    const ingId = recipe.ingredientIds[i];
-    const qty = recipe.quantities?.[i] || 1;
-    const ingPrice = getLowestDetectedPrice(
-      ingId,
-      marketPrices,
-      recipes,
-      new Set(visited)
-    );
-    if (ingPrice > 0) {
-      hasCalculableCost = true;
-      subCraftCost += ingPrice * qty;
-    }
-  }
-
-  if (directBuyPrice > 0 && hasCalculableCost && subCraftCost > 0) {
+  if (directBuyPrice > 0 && subCraftCost > 0) {
     return Math.min(directBuyPrice, subCraftCost);
   }
-  if (hasCalculableCost && subCraftCost > 0) {
+  if (subCraftCost > 0) {
     return subCraftCost;
   }
   return directBuyPrice;

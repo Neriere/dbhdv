@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   X,
   Sliders,
   Layers,
@@ -72,6 +73,7 @@ import {
   getStoredPriceUpdatedAt,
   getStoredRecipes,
   getLowestDetectedPrice,
+  calculateSubCraftCost,
   fetchRecipeByResultId,
   fetchItemDetailsById,
   getImportedItems,
@@ -106,6 +108,33 @@ type SortOption =
   | 'cost_asc'
   | 'level_desc'
   | 'date_desc';
+
+const FILTER_PERSISTENCE_KEY = 'dofus_crushing_filters_v2';
+
+interface SavedFiltersState {
+  searchQuery?: string;
+  selectedSlots?: string[];
+  minLevel?: number | '';
+  maxLevel?: number | '';
+  minCoeff?: number | '';
+  maxCoeff?: number | '';
+  selectedStatFilterIds?: string[];
+  dateFilter?: DateFilterOption;
+  sortBy?: SortOption;
+  currentPage?: number;
+  isStatsFilterOpen?: boolean;
+}
+
+const getInitialSavedFilters = (): SavedFiltersState => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(FILTER_PERSISTENCE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error loading saved filters:', e);
+  }
+  return {};
+};
 
 const JOB_ICONS_MAP: Record<number, React.ComponentType<{ className?: string }>> = {
   27: Scissors, // Sastre
@@ -153,21 +182,62 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const [savedTimestamps, setSavedTimestamps] = useState<Record<number, number>>({});
 
   // =========================================================================
-  // CATALOG ADVANCED FILTERS & STATE (Matching Kamaskope & Dofus 3.0 Standard)
+  // CATALOG ADVANCED FILTERS & STATE (Persistent across page reloads/views)
   // =========================================================================
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [slotFilter, setSlotFilter] = useState<string>('all');
-  const [minLevel, setMinLevel] = useState<number | ''>('');
-  const [maxLevel, setMaxLevel] = useState<number | ''>('');
-  const [minCoeff, setMinCoeff] = useState<number | ''>('');
-  const [maxCoeff, setMaxCoeff] = useState<number | ''>('');
-  const [activeStatFilterId, setActiveStatFilterId] = useState<string | null>(null);
-  const [selectedRuneId, setSelectedRuneId] = useState<number | 'all'>('all');
-  const [selectedTextFilter, setSelectedTextFilter] = useState<string | null>(null);
-  const [dateFilter, setDateFilter] = useState<DateFilterOption>('all');
-  const [sortBy, setSortBy] = useState<SortOption>('profit_desc');
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const savedFilters = useMemo(() => getInitialSavedFilters(), []);
+
+  const [searchQuery, setSearchQuery] = useState<string>(savedFilters.searchQuery ?? '');
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(savedFilters.selectedSlots ?? []);
+  const [minLevel, setMinLevel] = useState<number | ''>(savedFilters.minLevel ?? '');
+  const [maxLevel, setMaxLevel] = useState<number | ''>(savedFilters.maxLevel ?? '');
+  const [minCoeff, setMinCoeff] = useState<number | ''>(savedFilters.minCoeff ?? '');
+  const [maxCoeff, setMaxCoeff] = useState<number | ''>(savedFilters.maxCoeff ?? '');
+  const [selectedStatFilterIds, setSelectedStatFilterIds] = useState<string[]>(
+    savedFilters.selectedStatFilterIds ?? []
+  );
+  const [dateFilter, setDateFilter] = useState<DateFilterOption>(savedFilters.dateFilter ?? 'all');
+  const [sortBy, setSortBy] = useState<SortOption>(savedFilters.sortBy ?? 'profit_desc');
+  const [currentPage, setCurrentPage] = useState<number>(savedFilters.currentPage ?? 1);
+  const [isStatsFilterOpen, setIsStatsFilterOpen] = useState<boolean>(
+    savedFilters.isStatsFilterOpen ?? false
+  );
   const PAGE_SIZE = 24;
+
+  // Persist filter settings to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        FILTER_PERSISTENCE_KEY,
+        JSON.stringify({
+          searchQuery,
+          selectedSlots,
+          minLevel,
+          maxLevel,
+          minCoeff,
+          maxCoeff,
+          selectedStatFilterIds,
+          dateFilter,
+          sortBy,
+          currentPage,
+          isStatsFilterOpen,
+        })
+      );
+    } catch (e) {
+      console.error('Error saving filters:', e);
+    }
+  }, [
+    searchQuery,
+    selectedSlots,
+    minLevel,
+    maxLevel,
+    minCoeff,
+    maxCoeff,
+    selectedStatFilterIds,
+    dateFilter,
+    sortBy,
+    currentPage,
+    isStatsFilterOpen,
+  ]);
 
   // =========================================================================
   // DETAIL SIMULATOR STATE
@@ -187,6 +257,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     iconId: number;
     quantity: number;
     unitPrice: number;
+    marketBuyPrice: number;
+    subCraftCost: number;
+    isCraftable: boolean;
+    isCraftCheaper: boolean;
     totalCost: number;
   }
   const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredientDetail[]>([]);
@@ -332,7 +406,25 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           ingItem = (await fetchItemDetailsById(ingId)) || undefined;
         }
 
-        const unitPrice = getLowestDetectedPrice(ingId, marketPrices, recipesMap);
+        const directBuyPrice = marketPrices[ingId] || 0;
+        const subCraftCost = calculateSubCraftCost(ingId, marketPrices, recipesMap);
+        const isCraftable = subCraftCost > 0;
+
+        let unitPrice = directBuyPrice;
+        let isCraftCheaper = false;
+
+        if (isCraftable && directBuyPrice > 0) {
+          if (subCraftCost < directBuyPrice) {
+            unitPrice = subCraftCost;
+            isCraftCheaper = true;
+          } else {
+            unitPrice = directBuyPrice;
+          }
+        } else if (isCraftable && directBuyPrice === 0) {
+          unitPrice = subCraftCost;
+          isCraftCheaper = true;
+        }
+
         drafts[ingId] = String(marketPrices[ingId] ?? unitPrice);
 
         ingDetails.push({
@@ -341,6 +433,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           iconId: ingItem?.iconId || (ingItem as any)?.icon_id || ingId,
           quantity: qty,
           unitPrice,
+          marketBuyPrice: directBuyPrice,
+          subCraftCost,
+          isCraftable,
+          isCraftCheaper,
           totalCost: unitPrice * qty,
         });
       }
@@ -464,6 +560,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   interface StatFilterDef {
     id: string;
     runeId?: number;
+    iconId?: number;
     textKey?: string;
     name: string;
     color: string;
@@ -471,65 +568,71 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   }
 
   const STAT_FILTERS_DAMAGES: StatFilterDef[] = useMemo(() => [
-    { id: 'da_tierra', runeId: 11657, name: 'Tierra (fijos)', color: '#b45309', glyphType: 'plant' },
-    { id: 'da_fuego', runeId: 11659, name: 'Fuego (fijos)', color: '#ef4444', glyphType: 'fire' },
-    { id: 'da_agua', runeId: 11661, name: 'Agua (fijos)', color: '#0ea5e9', glyphType: 'water' },
-    { id: 'da_aire', runeId: 11663, name: 'Aire (fijos)', color: '#14b8a6', glyphType: 'air' },
-    { id: 'da_neutro', runeId: 11665, name: 'Neutrales (fijos)', color: '#94a3b8', glyphType: 'neutral' },
-    { id: 'da_cri', runeId: 11653, name: 'Críticos', color: '#ec4899', glyphType: 'crit' },
-    { id: 'da_gen', runeId: 7435, name: 'Daños', color: '#d946ef', glyphType: 'zap' },
-    { id: 'da_emp', runeId: 11649, name: 'Empuje', color: '#f97316', glyphType: 'arrow' },
-    { id: 'da_trampas', textKey: 'trampa', name: 'Trampas', color: '#b45309', glyphType: 'trap' },
-    { id: 'da_pot_trampas', textKey: 'pot_trampa', name: 'Potencia de Trampas', color: '#eab308', glyphType: 'zap' },
-    { id: 'da_hech', runeId: 18722, name: 'Hechizos (%)', color: '#eab308', glyphType: 'star' },
-    { id: 'da_arm', runeId: 18721, name: 'Arma (%)', color: '#d97706', glyphType: 'sword' },
-    { id: 'da_dis', runeId: 18720, name: 'Distancia (%)', color: '#06b6d4', glyphType: 'target' },
-    { id: 'da_cac', runeId: 18719, name: 'Cuerpo a Cuerpo (%)', color: '#ef4444', glyphType: 'fist' },
+    { id: 'da_tierra', runeId: 11657, iconId: 11657, name: 'Tierra (fijos)', color: '#b45309', glyphType: 'plant' },
+    { id: 'da_fuego', runeId: 11659, iconId: 11659, name: 'Fuego (fijos)', color: '#ef4444', glyphType: 'fire' },
+    { id: 'da_agua', runeId: 11661, iconId: 11661, name: 'Agua (fijos)', color: '#0ea5e9', glyphType: 'water' },
+    { id: 'da_aire', runeId: 11663, iconId: 11663, name: 'Aire (fijos)', color: '#14b8a6', glyphType: 'air' },
+    { id: 'da_neutro', runeId: 11665, iconId: 11665, name: 'Neutrales (fijos)', color: '#94a3b8', glyphType: 'neutral' },
+    { id: 'da_cri', runeId: 11653, iconId: 11653, name: 'Críticos', color: '#ec4899', glyphType: 'crit' },
+    { id: 'da_gen', runeId: 7435, iconId: 7435, name: 'Daños', color: '#d946ef', glyphType: 'zap' },
+    { id: 'da_emp', runeId: 11649, iconId: 11649, name: 'Empuje', color: '#f97316', glyphType: 'arrow' },
+    { id: 'da_trampas', runeId: 7445, iconId: 7445, textKey: 'trampa', name: 'Trampas (fijos)', color: '#b45309', glyphType: 'trap' },
+    { id: 'da_pot_trampas', runeId: 7446, iconId: 7446, textKey: 'pot_trampa', name: 'Potencia Trampas (%)', color: '#eab308', glyphType: 'zap' },
+    { id: 'da_hech', runeId: 18722, iconId: 18722, name: 'Hechizos (%)', color: '#eab308', glyphType: 'star' },
+    { id: 'da_arm', runeId: 18721, iconId: 18721, name: 'Arma (%)', color: '#d97706', glyphType: 'sword' },
+    { id: 'da_dis', runeId: 18720, iconId: 18720, name: 'Distancia (%)', color: '#06b6d4', glyphType: 'target' },
+    { id: 'da_cac', runeId: 18719, iconId: 18719, name: 'Cuerpo a Cuerpo (%)', color: '#ef4444', glyphType: 'fist' },
   ], []);
 
   const STAT_FILTERS_RESISTANCES: StatFilterDef[] = useMemo(() => [
-    { id: 'res_p_tie', runeId: 7459, name: 'Tierra (%)', color: '#b45309', glyphType: 'plant' },
-    { id: 'res_tie', runeId: 7455, name: 'Tierra (fija)', color: '#92400e', glyphType: 'plant' },
-    { id: 'res_p_fue', runeId: 7457, name: 'Fuego (%)', color: '#ef4444', glyphType: 'fire' },
-    { id: 'res_fue', runeId: 7452, name: 'Fuego (fija)', color: '#dc2626', glyphType: 'fire' },
-    { id: 'res_p_agu', runeId: 7560, name: 'Agua (%)', color: '#0ea5e9', glyphType: 'water' },
-    { id: 'res_agu', runeId: 7454, name: 'Agua (fija)', color: '#0284c7', glyphType: 'water' },
-    { id: 'res_p_air', runeId: 7458, name: 'Aire (%)', color: '#14b8a6', glyphType: 'air' },
-    { id: 'res_air', runeId: 7453, name: 'Aire (fija)', color: '#0d9488', glyphType: 'air' },
-    { id: 'res_p_neu', runeId: 7460, name: 'Neutral (%)', color: '#94a3b8', glyphType: 'neutral' },
-    { id: 'res_neu', runeId: 7456, name: 'Neutral (fija)', color: '#64748b', glyphType: 'neutral' },
-    { id: 'res_cri', runeId: 11655, name: 'Crítica (fija)', color: '#ec4899', glyphType: 'crit' },
-    { id: 'res_emp', runeId: 11651, name: 'Empuje (fija)', color: '#f97316', glyphType: 'arrow' },
-    { id: 'res_p_dis', runeId: 18724, name: 'Distancia (%)', color: '#06b6d4', glyphType: 'target' },
-    { id: 'res_p_cac', runeId: 18723, name: 'Cuerpo a Cuerpo (%)', color: '#ef4444', glyphType: 'fist' },
+    { id: 'res_p_tie', runeId: 7459, iconId: 7459, name: 'Tierra (%)', color: '#b45309', glyphType: 'plant' },
+    { id: 'res_tie', runeId: 7455, iconId: 7455, name: 'Tierra (fija)', color: '#92400e', glyphType: 'plant' },
+    { id: 'res_p_fue', runeId: 7457, iconId: 7457, name: 'Fuego (%)', color: '#ef4444', glyphType: 'fire' },
+    { id: 'res_fue', runeId: 7452, iconId: 7452, name: 'Fuego (fija)', color: '#dc2626', glyphType: 'fire' },
+    { id: 'res_p_agu', runeId: 7560, iconId: 7560, name: 'Agua (%)', color: '#0ea5e9', glyphType: 'water' },
+    { id: 'res_agu', runeId: 7454, iconId: 7454, name: 'Agua (fija)', color: '#0284c7', glyphType: 'water' },
+    { id: 'res_p_air', runeId: 7458, iconId: 7458, name: 'Aire (%)', color: '#14b8a6', glyphType: 'air' },
+    { id: 'res_air', runeId: 7453, iconId: 7453, name: 'Aire (fija)', color: '#0d9488', glyphType: 'air' },
+    { id: 'res_p_neu', runeId: 7460, iconId: 7460, name: 'Neutral (%)', color: '#94a3b8', glyphType: 'neutral' },
+    { id: 'res_neu', runeId: 7456, iconId: 7456, name: 'Neutral (fija)', color: '#64748b', glyphType: 'neutral' },
+    { id: 'res_cri', runeId: 11655, iconId: 11655, name: 'Crítica (fija)', color: '#ec4899', glyphType: 'crit' },
+    { id: 'res_emp', runeId: 11651, iconId: 11651, name: 'Empuje (fija)', color: '#f97316', glyphType: 'arrow' },
+    { id: 'res_p_dis', runeId: 18724, iconId: 18724, name: 'Distancia (%)', color: '#06b6d4', glyphType: 'target' },
+    { id: 'res_p_cac', runeId: 18723, iconId: 18723, name: 'Cuerpo a Cuerpo (%)', color: '#ef4444', glyphType: 'fist' },
   ], []);
 
   const STAT_FILTERS_CHARACTERISTICS: StatFilterDef[] = useMemo(() => [
-    { id: 'pa', runeId: 1557, name: 'PA', color: '#38bdf8', glyphType: 'star' },
-    { id: 'fo', runeId: 1519, name: 'Fuerza', color: '#b45309', glyphType: 'plant' },
-    { id: 'caza', runeId: 10057, name: 'Caza', color: '#ef4444', glyphType: 'caza' },
-    { id: 'pm', runeId: 1558, name: 'PM', color: '#10b981', glyphType: 'pm' },
-    { id: 'inte', runeId: 1522, name: 'Inteligencia', color: '#f97316', glyphType: 'fire' },
-    { id: 'fui', runeId: 11637, name: 'Huida', color: '#f59e0b', glyphType: 'dodge' },
-    { id: 'al', runeId: 7438, name: 'Alcance', color: '#2dd4bf', glyphType: 'eye' },
-    { id: 'sue', runeId: 1525, name: 'Suerte', color: '#0ea5e9', glyphType: 'water' },
-    { id: 'pla', runeId: 11639, name: 'Placaje', color: '#84cc16', glyphType: 'lock' },
-    { id: 'invo', runeId: 7442, name: 'Invocaciones', color: '#eab308', glyphType: 'invo' },
-    { id: 'agi', runeId: 1524, name: 'Agilidad', color: '#10b981', glyphType: 'air' },
-    { id: 'esq_pa', runeId: 11641, name: 'Esquiva PA', color: '#0284c7', glyphType: 'shield' },
-    { id: 'cri', runeId: 7433, name: 'Críticos (%)', color: '#ef4444', glyphType: 'crit' },
-    { id: 'sa', runeId: 1521, name: 'Sabiduría', color: '#a855f7', glyphType: 'moon' },
-    { id: 'esq_pm', runeId: 11643, name: 'Esquiva PM', color: '#059669', glyphType: 'shield' },
-    { id: 'pot', runeId: 7436, name: 'Potencia', color: '#eab308', glyphType: 'zap' },
-    { id: 'vi', runeId: 1523, name: 'Vitalidad', color: '#f43f5e', glyphType: 'heart' },
-    { id: 'ret_pa', runeId: 11645, name: 'Retirada de PA', color: '#0284c7', glyphType: 'star' },
-    { id: 'pod', runeId: 7443, name: 'Pods', color: '#ca8a04', glyphType: 'pod' },
-    { id: 'ini', runeId: 7448, name: 'Iniciativa', color: '#d946ef', glyphType: 'ini' },
-    { id: 'ret_pm', runeId: 11647, name: 'Retirada de PM', color: '#059669', glyphType: 'pm' },
-    { id: 'cu', runeId: 7434, name: 'Curación', color: '#ef4444', glyphType: 'heal' },
-    { id: 'prosp', runeId: 7451, name: 'Prospección', color: '#06b6d4', glyphType: 'search' },
-    { id: 'reenvio', textKey: 'reenvio', name: 'Reenvío de Daños', color: '#c084fc', glyphType: 'return' },
+    { id: 'pa', runeId: 1557, iconId: 1557, name: 'PA', color: '#38bdf8', glyphType: 'star' },
+    { id: 'fo', runeId: 1519, iconId: 1519, name: 'Fuerza', color: '#b45309', glyphType: 'plant' },
+    { id: 'caza', runeId: 10057, iconId: 10057, name: 'Caza', color: '#ef4444', glyphType: 'caza' },
+    { id: 'pm', runeId: 1558, iconId: 1558, name: 'PM', color: '#10b981', glyphType: 'pm' },
+    { id: 'inte', runeId: 1522, iconId: 1522, name: 'Inteligencia', color: '#f97316', glyphType: 'fire' },
+    { id: 'fui', runeId: 11637, iconId: 11637, name: 'Huida', color: '#f59e0b', glyphType: 'dodge' },
+    { id: 'al', runeId: 7438, iconId: 7438, name: 'Alcance', color: '#2dd4bf', glyphType: 'eye' },
+    { id: 'sue', runeId: 1525, iconId: 1525, name: 'Suerte', color: '#0ea5e9', glyphType: 'water' },
+    { id: 'pla', runeId: 11639, iconId: 11639, name: 'Placaje', color: '#84cc16', glyphType: 'lock' },
+    { id: 'invo', runeId: 7442, iconId: 7442, name: 'Invocaciones', color: '#eab308', glyphType: 'invo' },
+    { id: 'agi', runeId: 1524, iconId: 1524, name: 'Agilidad', color: '#10b981', glyphType: 'air' },
+    { id: 'esq_pa', runeId: 11641, iconId: 11641, name: 'Esquiva PA', color: '#0284c7', glyphType: 'shield' },
+    { id: 'cri', runeId: 7433, iconId: 7433, name: 'Críticos (%)', color: '#ef4444', glyphType: 'crit' },
+    { id: 'sa', runeId: 1521, iconId: 1521, name: 'Sabiduría', color: '#a855f7', glyphType: 'moon' },
+    { id: 'esq_pm', runeId: 11643, iconId: 11643, name: 'Esquiva PM', color: '#059669', glyphType: 'shield' },
+    { id: 'pot', runeId: 7436, iconId: 7436, name: 'Potencia', color: '#eab308', glyphType: 'zap' },
+    { id: 'vi', runeId: 1523, iconId: 1523, name: 'Vitalidad', color: '#f43f5e', glyphType: 'heart' },
+    { id: 'ret_pa', runeId: 11645, iconId: 11645, name: 'Retirada de PA', color: '#0284c7', glyphType: 'star' },
+    { id: 'pod', runeId: 7443, iconId: 7443, name: 'Pods', color: '#ca8a04', glyphType: 'pod' },
+    { id: 'ini', runeId: 7448, iconId: 7448, name: 'Iniciativa', color: '#d946ef', glyphType: 'ini' },
+    { id: 'ret_pm', runeId: 11647, iconId: 11647, name: 'Retirada de PM', color: '#059669', glyphType: 'pm' },
+    { id: 'cu', runeId: 7434, iconId: 7434, name: 'Curación', color: '#ef4444', glyphType: 'heal' },
+    { id: 'prosp', runeId: 7451, iconId: 7451, name: 'Prospección', color: '#06b6d4', glyphType: 'search' },
+    { id: 'reenvio', runeId: 7437, iconId: 7437, textKey: 'reenvio', name: 'Reenvío de Daños', color: '#c084fc', glyphType: 'return' },
   ], []);
+
+  const ALL_STAT_FILTERS = useMemo(() => [
+    ...STAT_FILTERS_DAMAGES,
+    ...STAT_FILTERS_RESISTANCES,
+    ...STAT_FILTERS_CHARACTERISTICS,
+  ], [STAT_FILTERS_DAMAGES, STAT_FILTERS_RESISTANCES, STAT_FILTERS_CHARACTERISTICS]);
 
   // Helper to render miniature glyph icon for stats
   const renderStatGlyph = (type: string, color: string) => {
@@ -665,47 +768,80 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     }
   };
 
-  // Toggle or select stat filter
-  const handleToggleStatFilter = (statDef: StatFilterDef) => {
-    if (activeStatFilterId === statDef.id) {
-      // Deactivate
-      setActiveStatFilterId(null);
-      setSelectedRuneId('all');
-      setSelectedTextFilter(null);
-    } else {
-      // Activate
-      setActiveStatFilterId(statDef.id);
-      if (statDef.runeId) {
-        setSelectedRuneId(statDef.runeId);
-        setSelectedTextFilter(null);
-        setSortBy('rune_profit_desc');
-      } else if (statDef.textKey) {
-        setSelectedRuneId('all');
-        setSelectedTextFilter(statDef.textKey);
-      }
+  // Helper to render official DofusDB icon for stats with fallback to glyph
+  const renderStatButtonIcon = (stat: StatFilterDef) => {
+    const rune = stat.runeId ? BASE_RUNES_BY_ID[stat.runeId] : null;
+    const iconId = rune?.iconId || stat.iconId || stat.runeId;
+    const primaryUrl = iconId ? `https://api.dofusdb.fr/img/items/${iconId}.png` : null;
+
+    if (primaryUrl) {
+      return (
+        <img
+          src={primaryUrl}
+          alt={stat.name}
+          className="w-4 h-4 object-contain shrink-0 drop-shadow-sm"
+          loading="lazy"
+          onError={(e) => {
+            (e.currentTarget as HTMLElement).style.display = 'none';
+          }}
+        />
+      );
     }
+    return renderStatGlyph(stat.glyphType, stat.color);
+  };
+
+  // Toggle multi-select slot filter
+  const handleToggleSlot = (slotId: string) => {
+    if (slotId === 'all') {
+      setSelectedSlots([]);
+      return;
+    }
+    setSelectedSlots((prev) => {
+      if (prev.includes(slotId)) {
+        return prev.filter((s) => s !== slotId);
+      } else {
+        return [...prev, slotId];
+      }
+    });
+    setCurrentPage(1);
+  };
+
+  // Toggle multi-select stat filter
+  const handleToggleStatFilter = (statDef: StatFilterDef) => {
+    setSelectedStatFilterIds((prev) => {
+      if (prev.includes(statDef.id)) {
+        return prev.filter((id) => id !== statDef.id);
+      } else {
+        return [...prev, statDef.id];
+      }
+    });
+    setCurrentPage(1);
   };
 
   // Clear all filters
   const handleClearAllFilters = () => {
     setSearchQuery('');
-    setSlotFilter('all');
+    setSelectedSlots([]);
     setMinLevel('');
     setMaxLevel('');
     setMinCoeff('');
     setMaxCoeff('');
-    setActiveStatFilterId(null);
-    setSelectedRuneId('all');
-    setSelectedTextFilter(null);
+    setSelectedStatFilterIds([]);
     setDateFilter('all');
     setSortBy('profit_desc');
+    setCurrentPage(1);
+  };
+
+  // Clear only stats filters
+  const handleClearStatsOnly = () => {
+    setSelectedStatFilterIds([]);
+    setCurrentPage(1);
   };
 
   // Compute metrics and filter/sort the entire catalog
   const processedCatalogItems = useMemo(() => {
     const now = Date.now();
-    const isTargetRuneFiltered = selectedRuneId !== 'all';
-    const targetRuneIdNum = typeof selectedRuneId === 'number' ? selectedRuneId : null;
+    const allStatMap = new Map<string, StatFilterDef>(ALL_STAT_FILTERS.map((s) => [s.id, s]));
 
     // 1. Process simulations for each crushable item
     const results = crushableItems.map((item) => {
@@ -722,20 +858,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         'avg',
         {},
       );
-
-      // Check if item generates the specifically selected rune (if any)
-      const targetRuneYield = targetRuneIdNum
-        ? sim.statYields.find((st) => st.rune.id === targetRuneIdNum) || null
-        : null;
-
-      let runeSpecificProfit = 0;
-      let runeSpecificRunes = 0;
-      let runeSpecificKamas = 0;
-      if (targetRuneYield) {
-        runeSpecificRunes = targetRuneYield.focusRunesPerItem;
-        runeSpecificKamas = targetRuneYield.focusKamasValue;
-        runeSpecificProfit = runeSpecificKamas - singleCraftCost;
-      }
 
       // Best focus calculation
       const bestFocus = sim.bestFocusOption;
@@ -771,11 +893,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         maxKamasValue,
         maxRoi,
         breakEvenCoeff: sim.breakEvenCoefficient,
-        targetRuneYield,
-        runeSpecificProfit,
-        runeSpecificRunes,
-        runeSpecificKamas,
-        hasTargetRune: !!targetRuneYield,
       };
     });
 
@@ -791,13 +908,17 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         }
       }
 
-      // Equipment Slot filter
-      if (slotFilter !== 'all') {
-        const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotFilter);
-        if (slotDef && slotDef.typeIds.length > 0) {
-          if (!slotDef.typeIds.includes(entry.typeId)) {
-            return false;
+      // Multi-select Equipment Slot filter
+      if (selectedSlots.length > 0) {
+        const allowedTypeIds = new Set<number>();
+        for (const slotId of selectedSlots) {
+          const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotId);
+          if (slotDef) {
+            slotDef.typeIds.forEach((t) => allowedTypeIds.add(t));
           }
+        }
+        if (allowedTypeIds.size > 0 && !allowedTypeIds.has(entry.typeId)) {
+          return false;
         }
       }
 
@@ -809,22 +930,32 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       if (typeof minCoeff === 'number' && entry.savedCoeff < minCoeff) return false;
       if (typeof maxCoeff === 'number' && entry.savedCoeff > maxCoeff) return false;
 
-      // Specific Rune filter
-      if (isTargetRuneFiltered && !entry.hasTargetRune) {
-        return false;
-      }
-
-      // Specific Text Filter (Trampas, Potencia de Trampas, Reenvío...)
-      if (selectedTextFilter) {
+      // Multi-Select Stats Filter (Must match all selected stats)
+      if (selectedStatFilterIds.length > 0) {
         const effs = entry.item.possibleEffects || entry.item.effects || [];
-        const matches = effs.some((eff) => {
-          const formatted = (eff.formatted || eff.characteristicName || '').toLowerCase();
-          if (selectedTextFilter === 'trampa') return formatted.includes('trampa');
-          if (selectedTextFilter === 'pot_trampa') return formatted.includes('trampa') && (formatted.includes('potencia') || formatted.includes('%'));
-          if (selectedTextFilter === 'reenvio') return formatted.includes('reenvío') || formatted.includes('reenvio') || formatted.includes('renvoi');
-          return false;
-        });
-        if (!matches) return false;
+        for (const statId of selectedStatFilterIds) {
+          const statDef = allStatMap.get(statId);
+          if (!statDef) continue;
+
+          let matchesStat = false;
+          if (statDef.runeId) {
+            matchesStat = entry.sim.statYields.some((st) => st.rune.id === statDef.runeId);
+          }
+
+          if (!matchesStat && statDef.textKey) {
+            matchesStat = effs.some((eff) => {
+              const formatted = (eff.formatted || eff.characteristicName || '').toLowerCase();
+              if (statDef.textKey === 'trampa') return formatted.includes('trampa');
+              if (statDef.textKey === 'pot_trampa') return formatted.includes('trampa') && (formatted.includes('potencia') || formatted.includes('%'));
+              if (statDef.textKey === 'reenvio') return formatted.includes('reenvío') || formatted.includes('reenvio') || formatted.includes('renvoi');
+              return false;
+            });
+          }
+
+          if (!matchesStat) {
+            return false;
+          }
+        }
       }
 
       // Date of Coefficient filter
@@ -849,14 +980,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     // 3. Sort items
     return filtered.sort((a, b) => {
       if (sortBy === 'profit_desc') {
-        if (isTargetRuneFiltered) return b.runeSpecificProfit - a.runeSpecificProfit;
         return b.maxProfit - a.maxProfit;
       }
       if (sortBy === 'coeff_desc') {
         return b.savedCoeff - a.savedCoeff;
-      }
-      if (sortBy === 'rune_profit_desc') {
-        return b.runeSpecificProfit - a.runeSpecificProfit;
       }
       if (sortBy === 'roi_desc') {
         return b.maxRoi - a.maxRoi;
@@ -871,9 +998,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         return b.level - a.level;
       }
       if (sortBy === 'date_desc') {
-        const tsA = a.coeffTimestamp || 0;
-        const tsB = b.coeffTimestamp || 0;
-        return tsB - tsA;
+        return (b.coeffTimestamp || 0) - (a.coeffTimestamp || 0);
       }
       return 0;
     });
@@ -883,32 +1008,16 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     savedCoefficients,
     savedTimestamps,
     searchQuery,
-    slotFilter,
+    selectedSlots,
     minLevel,
     maxLevel,
     minCoeff,
     maxCoeff,
-    selectedRuneId,
-    selectedTextFilter,
+    selectedStatFilterIds,
     dateFilter,
     sortBy,
+    ALL_STAT_FILTERS,
     EQUIPMENT_SLOTS,
-  ]);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [
-    searchQuery,
-    slotFilter,
-    minLevel,
-    maxLevel,
-    minCoeff,
-    maxCoeff,
-    selectedRuneId,
-    selectedTextFilter,
-    dateFilter,
-    sortBy,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(processedCatalogItems.length / PAGE_SIZE));
@@ -947,14 +1056,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       return true;
     });
   }, [runeCategoryFilter, runeSearchTerm]);
-
-  // Get active rune object if filter is selected
-  const activeSelectedRune = useMemo(() => {
-    if (typeof selectedRuneId === 'number') {
-      return BASE_RUNES_BY_ID[selectedRuneId] || null;
-    }
-    return null;
-  }, [selectedRuneId]);
 
   return (
     <div className="space-y-5 w-full pb-12">
@@ -1026,36 +1127,46 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       {/* ========================================================================= */}
       {viewMode === 'catalog' && (
         <div className="space-y-4">
-          {/* Main Filter Control Box (Kamaskope & Dofus 3.0 Standard) */}
+          {/* Main Filter Control Box (Collapsible & Persistent Multi-Select) */}
           <div className="bg-[#0f0e17] border border-purple-900/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
-            {/* 1. Top Bar: Equipment Slots + Level Inputs + Coeff % Inputs + Date Filter */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-purple-950/60">
-              {/* Equipment Slots Buttons */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-purple-900/40 max-w-full">
-                {EQUIPMENT_SLOTS.map((slot) => {
-                  const Icon = slot.icon;
-                  const isSelected = slotFilter === slot.id;
-                  return (
-                    <button
-                      key={slot.id}
-                      onClick={() => setSlotFilter(isSelected && slot.id !== 'all' ? 'all' : slot.id)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
-                        isSelected
-                          ? 'bg-purple-600 text-white font-extrabold shadow-md shadow-purple-950/80 border border-purple-400'
-                          : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-purple-950/40'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {slot.label}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* 1. Essential Filters Row 1: Multi-select Equipment Slots */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-purple-900/40 max-w-full">
+              <button
+                onClick={() => handleToggleSlot('all')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all shrink-0 ${
+                  selectedSlots.length === 0
+                    ? 'bg-purple-600 text-white font-extrabold shadow-md shadow-purple-950/80 border border-purple-400'
+                    : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-purple-950/40'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Todos
+              </button>
+              {EQUIPMENT_SLOTS.filter((s) => s.id !== 'all').map((slot) => {
+                const Icon = slot.icon;
+                const isSelected = selectedSlots.includes(slot.id);
+                return (
+                  <button
+                    key={slot.id}
+                    onClick={() => handleToggleSlot(slot.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                      isSelected
+                        ? 'bg-purple-600 text-white font-extrabold shadow-md shadow-purple-950/80 border border-purple-400 ring-1 ring-purple-300'
+                        : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-purple-950/40'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {slot.label}
+                  </button>
+                );
+              })}
+            </div>
 
-              {/* Numeric Inputs: Level, Coeff %, and Date Dropdown */}
+            {/* 2. Essential Filters Row 2: Level, Coeff %, Date Dropdown & Stats Filter Toggle */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-purple-950/60">
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Level Inputs */}
-                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1 text-xs">
+                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
                   <span className="font-bold text-slate-400">Niv.</span>
                   <input
                     type="number"
@@ -1063,13 +1174,14 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     max="200"
                     placeholder="Mín."
                     value={minLevel}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setMinLevel(
                         e.target.value === ''
                           ? ''
                           : Math.max(1, Math.min(200, Number(e.target.value)))
-                      )
-                    }
+                      );
+                      setCurrentPage(1);
+                    }}
                     className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                   <span className="text-slate-600 font-bold">-</span>
@@ -1079,19 +1191,20 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     max="200"
                     placeholder="Máx."
                     value={maxLevel}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setMaxLevel(
                         e.target.value === ''
                           ? ''
                           : Math.max(1, Math.min(200, Number(e.target.value)))
-                      )
-                    }
+                      );
+                      setCurrentPage(1);
+                    }}
                     className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                 </div>
 
                 {/* Coeff % Inputs */}
-                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1 text-xs">
+                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
                   <span className="font-bold text-slate-400">Coef %</span>
                   <input
                     type="number"
@@ -1099,13 +1212,14 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     max="2000"
                     placeholder="Mín."
                     value={minCoeff}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setMinCoeff(
                         e.target.value === ''
                           ? ''
                           : Math.max(1, Math.min(2000, Number(e.target.value)))
-                      )
-                    }
+                      );
+                      setCurrentPage(1);
+                    }}
                     className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                   <span className="text-slate-600 font-bold">-</span>
@@ -1115,24 +1229,28 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     max="2000"
                     placeholder="Máx."
                     value={maxCoeff}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setMaxCoeff(
                         e.target.value === ''
                           ? ''
                           : Math.max(1, Math.min(2000, Number(e.target.value)))
-                      )
-                    }
+                      );
+                      setCurrentPage(1);
+                    }}
                     className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                 </div>
 
                 {/* Updated Date Dropdown */}
-                <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1 text-xs">
+                <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
                   <Clock className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="font-bold text-slate-400 hidden sm:inline">Actualizado:</span>
+                  <span className="font-bold text-slate-400 hidden sm:inline">Fecha:</span>
                   <select
                     value={dateFilter}
-                    onChange={(e) => setDateFilter(e.target.value as DateFilterOption)}
+                    onChange={(e) => {
+                      setDateFilter(e.target.value as DateFilterOption);
+                      setCurrentPage(1);
+                    }}
                     className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
                   >
                     <option value="all" className="bg-slate-950">Todo</option>
@@ -1144,19 +1262,45 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     <option value="default_only" className="bg-slate-950">Sin Registrar (100%)</option>
                   </select>
                 </div>
+              </div>
 
-                {/* Reset Filters Button */}
-                {(slotFilter !== 'all' ||
+              {/* Stats Filter Toggle Button & Reset Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsStatsFilterOpen(!isStatsFilterOpen)}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                    selectedStatFilterIds.length > 0
+                      ? 'bg-purple-600 text-white border border-purple-400 ring-1 ring-purple-300'
+                      : isStatsFilterOpen
+                      ? 'bg-purple-950/90 text-purple-200 border border-purple-700'
+                      : 'bg-slate-900/90 text-slate-300 hover:text-white border border-purple-950/60 hover:border-purple-700'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Filtro de Estadísticas</span>
+                  {selectedStatFilterIds.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-purple-900 text-white rounded-full text-[10px] font-black border border-purple-400/50">
+                      {selectedStatFilterIds.length}
+                    </span>
+                  )}
+                  {isStatsFilterOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {(selectedSlots.length > 0 ||
                   minLevel !== '' ||
                   maxLevel !== '' ||
                   minCoeff !== '' ||
                   maxCoeff !== '' ||
-                  activeStatFilterId !== null ||
+                  selectedStatFilterIds.length > 0 ||
                   dateFilter !== 'all' ||
                   searchQuery !== '') && (
                   <button
                     onClick={handleClearAllFilters}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 transition-colors"
                     title="Limpiar todos los filtros"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1166,91 +1310,112 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
               </div>
             </div>
 
-            {/* 2. Visual 3-Column Stats Filter Grid (Daños | Resistencias | Características) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-              {/* COLUMN 1: DAÑOS */}
-              <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
-                  Daños
-                </h4>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {STAT_FILTERS_DAMAGES.map((stat) => {
-                    const isSelected = activeStatFilterId === stat.id;
-                    return (
-                      <button
-                        key={stat.id}
-                        onClick={() => handleToggleStatFilter(stat)}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
-                          isSelected
-                            ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
-                            : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
-                        }`}
-                        title={stat.name}
-                      >
-                        {renderStatGlyph(stat.glyphType, stat.color)}
-                        <span className="truncate text-[11px] font-semibold">{stat.name}</span>
-                      </button>
-                    );
-                  })}
+            {/* 3. Collapsible 3-Column Stats Filter Grid with DofusDB real icons */}
+            {isStatsFilterOpen && (
+              <div className="pt-3 border-t border-purple-950/60 space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <span className="text-xs font-bold text-purple-300">
+                      Seleccionar estadísticas (selección múltiple permitida):
+                    </span>
+                  </div>
+                  {selectedStatFilterIds.length > 0 && (
+                    <button
+                      onClick={handleClearStatsOnly}
+                      className="text-[11px] font-bold text-red-400 hover:text-red-300 underline"
+                    >
+                      Limpiar estadísticas ({selectedStatFilterIds.length})
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+                  {/* COLUMN 1: DAÑOS */}
+                  <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
+                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                      Daños
+                    </h4>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {STAT_FILTERS_DAMAGES.map((stat) => {
+                        const isSelected = selectedStatFilterIds.includes(stat.id);
+                        return (
+                          <button
+                            key={stat.id}
+                            onClick={() => handleToggleStatFilter(stat)}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                              isSelected
+                                ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
+                                : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
+                            }`}
+                            title={stat.name}
+                          >
+                            {renderStatButtonIcon(stat)}
+                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: RESISTENCIAS */}
+                  <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
+                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                      Resistencias
+                    </h4>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {STAT_FILTERS_RESISTANCES.map((stat) => {
+                        const isSelected = selectedStatFilterIds.includes(stat.id);
+                        return (
+                          <button
+                            key={stat.id}
+                            onClick={() => handleToggleStatFilter(stat)}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                              isSelected
+                                ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
+                                : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
+                            }`}
+                            title={stat.name}
+                          >
+                            {renderStatButtonIcon(stat)}
+                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 3: CARACTERÍSTICAS */}
+                  <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
+                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                      Características
+                    </h4>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {STAT_FILTERS_CHARACTERISTICS.map((stat) => {
+                        const isSelected = selectedStatFilterIds.includes(stat.id);
+                        return (
+                          <button
+                            key={stat.id}
+                            onClick={() => handleToggleStatFilter(stat)}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                              isSelected
+                                ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
+                                : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
+                            }`}
+                            title={stat.name}
+                          >
+                            {renderStatButtonIcon(stat)}
+                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* COLUMN 2: RESISTENCIAS */}
-              <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
-                  Resistencias
-                </h4>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {STAT_FILTERS_RESISTANCES.map((stat) => {
-                    const isSelected = activeStatFilterId === stat.id;
-                    return (
-                      <button
-                        key={stat.id}
-                        onClick={() => handleToggleStatFilter(stat)}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
-                          isSelected
-                            ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
-                            : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
-                        }`}
-                        title={stat.name}
-                      >
-                        {renderStatGlyph(stat.glyphType, stat.color)}
-                        <span className="truncate text-[11px] font-semibold">{stat.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* COLUMN 3: CARACTERÍSTICAS */}
-              <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
-                  Características
-                </h4>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {STAT_FILTERS_CHARACTERISTICS.map((stat) => {
-                    const isSelected = activeStatFilterId === stat.id;
-                    return (
-                      <button
-                        key={stat.id}
-                        onClick={() => handleToggleStatFilter(stat)}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
-                          isSelected
-                            ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
-                            : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
-                        }`}
-                        title={stat.name}
-                      >
-                        {renderStatGlyph(stat.glyphType, stat.color)}
-                        <span className="truncate text-[11px] font-semibold">{stat.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Bottom Row: Search Input + Sorting Selector */}
+            {/* 4. Bottom Row: Search Input + Sorting Selector */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-3 border-t border-purple-950/60">
               {/* Search input */}
               <div className="md:col-span-7 lg:col-span-8 relative">
@@ -1259,12 +1424,18 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                   type="text"
                   placeholder="Buscar equipable por nombre (ej. Gelanillo, Solomonk, Capa del Roble Blando...)"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="w-full bg-slate-950 border border-purple-950/60 rounded-xl pl-10 pr-9 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-medium"
                 />
                 {searchQuery && (
                   <button
-                    onClick={() => setSearchQuery('')}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setCurrentPage(1);
+                    }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                   >
                     <X className="w-4 h-4" />
@@ -1280,9 +1451,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     onChange={(e) => setSortBy(e.target.value as SortOption)}
                     className="w-full bg-slate-950 border border-purple-950/60 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 font-bold focus:outline-none focus:border-purple-500 transition-all appearance-none cursor-pointer pr-9"
                   >
-                    {selectedRuneId !== 'all' ? (
-                      <option value="rune_profit_desc">🎯 Mayor Ganancia con Runa Seleccionada</option>
-                    ) : null}
                     <option value="profit_desc">🏆 Mayor Ganancia Total (Kamas)</option>
                     <option value="coeff_desc">📈 Mayor Coeficiente (%)</option>
                     <option value="roi_desc">💰 Mayor Rentabilidad (% ROI)</option>
@@ -1296,35 +1464,51 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
               </div>
             </div>
 
-            {/* Active Stat or Rune Filter Indicator */}
-            {(activeStatFilterId || selectedRuneId !== 'all' || slotFilter !== 'all') && (
+            {/* 5. Active Filters Chips Indicator */}
+            {(selectedStatFilterIds.length > 0 || selectedSlots.length > 0) && (
               <div className="flex items-center justify-between bg-purple-950/40 border border-purple-500/40 rounded-xl px-3.5 py-2 text-xs">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span className="text-purple-200 font-bold">
-                    Filtros activos:
-                  </span>
-                  {slotFilter !== 'all' && (
-                    <span className="bg-purple-900/80 text-purple-200 px-2 py-0.5 rounded font-bold border border-purple-700">
-                      Slot: {EQUIPMENT_SLOTS.find((s) => s.id === slotFilter)?.label}
-                    </span>
-                  )}
-                  {activeStatFilterId && (
-                    <span className="bg-purple-900/80 text-purple-200 px-2 py-0.5 rounded font-bold border border-purple-700">
-                      Estadística:{' '}
-                      {[
-                        ...STAT_FILTERS_DAMAGES,
-                        ...STAT_FILTERS_RESISTANCES,
-                        ...STAT_FILTERS_CHARACTERISTICS,
-                      ].find((s) => s.id === activeStatFilterId)?.name}
-                    </span>
-                  )}
+                  <span className="text-purple-200 font-bold mr-1">Filtros activos:</span>
+                  
+                  {selectedSlots.map((slotId) => {
+                    const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotId);
+                    if (!slotDef) return null;
+                    return (
+                      <button
+                        key={slotId}
+                        onClick={() => handleToggleSlot(slotId)}
+                        className="inline-flex items-center gap-1 bg-purple-900/90 text-purple-100 hover:bg-purple-800 px-2 py-0.5 rounded-lg text-xs font-bold border border-purple-700 transition-all"
+                        title="Quitar filtro de tipo"
+                      >
+                        <span>{slotDef.label}</span>
+                        <X className="w-3 h-3 text-purple-300" />
+                      </button>
+                    );
+                  })}
+
+                  {selectedStatFilterIds.map((statId) => {
+                    const statDef = ALL_STAT_FILTERS.find((s) => s.id === statId);
+                    if (!statDef) return null;
+                    return (
+                      <button
+                        key={statId}
+                        onClick={() => handleToggleStatFilter(statDef)}
+                        className="inline-flex items-center gap-1 bg-purple-900/90 text-purple-100 hover:bg-purple-800 px-2 py-0.5 rounded-lg text-xs font-bold border border-purple-700 transition-all"
+                        title="Quitar filtro de estadística"
+                      >
+                        {renderStatButtonIcon(statDef)}
+                        <span>{statDef.name}</span>
+                        <X className="w-3 h-3 text-purple-300" />
+                      </button>
+                    );
+                  })}
                 </div>
                 <button
                   onClick={handleClearAllFilters}
-                  className="text-xs text-purple-400 hover:text-purple-300 underline font-bold"
+                  className="text-xs text-purple-400 hover:text-purple-300 underline font-bold shrink-0 ml-2"
                 >
-                  Limpiar filtros
+                  Limpiar todo
                 </button>
               </div>
             )}
@@ -2086,20 +2270,20 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                             </td>
 
                             {/* Normal Yield (Sin foco) */}
-                            <td className="py-2.5 px-3.5 bg-amber-500/5 font-mono">
+                            <td className="py-3 px-3.5 bg-amber-500/5 font-mono">
                               <div className="font-black text-amber-300 text-sm">
                                 {yieldItem.normalRunesPerItem.toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })} <span className="text-xs text-amber-400/80 font-semibold">runas</span>
                               </div>
-                              <div className="text-xs font-bold text-slate-300">
+                              <div className="text-sm font-black text-amber-200/90 mt-0.5">
                                 {yieldItem.normalKamasValue.toLocaleString()} K
                               </div>
                             </td>
 
                             {/* Focus Yield (Con foco) */}
-                            <td className="py-2.5 px-3.5 bg-purple-500/5 font-mono">
+                            <td className="py-3 px-3.5 bg-purple-500/5 font-mono">
                               <div className="flex items-center justify-between gap-2">
                                 <div>
                                   <span
@@ -2118,7 +2302,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                                       maximumFractionDigits: 2,
                                     })} <span className="text-xs text-purple-400/80 font-semibold">runas</span>
                                   </span>
-                                  <div className="text-xs font-bold text-slate-200">
+                                  <div className="text-sm font-black text-purple-200 mt-0.5">
                                     {yieldItem.focusKamasValue.toLocaleString()} K
                                   </div>
                                 </div>
@@ -2141,7 +2325,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                                   )}
                                   <div className="mt-0.5">
                                     <span
-                                      className={`text-[10px] font-mono font-bold ${
+                                      className={`text-xs font-mono font-black ${
                                         gainVsNormal >= 0 ? 'text-emerald-400' : 'text-slate-500'
                                       }`}
                                     >
@@ -2157,6 +2341,31 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       })
                     )}
                   </tbody>
+                  {/* Prominent Totals Table Footer */}
+                  {crushingSimulation.statYields.length > 0 && (
+                    <tfoot className="border-t-2 border-slate-700 bg-slate-950/90">
+                      <tr>
+                        <td colSpan={3} className="py-3 px-3.5 text-xs font-black uppercase text-slate-300 tracking-wider">
+                          Total Valor de Runas:
+                        </td>
+                        <td className="py-3 px-3.5 bg-amber-500/10 font-mono">
+                          <span className="text-base font-black text-amber-300">
+                            {crushingSimulation.normalTotalKamasValue.toLocaleString()} K
+                          </span>
+                        </td>
+                        <td className="py-3 px-3.5 bg-purple-500/10 font-mono">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-base font-black text-purple-300">
+                              {(crushingSimulation.bestFocusOption?.totalKamasValue ?? crushingSimulation.normalTotalKamasValue).toLocaleString()} K
+                            </span>
+                            <span className="text-xs font-black text-emerald-400">
+                              +{((crushingSimulation.bestFocusOption?.netProfit ?? crushingSimulation.normalNetProfit) >= 0 ? (crushingSimulation.bestFocusOption?.netProfit ?? crushingSimulation.normalNetProfit) : 0).toLocaleString()} K netos
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
