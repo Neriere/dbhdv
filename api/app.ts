@@ -310,6 +310,7 @@ app.put("/api/local-db/prices/:itemId", async (req, res) => {
     const profileState = await getPriceProfileState();
     res.json({
       prices: prices.prices,
+      priceUpdatedAt: prices.priceUpdatedAt,
       activePriceProfileId: profileState.activePriceProfileId,
     });
   } catch (error) {
@@ -339,6 +340,7 @@ app.put("/api/local-db/prices", async (req, res) => {
     const profileState = await getPriceProfileState();
     res.json({
       prices: updatedPrices.prices,
+      priceUpdatedAt: updatedPrices.priceUpdatedAt,
       activePriceProfileId: profileState.activePriceProfileId,
     });
   } catch (error) {
@@ -355,6 +357,7 @@ app.delete("/api/local-db/prices", async (req, res) => {
     const profileState = await getPriceProfileState();
     res.json({
       prices: prices.prices,
+      priceUpdatedAt: prices.priceUpdatedAt,
       activePriceProfileId: profileState.activePriceProfileId,
     });
   } catch (error) {
