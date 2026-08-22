@@ -363,30 +363,6 @@ app.put("/api/local-db/price-profiles/active", async (req, res) => {
   }
 });
 
-app.post("/api/local-db/items/batch-resolve", async (req, res) => {
-  try {
-    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
-    const items = await resolveMissingNames(itemIds);
-    res.json({ items, updatedItems: items });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Batch resolve failed";
-    res.status(500).json({ error: message });
-  }
-});
-
-app.post("/api/local-db/items/resolve-names", async (req, res) => {
-  try {
-    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
-    const items = await resolveMissingNames(itemIds);
-    res.json({ items, updatedItems: items });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Resolve names failed";
-    res.status(500).json({ error: message });
-  }
-});
-
 app.get("/api/local-db/export-database", (req, res) => {
   res.download(getDatabaseFilePath(), "dofus-local.db");
 });

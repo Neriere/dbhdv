@@ -41,3 +41,21 @@ export function matchesSearchQuery(
 
   return queryTerms.every((term) => combinedTarget.includes(term));
 }
+
+/**
+ * Creates a debounced function that delays invoking callback until after wait milliseconds.
+ */
+export function debounce<T extends (...args: any[]) => void>(
+  callback: T,
+  wait = 150
+): (...args: Parameters<T>) => void {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      callback(...args);
+    }, wait);
+  };
+}

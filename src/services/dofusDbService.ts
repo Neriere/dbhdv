@@ -1,11 +1,14 @@
 import {
+  ConsolidatedIngredient,
   DofusEffect,
   DofusItem,
   DofusRecipe,
+  DofusTheme,
   MarketPriceMap,
   PriceProfile,
   PriceUpdatedAtMap,
   RecipeTreeNode,
+  ShoppingListItem,
   SyncSettings,
   SyncStatus,
 } from "../types";
@@ -27,6 +30,7 @@ import {
   BASE_RUNES_BY_ID,
   DOFUS_BASE_RUNES,
   extractItemStats,
+  calculateItemCrushing,
 } from "../data/dofusRuneWeights";
 
 const LOCAL_DB_API_BASE = "/api/local-db";
@@ -1644,4 +1648,224 @@ export function calculateTreeCraftCost(
 
     return total + calculateTreeCraftCost(child, "custom_hybrid", marketPrices);
   }, 0);
+}
+
+// ----------------------------------------------------
+// Synchronous Fast Query & Arbitrage Helpers
+// ----------------------------------------------------
+
+export function getAllLocalItems(): DofusItem[] {
+  if (!isDbInitialized) {
+    void initializeDatabase();
+  }
+  if (itemsMemoryCache.length > 0) {
+    return itemsMemoryCache;
+  }
+  return PRESET_CRAFTABLE_ITEMS;
+}
+
+export function getItemById(id: number): DofusItem | undefined {
+  if (itemsMemoryCache.length > 0) {
+    const found = itemsMemoryCache.find((i) => i.id === id);
+    if (found) return found;
+  }
+  return presetItemMap.get(id);
+}
+
+export function getRecipeByResultId(resultId: number): DofusRecipe | undefined {
+  return recipesMemoryCache[resultId];
+}
+
+export function getStoredItemPrice(itemId: number): number {
+  return pricesMemoryCache[itemId] || 0;
+}
+
+export function getAllStoredPrices(): MarketPriceMap {
+  return getStoredMarketPrices();
+}
+
+export async function setLocalItemPrice(itemId: number, price: number): Promise<void> {
+  await saveMarketPrice(itemId, price);
+}
+
+export function calculateItemCraftCost(itemId: number): number {
+  const recipe = recipesMemoryCache[itemId];
+  if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let i = 0; i < recipe.ingredientIds.length; i++) {
+    const ingId = recipe.ingredientIds[i];
+    const qty = recipe.quantities?.[i] || 1;
+    const ingPrice = getLowestDetectedPrice(ingId, pricesMemoryCache, recipesMemoryCache);
+    total += ingPrice * qty;
+  }
+
+  return total;
+}
+
+export function calculateEstimatedRunesValue(item: DofusItem): number {
+  try {
+    const crushing = calculateItemCrushing(item, 100, null, pricesMemoryCache, 0);
+    return crushing.bestFocusOption?.totalKamasValue || crushing.totalKamasValue || 0;
+  } catch {
+    return 0;
+  }
+}
+
+// ----------------------------------------------------
+// Shopping List & Batch Craft Planner Services
+// ----------------------------------------------------
+
+const SHOPPING_LIST_KEY = "dofus_shopping_list_items_v1";
+const THEME_STORAGE_KEY = "dofus_active_theme_v1";
+
+export function getShoppingList(): ShoppingListItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SHOPPING_LIST_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveShoppingList(items: ShoppingListItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(items));
+    window.dispatchEvent(new CustomEvent("dofus_shopping_list_updated"));
+  } catch {
+    // Ignore storage write errors
+  }
+}
+
+export function addToShoppingList(
+  item: DofusItem,
+  quantity = 1,
+  recipe?: DofusRecipe
+): ShoppingListItem[] {
+  const current = getShoppingList();
+  const existingIndex = current.findIndex((i) => i.itemId === item.id);
+  const resolvedRecipe = recipe || getRecipeByResultId(item.id) || undefined;
+
+  if (existingIndex >= 0) {
+    current[existingIndex].targetQuantity += quantity;
+    if (!current[existingIndex].recipe && resolvedRecipe) {
+      current[existingIndex].recipe = resolvedRecipe;
+    }
+  } else {
+    current.push({
+      itemId: item.id,
+      item,
+      recipe: resolvedRecipe,
+      targetQuantity: Math.max(1, quantity),
+      addedAt: Date.now(),
+    });
+  }
+
+  saveShoppingList(current);
+  return current;
+}
+
+export function updateShoppingListItemQuantity(
+  itemId: number,
+  quantity: number
+): ShoppingListItem[] {
+  const current = getShoppingList();
+  const index = current.findIndex((i) => i.itemId === itemId);
+  if (index >= 0) {
+    if (quantity <= 0) {
+      current.splice(index, 1);
+    } else {
+      current[index].targetQuantity = Math.floor(quantity);
+    }
+    saveShoppingList(current);
+  }
+  return current;
+}
+
+export function removeFromShoppingList(itemId: number): ShoppingListItem[] {
+  const current = getShoppingList().filter((i) => i.itemId !== itemId);
+  saveShoppingList(current);
+  return current;
+}
+
+export function clearShoppingList(): void {
+  saveShoppingList([]);
+}
+
+export function getConsolidatedShoppingIngredients(
+  shoppingList: ShoppingListItem[],
+  marketPrices: MarketPriceMap = {}
+): ConsolidatedIngredient[] {
+  const map = new Map<number, ConsolidatedIngredient>();
+
+  for (const entry of shoppingList) {
+    const recipe = entry.recipe || getRecipeByResultId(entry.itemId);
+    if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+      continue;
+    }
+
+    const batchQty = Math.max(1, entry.targetQuantity);
+    for (let i = 0; i < recipe.ingredientIds.length; i++) {
+      const ingId = recipe.ingredientIds[i];
+      const ingQty = (recipe.quantities[i] || 1) * batchQty;
+      const ingItem = getItemById(ingId) || undefined;
+      const unitPrice = marketPrices[ingId] || getStoredItemPrice(ingId) || 0;
+
+      const existing = map.get(ingId);
+      if (existing) {
+        existing.totalQuantityRequired += ingQty;
+        existing.totalPrice = existing.totalQuantityRequired * existing.unitPrice;
+      } else {
+        map.set(ingId, {
+          itemId: ingId,
+          item: ingItem,
+          totalQuantityRequired: ingQty,
+          unitPrice,
+          totalPrice: ingQty * unitPrice,
+          isChecked: false,
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => (b.totalPrice || 0) - (a.totalPrice || 0)
+  );
+}
+
+// ----------------------------------------------------
+// Theme Management Service
+// ----------------------------------------------------
+
+export function getStoredTheme(): DofusTheme {
+  if (typeof window === "undefined") return "bonta";
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY) as DofusTheme;
+    if (saved === "brakmar" || saved === "pandala" || saved === "bonta") {
+      return saved;
+    }
+    if (saved === "amakna" as any) {
+      return "pandala";
+    }
+    return "bonta";
+  } catch {
+    return "bonta";
+  }
+}
+
+export function setStoredTheme(theme: DofusTheme): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    document.documentElement.setAttribute("data-theme", theme);
+    window.dispatchEvent(new CustomEvent("dofus_theme_updated", { detail: theme }));
+  } catch {
+    // Ignore storage write error
+  }
 }

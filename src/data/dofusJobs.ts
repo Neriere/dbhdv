@@ -78,7 +78,7 @@ export function isPetItem(item?: {
 }
 
 /**
- * Helper to test if an item is purely cosmetic, appearance or obsolete dummy item
+ * Helper to test if an item is purely cosmetic, appearance, quest item or obsolete dummy item
  */
 export function isOmittedItem(item: {
   id?: number;
@@ -98,13 +98,19 @@ export function isOmittedItem(item: {
   }
 
   const typeId = Number(item.typeId || item.type?.id || 0);
+  const superCatId = Number(item.type?.superCategoryId || 0);
 
-  // 2. Mapas y fragmentos de mapa no crafteables
+  // 2. Supercategorías no comerciales / misiones (SuperCategory 4: Objetos de misión, 5: Mutaciones/Búsquedas, 23: Apariencias)
+  if ([4, 5, 23, 14, 15].includes(superCatId)) {
+    return true;
+  }
+
+  // 3. Mapas y fragmentos de mapa no crafteables
   if ([174, 175].includes(typeId)) {
     return true;
   }
 
-  // 3. Tipos obsoletos exclusivamente de roleplay, títulos, auras y emotes
+  // 4. Tipos obsoletos exclusivamente de roleplay, títulos, auras y emotes
   if (
     [
       166, 173, 199, 200, 203, 204, 214, 222, 246, 247, 248, 249, 250,
@@ -114,11 +120,11 @@ export function isOmittedItem(item: {
     return true;
   }
 
-  // 4. Objetos de misión no crafteables ni comerciables
+  // 5. Objetos de misión no crafteables ni comerciables, fichas temporales y piedras de alma de misión
   if (
     [
-      80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146,
-      147, 148, 149, 155, 156, 168, 171, 178, 312,
+      24, 80, 83, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146,
+      147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 307, 308, 312,
     ].includes(typeId)
   ) {
     return true;
@@ -127,23 +133,59 @@ export function isOmittedItem(item: {
   const nameStr = typeof item.name === "string" ? item.name : "";
   const nameEs = (
     typeof item.name === "object" ? item.name?.es || "" : nameStr
-  ).toLowerCase();
+  ).toLowerCase().trim();
   const nameFr = (
     typeof item.name === "object" ? item.name?.fr || "" : ""
-  ).toLowerCase();
+  ).toLowerCase().trim();
   const nameEn = (
     typeof item.name === "object" ? item.name?.en || "" : ""
-  ).toLowerCase();
+  ).toLowerCase().trim();
+
+  // 6. Objetos de prueba / debug de Ankama (como [!] Rapa, [!] Test, etc.)
+  if (
+    nameEs.startsWith("[!]") ||
+    nameFr.startsWith("[!]") ||
+    nameEn.startsWith("[!]") ||
+    nameEs.includes("[!]") ||
+    nameFr.includes("[!]")
+  ) {
+    return true;
+  }
 
   const typeNameStr = typeof item.type?.name === "string" ? item.type.name : "";
   const typeNameEs = (
     typeof item.type?.name === "object" ? item.type.name?.es || "" : typeNameStr
-  ).toLowerCase();
+  ).toLowerCase().trim();
   const typeNameFr = (
     typeof item.type?.name === "object" ? item.type.name?.fr || "" : ""
-  ).toLowerCase();
+  ).toLowerCase().trim();
 
   const text = `${nameEs} ${nameFr} ${nameEn} ${typeNameEs} ${typeNameFr}`;
+
+  // 7. Piedras de alma capturadas / llenas (no vacías)
+  if (
+    text.includes("piedra de alma de") ||
+    text.includes("piedra de alma llena") ||
+    text.includes("pierre d'âme pleine") ||
+    text.includes("pierre d'âme de")
+  ) {
+    return true;
+  }
+
+  // 8. Objetos y fichas de eventos / misiones específicas
+  if (
+    /^\d+\s+(insignia|insignias|ficha|fichas|alma|almas)\b/i.test(nameEs) ||
+    nameEs.includes("insignias de") ||
+    nameEs.includes("abono desértico") ||
+    nameEs.includes("abono desertico") ||
+    text.includes("selocalipsis") ||
+    text.includes("objeto de misión") ||
+    text.includes("objeto de mision") ||
+    text.includes("objet de quête") ||
+    text.includes("quest item")
+  ) {
+    return true;
+  }
 
   // Roleplay items & Roleplay Buffs check
   if (

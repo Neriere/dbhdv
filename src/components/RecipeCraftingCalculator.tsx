@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ArrowLeft,
   Tag,
+  ShoppingCart,
 } from "lucide-react";
 
 import {
@@ -60,6 +61,7 @@ import {
   getItemIconUrl,
   getItemFallbackIconUrl,
   resolveMissingItemNamesInBatch,
+  addToShoppingList,
 } from "../services/dofusDbService";
 import { matchesSearchQuery } from "../utils/searchUtils";
 
@@ -155,6 +157,7 @@ export const RecipeCraftingCalculator: React.FC<{
   const [activeSalePrice, setActiveSalePrice] = useState<number | "">("");
   const [salePriceDraft, setSalePriceDraft] = useState<string>("");
   const [salePriceSavedFeedback, setSalePriceSavedFeedback] = useState<boolean>(false);
+  const [addedToListNotice, setAddedToListNotice] = useState<boolean>(false);
   const saleDebounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // FAST REACTIVE PRICE UPDATE:
@@ -491,23 +494,23 @@ export const RecipeCraftingCalculator: React.FC<{
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-lg">
           <button
             onClick={() => setIsDetailView(false)}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md group"
+            className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md group"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-            <span>Volver al Catálogo de Recetas</span>
+            <span>Volver</span>
           </button>
         </div>
 
         {/* Hero Item Banner Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-b border-slate-800 pb-6">
-            <div className="flex items-center gap-5">
-              <div className="w-20 h-20 bg-slate-950 border border-slate-800 rounded-2xl p-3 flex items-center justify-center shrink-0 shadow-inner">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-slate-950 border border-slate-800 rounded-2xl p-2 flex items-center justify-center shrink-0 shadow-inner">
                 {getItemIconUrl(activePresetItem) ? (
                   <img
                     src={getItemIconUrl(activePresetItem)}
                     alt={getItemName(activePresetItem)}
-                    className="w-14 h-14 object-contain"
+                    className="w-12 h-12 object-contain"
                     onError={(e) => {
                       const fallback = getItemFallbackIconUrl(activePresetItem);
                       if (
@@ -521,46 +524,56 @@ export const RecipeCraftingCalculator: React.FC<{
                     }}
                   />
                 ) : (
-                  <Wrench className="w-8 h-8 text-slate-500" />
+                  <Wrench className="w-7 h-7 text-slate-500" />
                 )}
               </div>
               <div className="space-y-1">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl md:text-3xl font-black text-white tracking-wide">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
                     {getItemName(activePresetItem)}
                   </h1>
-                  <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-black font-mono">
-                    Nivel {activePresetItem.level}
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-bold font-mono">
+                    Niv. {activePresetItem.level}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 pt-1 flex-wrap text-xs">
-                  <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 font-bold text-amber-400">
-                    Oficio: {activePresetItem.jobNameEs}
+                <div className="flex items-center gap-2 pt-0.5 flex-wrap text-xs">
+                  <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 font-bold text-amber-400">
+                    {activePresetItem.jobNameEs}
                   </span>
                   {getItemTypeName(activePresetItem) && (
-                    <span className="px-2.5 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/20 font-bold text-sky-400">
-                      Tipo: {getItemTypeName(activePresetItem)}
+                    <span className="px-2 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/20 font-bold text-sky-400">
+                      {getItemTypeName(activePresetItem)}
                     </span>
                   )}
                   {onSelectForCrushing && (
                     <button
                       onClick={() => onSelectForCrushing(activePresetItem)}
-                      className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 font-bold text-amber-400 flex items-center gap-1 transition-colors"
-                      title="Calcular rentabilidad por machacado de runas"
+                      className="px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 font-bold text-amber-400 flex items-center gap-1 transition-colors"
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      Rompedora de Runas
+                      Romper
                     </button>
                   )}
+                  <button
+                    onClick={() => {
+                      addToShoppingList(activePresetItem, 1);
+                      setAddedToListNotice(true);
+                      setTimeout(() => setAddedToListNotice(false), 2000);
+                    }}
+                    className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 font-bold text-emerald-300 flex items-center gap-1 transition-colors"
+                  >
+                    {addedToListNotice ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <ShoppingCart className="w-3.5 h-3.5" />}
+                    {addedToListNotice ? "¡Añadido!" : "Añadir al carrito"}
+                  </button>
                 </div>
               </div>
             </div>
 
             {/* Sale Price Interactive Editor Box */}
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-right w-full md:w-auto shrink-0 shadow-inner">
-              <label className="block text-[11px] uppercase font-black text-slate-400 mb-1.5 flex items-center justify-end gap-1">
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 text-right w-full md:w-auto shrink-0 shadow-inner">
+              <label className="block text-[11px] font-bold text-slate-400 mb-1 flex items-center justify-end gap-1">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                Precio de Venta Mercadillo
+                Precio Venta HDV
               </label>
               <div className="flex items-center justify-end gap-2">
                 <div className="relative">
@@ -576,145 +589,111 @@ export const RecipeCraftingCalculator: React.FC<{
                       }
                     }}
                     placeholder="0"
-                    className="w-36 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-right text-emerald-400 font-mono font-black text-lg focus:outline-none focus:border-amber-500 transition-colors pr-6"
+                    className="w-32 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1 text-right text-emerald-400 font-mono font-bold text-base focus:outline-none focus:border-amber-500 transition-colors pr-6"
                   />
                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-500 font-mono pointer-events-none">
                     K
                   </span>
                 </div>
                 {salePriceSavedFeedback && (
-                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg animate-pulse">
+                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg">
                     <Check className="w-3.5 h-3.5" />
-                    Guardado
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Horizontal Metrics Dashboard (4 KPI Cards Side-by-Side) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1 shadow-md">
-              <span className="text-[11px] text-slate-400 font-black uppercase tracking-wider block">
-                Costo Fabricación Óptimo
+          {/* Metrics Dashboard */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-0.5 shadow-md">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                Costo Crafteo
               </span>
-              <div className="text-2xl font-black font-mono text-amber-400">
+              <div className="text-xl font-black font-mono text-amber-400">
                 {autoOptimalCost.toLocaleString()} K
               </div>
-              <p className="text-[11px] text-slate-500">
-                Ruta más económica calculada
-              </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1 shadow-md">
-              <span className="text-[11px] text-slate-400 font-black uppercase tracking-wider block">
-                Precio Venta Estimado
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-0.5 shadow-md">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                Venta (-3%)
               </span>
-              <div className="text-2xl font-black font-mono text-emerald-400">
-                {effectiveSalePrice.toLocaleString()} K
+              <div className="text-xl font-black font-mono text-emerald-400">
+                {effectiveSalePrice > 0 ? `${(effectiveSalePrice - activeSaleTax).toLocaleString()} K` : "---"}
               </div>
-              <p className="text-[11px] font-mono text-slate-400">
-                Impuesto (3%): -{activeSaleTax.toLocaleString()} K
-              </p>
             </div>
 
             <div
-              className={`p-4 rounded-2xl border space-y-1 shadow-md ${
+              className={`p-3 rounded-xl border space-y-0.5 shadow-md ${
                 netProfit >= 0
                   ? "bg-emerald-500/10 border-emerald-500/30"
                   : "bg-red-500/10 border-red-500/30"
               }`}
             >
-              <span className="text-[11px] text-slate-300 font-black uppercase tracking-wider block">
+              <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider block">
                 Ganancia Neta
               </span>
               <div
-                className={`text-2xl font-black font-mono ${
+                className={`text-xl font-black font-mono ${
                   netProfit >= 0 ? "text-emerald-400" : "text-red-400"
                 }`}
               >
-                {netProfit >= 0 ? "+" : ""}
-                {netProfit.toLocaleString()} K
+                {effectiveSalePrice > 0 ? `${netProfit >= 0 ? "+" : ""}${netProfit.toLocaleString()} K` : "---"}
               </div>
-              <p className="text-[11px] font-mono text-slate-400">
-                Limpio tras impuesto HDV
-              </p>
             </div>
 
             <div
-              className={`p-4 rounded-2xl border space-y-1 shadow-md ${
+              className={`p-3 rounded-xl border space-y-0.5 shadow-md ${
                 profitMarginPercent >= 0
                   ? "bg-amber-500/10 border-amber-500/30"
                   : "bg-red-500/10 border-red-500/30"
               }`}
             >
-              <span className="text-[11px] text-slate-300 font-black uppercase tracking-wider block">
-                Margen Retorno (ROI)
+              <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider block">
+                ROI
               </span>
               <div
-                className={`text-2xl font-black font-mono ${
+                className={`text-xl font-black font-mono ${
                   profitMarginPercent >= 0 ? "text-amber-400" : "text-red-400"
                 }`}
               >
-                {profitMarginPercent > 0 ? "+" : ""}
-                {profitMarginPercent.toFixed(1)}%
+                {effectiveSalePrice > 0 ? `${profitMarginPercent > 0 ? "+" : ""}${profitMarginPercent.toFixed(1)}%` : "---"}
               </div>
-              <p className="text-[11px] font-mono text-slate-400">
-                Retorno sobre inversión
-              </p>
             </div>
           </div>
 
-          {/* Smart Strategy Banner */}
-          <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-3 shadow-md">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
-              <span className="text-xs font-black text-amber-300 uppercase tracking-wider">
-                Estrategia Óptima de Crafteo
+          {/* Strategy Banner */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2.5 shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                Ruta de Fabricación
               </span>
+              {autoOptimalCost < directCraftCost && (
+                <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded border border-emerald-500/30">
+                  Ahorro: {(directCraftCost - autoOptimalCost).toLocaleString()} K
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                <span className="text-slate-400 text-[11px] font-sans block font-semibold">
-                  Comprando Ingredientes Directos:
+            <div className="grid grid-cols-2 gap-2.5 text-xs font-mono">
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-slate-400 text-[10px] font-sans block font-semibold">
+                  Compra Directa:
                 </span>
-                <span className="text-base font-black text-white block">
+                <span className="text-sm font-bold text-white">
                   {directCraftCost.toLocaleString()} K
                 </span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-900 border border-emerald-500/30 space-y-1">
-                <span className="text-slate-400 text-[11px] font-sans block font-semibold">
-                  Ruta Óptima (Fabricando Sub-recetas):
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-emerald-500/30">
+                <span className="text-slate-400 text-[10px] font-sans block font-semibold">
+                  Ruta Óptima:
                 </span>
-                <span className="text-base font-black text-emerald-400 block">
+                <span className="text-sm font-bold text-emerald-400">
                   {autoOptimalCost.toLocaleString()} K
                 </span>
               </div>
-            </div>
-
-            <div className="text-xs text-amber-200/90 leading-relaxed font-sans pt-1 border-t border-slate-800">
-              {autoOptimalCost < directCraftCost ? (
-                <p>
-                  Recomendación:{" "}
-                  <strong className="text-emerald-400 font-bold">
-                    Craftear fabricando los sub-ingredientes
-                  </strong>
-                  . Ahorras{" "}
-                  <strong className="text-emerald-300 font-bold font-mono text-sm">
-                    {(directCraftCost - autoOptimalCost).toLocaleString()} Kamas
-                  </strong>{" "}
-                  en comparación con comprar todo listo.
-                </p>
-              ) : (
-                <p>
-                  Recomendación:{" "}
-                  <strong className="text-sky-400 font-bold">
-                    Comprar los ingredientes directos en el mercadillo
-                  </strong>
-                  . Fabricar sub-crafteos intermedios no reduce el costo.
-                </p>
-              )}
             </div>
           </div>
 
@@ -1035,16 +1014,15 @@ export const RecipeCraftingCalculator: React.FC<{
                   </div>
                 </div>
 
-                <div className="pt-0.5 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
+                <div className="pt-0.5 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-0.5 transition-transform">
                   <span className="flex items-center gap-2">
                     {metrics.roi > 0 && (
                       <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-mono border border-emerald-500/30 font-bold">
                         +{metrics.roi.toFixed(0)}% ROI
                       </span>
                     )}
-                    <span className="text-xs sm:text-sm font-black">Ver Receta y Desglose</span>
                   </span>
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-400 transition-colors" />
                 </div>
               </div>
             );

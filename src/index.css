@@ -1,1 +1,214 @@
 @import "tailwindcss";
+
+/* ----------------------------------------------------
+ * Theme Variables & Color Palettes for Dofus HDV
+ * Designed for visual comfort and high readability
+ * ---------------------------------------------------- */
+
+:root,
+[data-theme="bonta"] {
+  --bg-main: #070d18;
+  --bg-surface: #0e1726;
+  --bg-card: #152238;
+  --bg-input: #080f1c;
+  --border-subtle: #1a2942;
+  --border-normal: #293d5e;
+  --border-focus: #38bdf8;
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --accent-glow: rgba(56, 189, 248, 0.18);
+}
+
+[data-theme="brakmar"] {
+  --bg-main: #0e070b;
+  --bg-surface: #170d13;
+  --bg-card: #23141e;
+  --bg-input: #0c060a;
+  --border-subtle: #2b1725;
+  --border-normal: #422238;
+  --border-focus: #f43f5e;
+  --accent: #f43f5e;
+  --accent-hover: #fb7185;
+  --accent-glow: rgba(244, 63, 94, 0.18);
+}
+
+[data-theme="pandala"] {
+  --bg-main: #090e09;
+  --bg-surface: #111a11;
+  --bg-card: #1b261b;
+  --bg-input: #0a0f0a;
+  --border-subtle: #233323;
+  --border-normal: #344c34;
+  --border-focus: #a3e635;
+  --accent: #a3e635;
+  --accent-hover: #bef264;
+  --accent-glow: rgba(163, 230, 53, 0.18);
+}
+
+/* ----------------------------------------------------
+ * Bonta (Azure / Steel Knight)
+ * ---------------------------------------------------- */
+html[data-theme="bonta"],
+[data-theme="bonta"] body,
+[data-theme="bonta"] .bg-slate-950 {
+  background-color: var(--bg-main) !important;
+}
+
+[data-theme="bonta"] .bg-slate-900,
+[data-theme="bonta"] .bg-slate-900\/60,
+[data-theme="bonta"] .bg-slate-900\/80,
+[data-theme="bonta"] .bg-slate-900\/90 {
+  background-color: var(--bg-surface) !important;
+}
+
+[data-theme="bonta"] .bg-slate-800,
+[data-theme="bonta"] .bg-slate-800\/80,
+[data-theme="bonta"] .bg-slate-800\/50,
+[data-theme="bonta"] .bg-slate-800\/40 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="bonta"] .border-slate-800,
+[data-theme="bonta"] .border-slate-800\/80,
+[data-theme="bonta"] .border-slate-800\/60,
+[data-theme="bonta"] .border-slate-800\/50 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="bonta"] .border-slate-700 {
+  border-color: var(--border-normal) !important;
+}
+
+[data-theme="bonta"] .text-amber-400,
+[data-theme="bonta"] .text-amber-300 {
+  color: #38bdf8 !important;
+}
+
+[data-theme="bonta"] .bg-amber-500 {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="bonta"] .bg-amber-500\/20,
+[data-theme="bonta"] .bg-amber-500\/10,
+[data-theme="bonta"] .bg-amber-500\/15 {
+  background-color: rgba(56, 189, 248, 0.15) !important;
+}
+
+[data-theme="bonta"] .border-amber-500\/40,
+[data-theme="bonta"] .border-amber-500\/30,
+[data-theme="bonta"] .border-amber-500\/20 {
+  border-color: rgba(56, 189, 248, 0.35) !important;
+}
+
+/* ----------------------------------------------------
+ * Brakmar (Crimson / Scarlet Knight)
+ * ---------------------------------------------------- */
+html[data-theme="brakmar"],
+[data-theme="brakmar"] body,
+[data-theme="brakmar"] .bg-slate-950 {
+  background-color: var(--bg-main) !important;
+}
+
+[data-theme="brakmar"] .bg-slate-900,
+[data-theme="brakmar"] .bg-slate-900\/60,
+[data-theme="brakmar"] .bg-slate-900\/80,
+[data-theme="brakmar"] .bg-slate-900\/90 {
+  background-color: var(--bg-surface) !important;
+}
+
+[data-theme="brakmar"] .bg-slate-800,
+[data-theme="brakmar"] .bg-slate-800\/80,
+[data-theme="brakmar"] .bg-slate-800\/50,
+[data-theme="brakmar"] .bg-slate-800\/40 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="brakmar"] .border-slate-800,
+[data-theme="brakmar"] .border-slate-800\/80,
+[data-theme="brakmar"] .border-slate-800\/60,
+[data-theme="brakmar"] .border-slate-800\/50 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="brakmar"] .border-slate-700 {
+  border-color: var(--border-normal) !important;
+}
+
+[data-theme="brakmar"] .text-amber-400,
+[data-theme="brakmar"] .text-amber-300 {
+  color: #fb7185 !important;
+}
+
+[data-theme="brakmar"] .bg-amber-500 {
+  background-color: #e11d48 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="brakmar"] .bg-amber-500\/20,
+[data-theme="brakmar"] .bg-amber-500\/10,
+[data-theme="brakmar"] .bg-amber-500\/15 {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+}
+
+[data-theme="brakmar"] .border-amber-500\/40,
+[data-theme="brakmar"] .border-amber-500\/30,
+[data-theme="brakmar"] .border-amber-500\/20 {
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+
+/* ----------------------------------------------------
+ * Pandala (Bamboo / Warm Earth Pandawa)
+ * ---------------------------------------------------- */
+html[data-theme="pandala"],
+[data-theme="pandala"] body,
+[data-theme="pandala"] .bg-slate-950 {
+  background-color: var(--bg-main) !important;
+}
+
+[data-theme="pandala"] .bg-slate-900,
+[data-theme="pandala"] .bg-slate-900\/60,
+[data-theme="pandala"] .bg-slate-900\/80,
+[data-theme="pandala"] .bg-slate-900\/90 {
+  background-color: var(--bg-surface) !important;
+}
+
+[data-theme="pandala"] .bg-slate-800,
+[data-theme="pandala"] .bg-slate-800\/80,
+[data-theme="pandala"] .bg-slate-800\/50,
+[data-theme="pandala"] .bg-slate-800\/40 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="pandala"] .border-slate-800,
+[data-theme="pandala"] .border-slate-800\/80,
+[data-theme="pandala"] .border-slate-800\/60,
+[data-theme="pandala"] .border-slate-800\/50 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="pandala"] .border-slate-700 {
+  border-color: var(--border-normal) !important;
+}
+
+[data-theme="pandala"] .text-amber-400,
+[data-theme="pandala"] .text-amber-300 {
+  color: #bef264 !important;
+}
+
+[data-theme="pandala"] .bg-amber-500 {
+  background-color: #65a30d !important;
+  color: #ffffff !important;
+}
+
+[data-theme="pandala"] .bg-amber-500\/20,
+[data-theme="pandala"] .bg-amber-500\/10,
+[data-theme="pandala"] .bg-amber-500\/15 {
+  background-color: rgba(163, 230, 53, 0.15) !important;
+}
+
+[data-theme="pandala"] .border-amber-500\/40,
+[data-theme="pandala"] .border-amber-500\/30,
+[data-theme="pandala"] .border-amber-500\/20 {
+  border-color: rgba(163, 230, 53, 0.35) !important;
+}

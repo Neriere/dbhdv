@@ -1199,40 +1199,40 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 gap-1">
           <button
             onClick={() => setViewMode('catalog')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'catalog'
                 ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Layers className="w-4 h-4" />
-            Catálogo y Listado
+            <Layers className="w-3.5 h-3.5" />
+            Catálogo
           </button>
 
           {selectedItem && (
             <button
               onClick={() => setViewMode('detail')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 viewMode === 'detail'
                   ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Crosshair className="w-4 h-4" />
-              Simulador ({getItemName(selectedItem).slice(0, 14)}...)
+              <Crosshair className="w-3.5 h-3.5" />
+              Simulador
             </button>
           )}
 
           <button
             onClick={() => setViewMode('rune_prices')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'rune_prices'
                 ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Tag className="w-4 h-4" />
-            HDV Runas ({DOFUS_BASE_RUNES.length})
+            <Tag className="w-3.5 h-3.5" />
+            Precios Runas ({DOFUS_BASE_RUNES.length})
           </button>
         </div>
       </div>

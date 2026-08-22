@@ -3,11 +3,9 @@ import {
   Trophy,
   TrendingUp,
   Search,
-  SlidersHorizontal,
   DollarSign,
   Wrench,
   ArrowUpRight,
-  Sparkles,
   Zap,
   Tag,
   Check,
@@ -28,11 +26,11 @@ import {
   Heart,
   ChevronLeft,
   ChevronRight,
+  ShoppingCart,
 } from "lucide-react";
-import { DofusItem, MarketPriceMap, RecipeTreeNode } from "../types";
-import { DOFUS_JOBS, getJobForItem, isOmittedItem } from "../data/dofusJobs";
+import { MarketPriceMap } from "../types";
+import { DOFUS_JOBS, isOmittedItem, isCrushableJob } from "../data/dofusJobs";
 import {
-  PRESET_CRAFTABLE_ITEMS,
   DEFAULT_INGREDIENT_PRICES,
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
@@ -46,7 +44,9 @@ import {
   getItemTypeName,
   getItemIconUrl,
   getItemFallbackIconUrl,
+  addToShoppingList,
 } from "../services/dofusDbService";
+import { calculateItemCrushing } from "../data/dofusRuneWeights";
 import { matchesSearchQuery } from "../utils/searchUtils";
 
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
@@ -66,13 +66,20 @@ const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Heart,
 };
 
-export interface CalculatedRecipeProfit {
+export interface CalculatedRecipeRanking {
   item: PresetCraftableItem;
   craftCost: number;
   salePrice: number;
   saleTax: number;
-  netProfit: number;
-  roiPercent: number;
+  saleNetProfit: number;
+  saleRoiPercent: number;
+  canCrush: boolean;
+  runicEstimatedValue: number;
+  crushNetProfit: number;
+  crushRoiPercent: number;
+  bestStrategy: "hdv" | "crush" | "none";
+  bestNetProfit: number;
+  bestRoiPercent: number;
   jobName: string;
   jobId: number;
 }
@@ -92,20 +99,21 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   const [databaseVersion, setDatabaseVersion] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
+  const [strategyFilter, setStrategyFilter] = useState<"all" | "hdv" | "crush" | "profitable">("all");
   const [minProfit, setMinProfit] = useState<number | "">(0);
   const [minRoi, setMinRoi] = useState<number | "">(0);
   const [maxCraftCost, setMaxCraftCost] = useState<number | "">(20000000);
   const [minLevel, setMinLevel] = useState<number | "">(1);
   const [maxLevel, setMaxLevel] = useState<number | "">(200);
   const [sortBy, setSortBy] = useState<
-    "profit_desc" | "roi_desc" | "cost_asc" | "price_desc"
-  >("profit_desc");
+    "best_profit_desc" | "sale_profit_desc" | "crush_profit_desc" | "best_roi_desc" | "cost_asc"
+  >("best_profit_desc");
 
-  // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [
     selectedJobId,
+    strategyFilter,
     searchTerm,
     minLevel,
     maxLevel,
@@ -116,14 +124,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   ]);
 
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
-  const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>(
-    {},
-  );
-
+  const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
-  const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(
-    null,
-  );
+  const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
+  const [addedCartItemId, setAddedCartItemId] = useState<number | null>(null);
 
   useEffect(() => {
     const hydrateState = () => {
@@ -140,7 +144,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         hydrateState();
       })
       .catch((error) => {
-        console.error("No se pudo inicializar la base local:", error);
+        console.error("Error inicializando base:", error);
       });
 
     const handleDbUpdate = () => {
@@ -161,28 +165,23 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         setTimeout(() => setSavedFeedbackItemId(null), 1500);
       })
       .catch((error) => {
-        console.error(
-          `No se pudo guardar el precio del item ${itemId}:`,
-          error,
-        );
+        console.error(`Error guardando precio ${itemId}:`, error);
       });
   };
 
-  const formatUpdatedAtLabel = (itemId: number) => {
-    const updatedAt = priceUpdatedAt[itemId];
-    return updatedAt
-      ? `Actualizado: ${new Date(updatedAt).toLocaleString()}`
-      : "";
+  const handleAddToCart = (item: PresetCraftableItem) => {
+    addToShoppingList(item, 1);
+    setAddedCartItemId(item.id);
+    setTimeout(() => setAddedCartItemId(null), 1800);
   };
 
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
-    return getCraftableItemsSnapshot() as PresetCraftableItem[];
+    const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];
+    return raw.filter((item) => !isOmittedItem(item));
   }, [databaseVersion]);
 
-  // Compute profit metrics for all items
-  const rankedItems: CalculatedRecipeProfit[] = useMemo(() => {
+  const rankedItems: CalculatedRecipeRanking[] = useMemo(() => {
     return allCraftableItems.map((item) => {
-      // Calculate craft cost based on direct ingredients in marketPrices
       let craftCost = 0;
       if (item.recipeData && item.recipeData.ingredientIds) {
         item.recipeData.ingredientIds.forEach((ingId, idx) => {
@@ -194,40 +193,65 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
       const salePrice = marketPrices[item.id] || 0;
       const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.03) : 0;
-      const netProfit = salePrice > 0 ? (salePrice - saleTax - craftCost) : -craftCost;
-      const roiPercent = craftCost > 0 ? (netProfit / craftCost) * 100 : 0;
+      const saleNetProfit = salePrice > 0 ? salePrice - saleTax - craftCost : -craftCost;
+      const saleRoiPercent = craftCost > 0 && salePrice > 0 ? (saleNetProfit / craftCost) * 100 : 0;
+
+      const canCrush = isCrushableJob(item.jobId) && Array.isArray(item.possibleEffects) && item.possibleEffects.length > 0;
+      let runicEstimatedValue = 0;
+      if (canCrush) {
+        const crushResult = calculateItemCrushing(item, 100, null, marketPrices, craftCost);
+        runicEstimatedValue = crushResult.totalKamasValue;
+      }
+      const crushNetProfit = runicEstimatedValue > 0 ? runicEstimatedValue - craftCost : -craftCost;
+      const crushRoiPercent = craftCost > 0 && runicEstimatedValue > 0 ? (crushNetProfit / craftCost) * 100 : 0;
+
+      let bestStrategy: "hdv" | "crush" | "none" = "none";
+      let bestNetProfit = Math.max(saleNetProfit, crushNetProfit);
+      let bestRoiPercent = saleNetProfit >= crushNetProfit ? saleRoiPercent : crushRoiPercent;
+
+      if (saleNetProfit > 0 || crushNetProfit > 0) {
+        bestStrategy = saleNetProfit >= crushNetProfit ? "hdv" : "crush";
+      }
 
       return {
         item,
         craftCost,
         salePrice,
         saleTax,
-        netProfit,
-        roiPercent,
+        saleNetProfit,
+        saleRoiPercent,
+        canCrush,
+        runicEstimatedValue,
+        crushNetProfit,
+        crushRoiPercent,
+        bestStrategy,
+        bestNetProfit,
+        bestRoiPercent,
         jobName: item.jobNameEs,
         jobId: item.jobId,
       };
     });
   }, [allCraftableItems, marketPrices]);
 
-  // Filter and sort ranked items
   const filteredRankings = useMemo(() => {
     const effMinLevel = minLevel === "" ? 1 : Number(minLevel);
     const effMaxLevel = maxLevel === "" ? 200 : Number(maxLevel);
     const effMinProfit = minProfit === "" ? 0 : Number(minProfit);
     const effMinRoi = minRoi === "" ? 0 : Number(minRoi);
-    const effMaxCraftCost =
-      maxCraftCost === "" ? Infinity : Number(maxCraftCost);
+    const effMaxCraftCost = maxCraftCost === "" ? Infinity : Number(maxCraftCost);
 
     return rankedItems
       .filter((entry) => {
-        if (selectedJobId !== "all" && entry.jobId !== selectedJobId)
-          return false;
-        if (entry.item.level < effMinLevel || entry.item.level > effMaxLevel)
-          return false;
-        if (entry.netProfit < effMinProfit) return false;
-        if (entry.roiPercent < effMinRoi) return false;
+        if (selectedJobId !== "all" && entry.jobId !== selectedJobId) return false;
+        if (entry.item.level < effMinLevel || entry.item.level > effMaxLevel) return false;
         if (entry.craftCost > effMaxCraftCost) return false;
+
+        if (strategyFilter === "profitable" && entry.bestNetProfit <= 0) return false;
+        if (strategyFilter === "hdv" && (entry.saleNetProfit <= 0 || entry.salePrice <= 0)) return false;
+        if (strategyFilter === "crush" && (entry.crushNetProfit <= 0 || !entry.canCrush)) return false;
+
+        if (entry.bestNetProfit < effMinProfit) return false;
+        if (entry.bestRoiPercent < effMinRoi) return false;
 
         if (searchTerm.trim()) {
           if (
@@ -247,15 +271,17 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === "profit_desc") return b.netProfit - a.netProfit;
-        if (sortBy === "roi_desc") return b.roiPercent - a.roiPercent;
+        if (sortBy === "best_profit_desc") return b.bestNetProfit - a.bestNetProfit;
+        if (sortBy === "sale_profit_desc") return b.saleNetProfit - a.saleNetProfit;
+        if (sortBy === "crush_profit_desc") return b.crushNetProfit - a.crushNetProfit;
+        if (sortBy === "best_roi_desc") return b.bestRoiPercent - a.bestRoiPercent;
         if (sortBy === "cost_asc") return a.craftCost - b.craftCost;
-        if (sortBy === "price_desc") return b.salePrice - a.salePrice;
         return 0;
       });
   }, [
     rankedItems,
     selectedJobId,
+    strategyFilter,
     minLevel,
     maxLevel,
     minProfit,
@@ -265,7 +291,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
   ]);
 
-  // Compute total pages & current paginated rankings slice
   const totalPages = Math.ceil(filteredRankings.length / ITEMS_PER_PAGE) || 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
 
@@ -276,21 +301,15 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Job Selection Visual Cards Bar */}
+      {/* Job Selection Cards */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-lg space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-black text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
-            <Wrench className="w-4 h-4 text-amber-400" />
-            Oficios de Crafteo
-          </span>
-        </div>
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           <button
             onClick={() => setSelectedJobId("all")}
             className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
               selectedJobId === "all"
-                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black"
-                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+                ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -306,8 +325,8 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 onClick={() => setSelectedJobId(job.id)}
                 className={`px-2.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
                   isSelected
-                    ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black"
-                    : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+                    ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                    : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
                 }`}
               >
                 <JobIcon className="w-3.5 h-3.5" />
@@ -328,23 +347,17 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               <h2 className="text-base font-black text-white flex items-center gap-2">
                 Ranking de Rentabilidad
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold border border-emerald-500/30">
-                  {filteredRankings.length} Recetas
+                  {filteredRankings.length}
                 </span>
               </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
-            <span className="text-slate-400 text-[11px] font-bold uppercase tracking-wider mr-1">
-              Filtro:
-            </span>
             <button
-              onClick={() => {
-                setMinProfit(0);
-                setMinRoi(0);
-              }}
+              onClick={() => setStrategyFilter("all")}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                minProfit === 0 && minRoi === 0
+                strategyFilter === "all"
                   ? "bg-amber-500 text-slate-950 font-black"
                   : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
@@ -352,41 +365,44 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               Todas
             </button>
             <button
-              onClick={() => {
-                setMinProfit(1);
-                setMinRoi(0);
-              }}
+              onClick={() => setStrategyFilter("profitable")}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                minProfit === 1 && minRoi === 0
+                strategyFilter === "profitable"
                   ? "bg-emerald-500 text-slate-950 font-black"
                   : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
-              Solo Rentables (&gt;0 K)
+              Rentables (&gt;0 K)
             </button>
             <button
-              onClick={() => {
-                setMinProfit(25000);
-                setMinRoi(20);
-              }}
+              onClick={() => setStrategyFilter("hdv")}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                minProfit === 25000
-                  ? "bg-emerald-500 text-slate-950 font-black"
+                strategyFilter === "hdv"
+                  ? "bg-sky-500 text-slate-950 font-black"
                   : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
-              &gt;25k K / +20% ROI
+              Venta HDV
+            </button>
+            <button
+              onClick={() => setStrategyFilter("crush")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                strategyFilter === "crush"
+                  ? "bg-purple-500 text-slate-950 font-black"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+              }`}
+            >
+              Runas
             </button>
           </div>
         </div>
 
         {/* Filter Controls Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-          {/* Level Preset Range Filter */}
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Tag className="w-3.5 h-3.5 text-amber-400" />
-              Rango de Nivel
+              Nivel
             </label>
             <select
               value={`${minLevel}-${maxLevel}`}
@@ -403,52 +419,50 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               }}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none"
             >
-              <option value="all">Todos los Niveles (1-200)</option>
-              <option value="1-50">Nivel 1 - 50</option>
-              <option value="51-100">Nivel 51 - 100</option>
-              <option value="101-150">Nivel 101 - 150</option>
-              <option value="151-200">Nivel 151 - 200</option>
+              <option value="all">Todos (1-200)</option>
+              <option value="1-50">1 - 50</option>
+              <option value="51-100">51 - 100</option>
+              <option value="101-150">101 - 150</option>
+              <option value="151-200">151 - 200</option>
             </select>
           </div>
 
-          {/* Search Input */}
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Search className="w-3.5 h-3.5 text-amber-400" />
-              Buscar Objeto
+              Buscar
             </label>
             <input
               type="text"
-              placeholder="ej. Gelano, Anillo..."
+              placeholder="Nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:outline-none font-medium"
             />
           </div>
 
-          {/* Sort By Dropdown */}
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              Ordenar Por
+              Ordenar
             </label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none"
             >
-              <option value="profit_desc">Mayor Ganancia (Kamas)</option>
-              <option value="roi_desc">Mayor Rentabilidad (% ROI)</option>
-              <option value="cost_asc">Menor Costo de Crafteo</option>
-              <option value="price_desc">Mayor Precio de Venta</option>
+              <option value="best_profit_desc">Mayor Ganancia</option>
+              <option value="sale_profit_desc">Mayor Ganancia HDV</option>
+              <option value="crush_profit_desc">Mayor Ganancia Runas</option>
+              <option value="best_roi_desc">Mayor ROI (%)</option>
+              <option value="cost_asc">Menor Costo</option>
             </select>
           </div>
 
-          {/* Min Profit Input */}
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-              Ganancia Mín. (K)
+              Ganancia Mín.
             </label>
             <input
               type="number"
@@ -462,11 +476,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
             />
           </div>
 
-          {/* Max Craft Cost Budget */}
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Coins className="w-3.5 h-3.5 text-amber-400" />
-              Presupuesto Máx. (K)
+              Presupuesto Máx.
             </label>
             <input
               type="number"
@@ -488,10 +501,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
           <div className="p-12 text-center text-slate-500">
             <Trophy className="w-10 h-10 mx-auto text-slate-600 mb-2 opacity-40" />
             <p className="text-sm font-bold text-slate-400">
-              No se encontraron recetas con los filtros aplicados.
-            </p>
-            <p className="text-xs mt-1">
-              Prueba a reducir la ganancia mínima o seleccionar "Todos los Oficios".
+              No se encontraron recetas.
             </p>
           </div>
         ) : (
@@ -499,13 +509,13 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-mono tracking-wider text-[10px]">
                 <tr>
-                  <th className="py-3 px-3 w-12 text-center">#</th>
-                  <th className="py-3 px-3">Objeto & Oficio</th>
-                  <th className="py-3 px-3 text-right">Costo Crafteo</th>
-                  <th className="py-3 px-3 text-right">Precio Venta</th>
-                  <th className="py-3 px-3 text-right">Ganancia Neta (-3% imp.)</th>
-                  <th className="py-3 px-3 text-center">ROI %</th>
-                  <th className="py-3 px-3 text-center">Acción</th>
+                  <th className="py-3 px-3 w-10 text-center">#</th>
+                  <th className="py-3 px-3">Objeto</th>
+                  <th className="py-3 px-3 text-right">Costo</th>
+                  <th className="py-3 px-3 text-right">Venta HDV</th>
+                  <th className="py-3 px-3 text-right">Runas</th>
+                  <th className="py-3 px-3 text-center">Ganancia</th>
+                  <th className="py-3 px-3 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -516,7 +526,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   const itemName = getItemName(item);
                   const iconUrl = getItemIconUrl(item);
                   const fallbackIcon = getItemFallbackIconUrl(item);
-                  const isProfitable = entry.netProfit > 0;
 
                   const JobIcon =
                     JOB_ICON_MAP[
@@ -525,70 +534,67 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                     ] || Wrench;
 
                   const isSaved = savedFeedbackItemId === item.id;
+                  const isAddedCart = addedCartItemId === item.id;
 
                   return (
                     <tr
                       key={item.id}
                       className="hover:bg-slate-800/40 transition-colors group"
                     >
-                      {/* Rank Badge */}
                       <td className="py-2.5 px-3 text-center font-mono font-bold">
                         {rank === 1 && (
-                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20">
+                          <span className="w-6 h-6 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs">
                             1
                           </span>
                         )}
                         {rank === 2 && (
-                          <span className="w-7 h-7 mx-auto rounded-full bg-slate-300 text-slate-950 flex items-center justify-center font-black shadow-md">
+                          <span className="w-6 h-6 mx-auto rounded-full bg-slate-300 text-slate-950 flex items-center justify-center font-black text-xs">
                             2
                           </span>
                         )}
                         {rank === 3 && (
-                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-700 text-white flex items-center justify-center font-black shadow-md">
+                          <span className="w-6 h-6 mx-auto rounded-full bg-amber-700 text-white flex items-center justify-center font-black text-xs">
                             3
                           </span>
                         )}
                         {rank > 3 && (
-                          <span className="text-slate-500 font-mono">
+                          <span className="text-slate-500 font-mono text-xs">
                             #{rank}
                           </span>
                         )}
                       </td>
 
-                      {/* Item Info */}
                       <td className="py-3 px-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <img
                             src={iconUrl}
                             alt={itemName}
-                            className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 p-1 object-contain shrink-0 shadow-inner"
+                            className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 p-1 object-contain shrink-0"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = fallbackIcon;
                             }}
                           />
-                          <div>
-                            <div className="font-extrabold text-white text-sm sm:text-base group-hover:text-amber-400 transition-colors flex items-center gap-2">
-                              {itemName}
-                              <span className="text-[11px] font-mono font-bold text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                          <div className="min-w-0">
+                            <div className="font-extrabold text-white text-xs sm:text-sm group-hover:text-amber-400 transition-colors flex items-center gap-1.5 truncate">
+                              <span className="truncate">{itemName}</span>
+                              <span className="text-[10px] font-mono font-bold text-amber-300 px-1.5 py-0.2 rounded-full bg-amber-500/10 border border-amber-500/20 shrink-0">
                                 Niv. {item.level}
                               </span>
                             </div>
-                            <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5 mt-0.5">
-                              <JobIcon className="w-3.5 h-3.5 text-amber-400" />
+                            <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1 mt-0.5">
+                              <JobIcon className="w-3 h-3 text-amber-400" />
                               <span>{entry.jobName}</span>
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      {/* Craft Cost */}
-                      <td className="py-3 px-3 text-right font-mono font-bold text-sm text-slate-200">
+                      <td className="py-3 px-3 text-right font-mono font-bold text-xs text-slate-200">
                         {entry.craftCost.toLocaleString()} K
                       </td>
 
-                      {/* Editable Sale Price */}
-                      <td className="py-3 px-3 text-right">
-                        <div className="inline-flex items-center justify-end gap-1.5">
+                      <td className="py-3 px-3 text-right font-mono">
+                        <div className="inline-flex items-center justify-end gap-1">
                           <input
                             type="number"
                             value={
@@ -598,7 +604,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                                   ? entry.salePrice
                                   : ""
                             }
-                            title={formatUpdatedAtLabel(item.id)}
                             onChange={(e) =>
                               setPriceDrafts({
                                 ...priceDrafts,
@@ -632,69 +637,77 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                               }
                             }}
                             placeholder="0"
-                            className="w-28 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1 text-right font-mono text-xs font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
+                            className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-0.5 text-right font-mono text-xs font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
                           />
-                          <span className="text-slate-400 font-bold font-mono text-xs">K</span>
-                          {isSaved && (
-                            <Check className="w-4 h-4 text-emerald-400" />
+                          {isSaved && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                        </div>
+                        <div className="text-[11px] mt-0.5">
+                          {entry.salePrice > 0 ? (
+                            <span className={entry.saleNetProfit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                              {entry.saleNetProfit >= 0 ? "+" : ""}{entry.saleNetProfit.toLocaleString()} K
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">---</span>
                           )}
                         </div>
                       </td>
 
-                      {/* Net Profit */}
-                      <td className="py-3 px-3 text-right font-mono font-extrabold text-sm">
-                        <span
-                          className={
-                            isProfitable ? "text-emerald-400 font-black" : "text-rose-400"
-                          }
-                        >
-                          {isProfitable ? "+" : ""}
-                          {entry.netProfit.toLocaleString()} K
-                        </span>
-                        {entry.saleTax > 0 && (
-                          <span className="block text-[10px] text-slate-500 font-medium font-mono">
-                            Imp. -{entry.saleTax.toLocaleString()} K
+                      <td className="py-3 px-3 text-right font-mono">
+                        {entry.canCrush ? (
+                          <>
+                            <span className="text-slate-300 font-bold block">
+                              {entry.runicEstimatedValue.toLocaleString()} K
+                            </span>
+                            <span className={entry.crushNetProfit >= 0 ? "text-purple-400 font-bold text-[11px]" : "text-rose-400 font-bold text-[11px]"}>
+                              {entry.crushNetProfit >= 0 ? "+" : ""}{entry.crushNetProfit.toLocaleString()} K
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-600 text-[11px]">---</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3 text-center font-mono">
+                        <div className={`font-black text-xs ${entry.bestNetProfit > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {entry.bestNetProfit > 0 ? "+" : ""}{entry.bestNetProfit.toLocaleString()} K
+                        </div>
+                        {entry.bestStrategy !== "none" && (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border mt-0.5 ${
+                            entry.bestStrategy === "hdv"
+                              ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                              : "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                          }`}>
+                            {entry.bestStrategy === "hdv" ? "HDV" : "Runas"} ({entry.bestRoiPercent > 0 ? "+" : ""}{entry.bestRoiPercent.toFixed(0)}%)
                           </span>
                         )}
                       </td>
 
-                      {/* ROI Badge */}
-                      <td className="py-3 px-3 text-center font-mono">
-                        <span
-                          className={`inline-block px-2.5 py-1 rounded-lg text-xs font-extrabold border ${
-                            entry.roiPercent >= 50
-                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                              : entry.roiPercent > 0
-                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                                : "bg-rose-500/20 text-rose-400 border-rose-500/30"
-                          }`}
-                        >
-                          {entry.roiPercent > 0 ? "+" : ""}
-                          {entry.roiPercent.toFixed(0)}%
-                        </span>
-                      </td>
-
-                      {/* Inspect Action */}
                       <td className="py-2.5 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5 mx-auto">
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => onSelectRecipeForCalculator(item)}
-                            className="px-2.5 py-1 rounded-xl bg-slate-950 hover:bg-amber-500 hover:text-slate-950 border border-slate-800 text-slate-300 font-bold text-xs transition-all flex items-center gap-1"
-                            title="Ver desglose completo de ingredientes en la calculadora"
+                            className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-amber-500 hover:text-slate-950 border border-slate-800 text-slate-300 font-bold text-[11px] transition-all flex items-center gap-1"
                           >
-                            <span>Craftear</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>Crafteo</span>
+                            <ArrowUpRight className="w-3 h-3" />
                           </button>
-                          {onSelectForCrushing && (
+
+                          {entry.canCrush && onSelectForCrushing && (
                             <button
                               onClick={() => onSelectForCrushing(item)}
-                              className="px-2 py-1 rounded-xl bg-slate-950 hover:bg-purple-500/20 border border-slate-800 hover:border-purple-500/40 text-purple-300 font-bold text-xs transition-all flex items-center gap-1"
-                              title="Romper en Rompedora de Runas"
+                              className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-purple-500/20 border border-slate-800 hover:border-purple-500/40 text-purple-300 font-bold text-[11px] transition-all flex items-center gap-1"
                             >
                               <Zap className="w-3 h-3 text-purple-400" />
                               <span>Romper</span>
                             </button>
                           )}
+
+                          <button
+                            onClick={() => handleAddToCart(item)}
+                            className="p-1 rounded-lg bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 transition-all"
+                          >
+                            {isAddedCart ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <ShoppingCart className="w-3.5 h-3.5" />}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -705,7 +718,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
           </div>
         )}
 
-        {/* Pagination Bar Footer */}
         {filteredRankings.length > 0 && (
           <div className="bg-slate-950 border-t border-slate-800 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <div className="text-slate-400 font-mono">
@@ -720,15 +732,14 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                   filteredRankings.length,
                 )}
               </strong>{" "}
-              de <strong className="text-amber-400">{filteredRankings.length}</strong>{" "}
-              objetos
+              de <strong className="text-amber-400">{filteredRankings.length}</strong>
             </div>
 
             <div className="flex items-center gap-1.5">
               <button
                 disabled={safeCurrentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 font-bold flex items-center gap-1 transition-all"
               >
                 <ChevronLeft className="w-4 h-4" />
                 <span>Atrás</span>
@@ -745,7 +756,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               <button
                 disabled={safeCurrentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 disabled:hover:border-slate-800 text-slate-300 font-bold flex items-center gap-1 transition-all"
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 font-bold flex items-center gap-1 transition-all"
               >
                 <span>Siguiente</span>
                 <ChevronRight className="w-4 h-4" />

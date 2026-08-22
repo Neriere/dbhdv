@@ -47,6 +47,7 @@ import {
 } from '../services/dofusDbService';
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
 import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
+import { isOmittedItem } from '../data/dofusJobs';
 import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
 
@@ -103,11 +104,20 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         description: { es: `${r.description} (Peso: ${r.unitWeight})` },
       }));
 
-      const imported = getImportedItems();
-      const existingIds = new Set(imported.map((i) => i.id));
-      const combined = [...imported];
+      const imported = getImportedItems().filter((i) => !isOmittedItem(i));
+      const existingIds = new Set<number>();
+      const combined: DofusItem[] = [];
+
+      for (const item of imported) {
+        if (!existingIds.has(item.id)) {
+          existingIds.add(item.id);
+          combined.push(item);
+        }
+      }
+
       for (const runeItem of baseRuneItems) {
         if (!existingIds.has(runeItem.id)) {
+          existingIds.add(runeItem.id);
           combined.push(runeItem);
         }
       }
@@ -429,38 +439,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               {categoryCounts.has_price} Precios Guardados
             </span>
 
-            <button
-              onClick={handleExportPricesJSON}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              title="Exportar precios en JSON"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-400" /> Precios JSON
-            </button>
-
-            <button
-              onClick={handleExportFullDatabaseJSON}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              title="Exportar copia de seguridad completa en JSON (todos los objetos, recetas y precios)"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-400" /> Base JSON
-            </button>
-
-            <button
-              onClick={handleExportDatabase}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              title="Descargar la base SQLite completa (.db)"
-            >
-              <Database className="w-3.5 h-3.5 text-amber-400" /> .db
-            </button>
-
-            <label
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Importar archivo JSON (precios o base completa de datos)"
-            >
-              <Upload className="w-3.5 h-3.5 text-cyan-400" /> Importar JSON
-              <input type="file" accept=".json" onChange={handleImportPricesJSON} className="hidden" />
-            </label>
-
             {categoryCounts.has_price > 0 && (
               <button
                 onClick={handleClearAllPrices}
@@ -468,6 +446,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                 title="Vaciar todos los precios guardados"
               >
                 <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Limpiar Precios</span>
               </button>
             )}
           </div>

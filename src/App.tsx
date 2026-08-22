@@ -3,22 +3,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { RecipeCraftingCalculator } from './components/RecipeCraftingCalculator';
-import { GlobalProfitRanking } from './components/GlobalProfitRanking';
-import { CrushingCalculator } from './components/CrushingCalculator';
-import { PriceManager } from './components/PriceManager';
-import { DofusImporter } from './components/DofusImporter';
 import { DofusItem } from './types';
 import { initializeDatabase } from './services/dofusDbService';
+import { Loader2 } from 'lucide-react';
+
+// Lazy loaded views for optimal code-splitting and performance
+const RecipeCraftingCalculator = lazy(() =>
+  import('./components/RecipeCraftingCalculator').then((m) => ({
+    default: m.RecipeCraftingCalculator,
+  }))
+);
+const CrushingCalculator = lazy(() =>
+  import('./components/CrushingCalculator').then((m) => ({
+    default: m.CrushingCalculator,
+  }))
+);
+const GlobalProfitRanking = lazy(() =>
+  import('./components/GlobalProfitRanking').then((m) => ({
+    default: m.GlobalProfitRanking,
+  }))
+);
+const ShoppingListPlanner = lazy(() =>
+  import('./components/ShoppingListPlanner').then((m) => ({
+    default: m.ShoppingListPlanner,
+  }))
+);
+const PriceManager = lazy(() =>
+  import('./components/PriceManager').then((m) => ({
+    default: m.PriceManager,
+  }))
+);
+const DofusImporter = lazy(() =>
+  import('./components/DofusImporter').then((m) => ({
+    default: m.DofusImporter,
+  }))
+);
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('recipes');
   const [selectedItem, setSelectedItem] = useState<DofusItem | null>(null);
 
   useEffect(() => {
-    // Hydrate local file database cache on app startup
+    // Hydrate local database cache on app startup
     initializeDatabase().catch((err) => {
       console.warn('Error inicializando base de datos persistente local:', err);
     });
@@ -35,56 +63,78 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-amber-500 selection:text-slate-950 flex flex-col">
-      {/* Navbar Header */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-amber-500 selection:text-slate-950 flex flex-col overflow-x-hidden">
+      {/* Header Navbar with Top-Left Theme Dropdown and Reordered Tabs */}
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
 
       {/* Main App Content Area */}
-      <main className="flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-5">
-        {activeTab === 'recipes' && (
-          <RecipeCraftingCalculator
-            initialSelectedItem={selectedItem}
-            onSelectForCrushing={handleSelectForCrushing}
-          />
-        )}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4">
+        <Suspense
+          fallback={
+            <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+              <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+              <span className="text-sm font-semibold">Cargando módulo...</span>
+            </div>
+          }
+        >
+          {activeTab === 'recipes' && (
+            <RecipeCraftingCalculator
+              initialSelectedItem={selectedItem}
+              onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
 
-        {activeTab === 'ranking' && (
-          <GlobalProfitRanking
-            onSelectRecipeForCalculator={(presetItem) => {
-              handleSelectRecipeForCalculator(presetItem);
-            }}
-            onSelectForCrushing={(presetItem) => {
-              handleSelectForCrushing(presetItem);
-            }}
-          />
-        )}
+          {activeTab === 'rompedora' && (
+            <CrushingCalculator
+              initialSelectedItem={selectedItem}
+              onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
+            />
+          )}
 
-        {activeTab === 'rompedora' && (
-          <CrushingCalculator
-            initialSelectedItem={selectedItem}
-            onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
-          />
-        )}
+          {activeTab === 'ranking' && (
+            <GlobalProfitRanking
+              onSelectRecipeForCalculator={(presetItem) => {
+                handleSelectRecipeForCalculator(presetItem);
+              }}
+              onSelectForCrushing={(presetItem) => {
+                handleSelectForCrushing(presetItem);
+              }}
+            />
+          )}
 
-        {activeTab === 'prices' && (
-          <PriceManager
-            onSelectItemForRecipe={(item) => {
-              handleSelectRecipeForCalculator(item);
-            }}
-          />
-        )}
+          {activeTab === 'shopping' && (
+            <ShoppingListPlanner
+              onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
+              onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
 
-        {activeTab === 'importer' && (
-          <DofusImporter onSyncComplete={() => setActiveTab('recipes')} />
-        )}
+          {activeTab === 'prices' && (
+            <PriceManager
+              onSelectItemForRecipe={(item) => {
+                handleSelectRecipeForCalculator(item);
+              }}
+            />
+          )}
+
+          {activeTab === 'importer' && (
+            <DofusImporter onSyncComplete={() => setActiveTab('recipes')} />
+          )}
+        </Suspense>
       </main>
 
-      <footer className="border-t border-slate-900 bg-slate-950 py-5 text-xs text-slate-500">
-        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+      {/* Footer */}
+      <footer className="border-t border-slate-900 bg-slate-950 py-4 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <p>
-            Datos de <a href="https://api.dofusdb.fr" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-amber-400 underline">DofusDB</a>.
+            Dofus HDV - Datos sincronizados con <a href="https://api.dofusdb.fr" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-amber-400 underline">DofusDB</a> & Turso SQLite.
           </p>
-          <p>Base local para pruebas.</p>
+          <div className="flex items-center gap-4 text-slate-400">
+            <span>Gestor integral de crafteo, precios y rompedora de runas</span>
+          </div>
         </div>
       </footer>
     </div>

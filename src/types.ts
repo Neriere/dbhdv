@@ -172,3 +172,41 @@ export interface CrushingCalculationResult {
   netProfit: number;
   profitMarginPercent: number;
 }
+
+// Shopping list & Batch Craft Planner
+export interface ShoppingListItem {
+  itemId: number;
+  item: DofusItem;
+  recipe?: DofusRecipe;
+  targetQuantity: number;
+  addedAt: number;
+}
+
+export interface ConsolidatedIngredient {
+  itemId: number;
+  item?: DofusItem;
+  totalQuantityRequired: number;
+  unitPrice: number;
+  totalPrice: number;
+  isChecked?: boolean;
+}
+
+export type DofusTheme = 'bonta' | 'brakmar' | 'pandala';
+
+// Market Arbitrage Analysis
+export interface ArbitrageOpportunity {
+  item: DofusItem;
+  recipe?: DofusRecipe;
+  craftCost: number;
+  hdvSellPrice: number;
+  runeEstimatedValue: number;
+  craftFlipProfit: number;
+  craftFlipRoi: number;
+  craftRuneProfit: number;
+  craftRuneRoi: number;
+  hdvRuneProfit: number;
+  hdvRuneRoi: number;
+  bestStrategy: 'craft_flip' | 'craft_crush' | 'hdv_crush' | 'none';
+  bestProfit: number;
+  bestRoi: number;
+}
