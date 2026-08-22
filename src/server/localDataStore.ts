@@ -721,8 +721,8 @@ async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
       });
     }
   }
-  for (let i = 0; i < statements.length; i += 100) {
-    await database.batch(statements.slice(i, i + 100), "write");
+  for (let i = 0; i < statements.length; i += 2000) {
+    await database.batch(statements.slice(i, i + 2000), "write");
   }
 }
 
@@ -766,8 +766,8 @@ export async function syncItemStats(items: DofusItem[]): Promise<void> {
     });
   }
 
-  for (let i = 0; i < statements.length; i += 250) {
-    await database.batch(statements.slice(i, i + 250), "write");
+  for (let i = 0; i < statements.length; i += 2000) {
+    await database.batch(statements.slice(i, i + 2000), "write");
   }
 }
 
@@ -787,8 +787,8 @@ async function upsertItems(items: DofusItem[]): Promise<void> {
       now,
     ],
   }));
-  for (let i = 0; i < statements.length; i += 250)
-    await database.batch(statements.slice(i, i + 250), "write");
+  for (let i = 0; i < statements.length; i += 2000)
+    await database.batch(statements.slice(i, i + 2000), "write");
 
   // Also persist stats into item_stats table for fast querying
   await syncItemStats(items);
@@ -806,15 +806,15 @@ async function upsertRecipes(recipes: DofusRecipe[]): Promise<void> {
     sql: `INSERT INTO recipes (result_id, job_id, payload_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET job_id = excluded.job_id, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
     args: [recipe.resultId, recipe.jobId ?? null, JSON.stringify(recipe), now],
   }));
-  for (let i = 0; i < statements.length; i += 250)
-    await database.batch(statements.slice(i, i + 250), "write");
+  for (let i = 0; i < statements.length; i += 2000)
+    await database.batch(statements.slice(i, i + 2000), "write");
 
   await updateRecipeIngredients(recipes);
 
   const resultIds = recipes.map((r) => r.resultId).filter(Boolean);
   if (resultIds.length > 0) {
-    for (let i = 0; i < resultIds.length; i += 250) {
-      const chunk = resultIds.slice(i, i + 250);
+    for (let i = 0; i < resultIds.length; i += 500) {
+      const chunk = resultIds.slice(i, i + 500);
       const placeholders = chunk.map(() => "?").join(",");
       await database.execute({
         sql: `UPDATE items SET has_recipe = 1 WHERE id IN (${placeholders})`,
@@ -855,8 +855,8 @@ async function replaceAllPrices(
     sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?)`,
     args: [profileId, Number(itemId), Math.max(0, Math.trunc(price)), now],
   }));
-  for (let i = 0; i < statements.length; i += 100)
-    await database.batch(statements.slice(i, i + 100), "write");
+  for (let i = 0; i < statements.length; i += 2000)
+    await database.batch(statements.slice(i, i + 2000), "write");
 }
 
 async function clearAllPrices(profileId: number): Promise<void> {
@@ -1028,7 +1028,7 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
   const recipesMap = new Map<number, DofusRecipe>();
 
   const itemLimit = 50;
-  const itemConcurrency = 6;
+  const itemConcurrency = 12;
   let itemTotal = 50;
   let itemSkip = 0;
 
@@ -1114,7 +1114,7 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
   let recipeTotal = 50;
   let recipeSkip = 0;
   const recipeLimit = 50;
-  const recipeConcurrency = 6;
+  const recipeConcurrency = 12;
 
   try {
     const probeRecipe = await fetchJson<{ total?: number }>(
@@ -1240,9 +1240,13 @@ export function getDatabaseFilePath() {
 }
 export async function getBootstrapData() {
   await ensureDefaultPriceProfile();
-  await maybeStartAutomaticSync();
+  let data = await buildBootstrapData();
+  if (data.items.length === 0) {
+    console.log("[Database] Empty database detected, auto-seeding bundled dataset...");
+    data = await seedDatabaseFromBundle(false);
+  }
   return {
-    ...(await buildBootstrapData()),
+    ...data,
     databasePath: getDatabaseFilePath(),
   };
 }
