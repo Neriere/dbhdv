@@ -372,7 +372,14 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `HTTP ${response.status}`);
+    let message = errorText || `HTTP ${response.status}`;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed.error) message = parsed.error;
+    } catch {
+      // not JSON
+    }
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;

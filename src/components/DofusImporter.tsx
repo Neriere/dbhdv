@@ -101,7 +101,7 @@ export const DofusImporter: React.FC<{
       if (onSyncComplete) onSyncComplete(result.items);
     } catch (e) {
       console.error("Fast seed failed:", e);
-      alert("Error al sembrar la base de datos en Turso.");
+      alert(`Error al sembrar la base de datos en Turso: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setIsFastSeeding(false);
     }

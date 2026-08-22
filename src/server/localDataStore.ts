@@ -721,8 +721,8 @@ async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
       });
     }
   }
-  for (let i = 0; i < statements.length; i += 2000) {
-    await database.batch(statements.slice(i, i + 2000), "write");
+  for (let i = 0; i < statements.length; i += 250) {
+    await database.batch(statements.slice(i, i + 250), "write");
   }
 }
 
@@ -766,8 +766,8 @@ export async function syncItemStats(items: DofusItem[]): Promise<void> {
     });
   }
 
-  for (let i = 0; i < statements.length; i += 2000) {
-    await database.batch(statements.slice(i, i + 2000), "write");
+  for (let i = 0; i < statements.length; i += 250) {
+    await database.batch(statements.slice(i, i + 250), "write");
   }
 }
 
@@ -787,8 +787,8 @@ async function upsertItems(items: DofusItem[]): Promise<void> {
       now,
     ],
   }));
-  for (let i = 0; i < statements.length; i += 2000)
-    await database.batch(statements.slice(i, i + 2000), "write");
+  for (let i = 0; i < statements.length; i += 250)
+    await database.batch(statements.slice(i, i + 250), "write");
 
   // Also persist stats into item_stats table for fast querying
   await syncItemStats(items);
@@ -806,15 +806,15 @@ async function upsertRecipes(recipes: DofusRecipe[]): Promise<void> {
     sql: `INSERT INTO recipes (result_id, job_id, payload_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET job_id = excluded.job_id, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
     args: [recipe.resultId, recipe.jobId ?? null, JSON.stringify(recipe), now],
   }));
-  for (let i = 0; i < statements.length; i += 2000)
-    await database.batch(statements.slice(i, i + 2000), "write");
+  for (let i = 0; i < statements.length; i += 250)
+    await database.batch(statements.slice(i, i + 250), "write");
 
   await updateRecipeIngredients(recipes);
 
   const resultIds = recipes.map((r) => r.resultId).filter(Boolean);
   if (resultIds.length > 0) {
-    for (let i = 0; i < resultIds.length; i += 500) {
-      const chunk = resultIds.slice(i, i + 500);
+    for (let i = 0; i < resultIds.length; i += 250) {
+      const chunk = resultIds.slice(i, i + 250);
       const placeholders = chunk.map(() => "?").join(",");
       await database.execute({
         sql: `UPDATE items SET has_recipe = 1 WHERE id IN (${placeholders})`,
@@ -855,8 +855,8 @@ async function replaceAllPrices(
     sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?)`,
     args: [profileId, Number(itemId), Math.max(0, Math.trunc(price)), now],
   }));
-  for (let i = 0; i < statements.length; i += 2000)
-    await database.batch(statements.slice(i, i + 2000), "write");
+  for (let i = 0; i < statements.length; i += 250)
+    await database.batch(statements.slice(i, i + 250), "write");
 }
 
 async function clearAllPrices(profileId: number): Promise<void> {
