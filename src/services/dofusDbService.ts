@@ -1221,47 +1221,152 @@ export async function performFullItemImport(
     localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
 
-  const loadingStatus: SyncStatus = {
-    ...syncStatusMemoryCache,
-    isLoading: true,
-    progressPercent: 2,
-    currentStep: "Iniciando importación",
-    progressMessage: "Conectando con DofusDB y preparando descarga...",
+  const updateProgress = (pct: number, step: string, msg: string) => {
+    syncStatusMemoryCache = {
+      ...syncStatusMemoryCache,
+      isLoading: true,
+      progressPercent: pct,
+      currentStep: step,
+      progressMessage: msg,
+    };
+    if (onProgress) onProgress(syncStatusMemoryCache);
+    emitDatabaseUpdated();
   };
-  syncStatusMemoryCache = loadingStatus;
-  if (onProgress) {
-    onProgress(loadingStatus);
-  }
-  emitDatabaseUpdated();
-
-  // Setup periodic polling to track real-time server download/save progress
-  let isDone = false;
-  const pollInterval = setInterval(async () => {
-    if (isDone) return;
-    try {
-      const liveStatus = await requestJson<SyncStatus>(`${LOCAL_DB_API_BASE}/sync-status`);
-      if (liveStatus && !isDone) {
-        syncStatusMemoryCache = liveStatus;
-        if (onProgress) {
-          onProgress(liveStatus);
-        }
-        emitDatabaseUpdated();
-      }
-    } catch {
-      // Ignore polling errors
-    }
-  }, 1000);
 
   try {
-    const response = await requestJson<BootstrapResponse>(
-      `${LOCAL_DB_API_BASE}/import`,
-      {
-        method: "POST",
-      },
-    );
+    updateProgress(5, "Iniciando importación", "Conectando con DofusDB y preparando base de datos en Turso...");
+    await requestJson(`${LOCAL_DB_API_BASE}/import-chunk/init`, { method: "POST" });
 
-    isDone = true;
-    clearInterval(pollInterval);
+    // Step 1: Fetch recipes from DofusDB
+    updateProgress(10, "Paso 1/3: Descargando recetas de DofusDB", "Consultando recetas en api.dofusdb.fr...");
+    const recipesLimit = 50;
+    let recipesSkip = 0;
+    let totalRecipes = 5000;
+    const allRecipes: DofusRecipe[] = [];
+    const neededItemIds = new Set<number>();
+
+    while (recipesSkip < totalRecipes) {
+      try {
+        const res = await fetch(`https://api.dofusdb.fr/recipes?$limit=${recipesLimit}&$skip=${recipesSkip}&$sort=id`);
+        if (!res.ok) break;
+        const json = await res.json();
+        totalRecipes = json.total || totalRecipes;
+        const pageRecipes = json.data || [];
+        if (pageRecipes.length === 0) break;
+
+        for (const r of pageRecipes) {
+          const resultId = Number(r.resultId || r.result_id || r.id);
+          if (resultId) {
+            neededItemIds.add(resultId);
+            const ingredientIds: number[] = [];
+            const quantities: number[] = [];
+            if (Array.isArray(r.ingredientIds) && Array.isArray(r.quantities)) {
+              for (let idx = 0; idx < r.ingredientIds.length; idx++) {
+                const iId = Number(r.ingredientIds[idx]);
+                if (iId) {
+                  ingredientIds.push(iId);
+                  quantities.push(Number(r.quantities[idx]) || 1);
+                  neededItemIds.add(iId);
+                }
+              }
+            }
+            if (ingredientIds.length > 0) {
+              allRecipes.push({
+                id: Number(r.id) || resultId,
+                resultId,
+                ingredientIds,
+                quantities,
+                jobId: Number(r.jobId || r.job_id) || undefined,
+              });
+            }
+          }
+        }
+
+        recipesSkip += recipesLimit;
+        const pct = Math.round(10 + (recipesSkip / totalRecipes) * 25);
+        updateProgress(
+          Math.min(35, pct),
+          "Paso 1/3: Descargando recetas de DofusDB",
+          `Descargadas ${Math.min(recipesSkip, totalRecipes).toLocaleString()} de ${totalRecipes.toLocaleString()} recetas...`
+        );
+      } catch (err) {
+        console.warn("Recipe fetch page error, continuing...", err);
+        break;
+      }
+    }
+
+    // Save recipes to Turso in batches of 250
+    for (let i = 0; i < allRecipes.length; i += 250) {
+      const chunk = allRecipes.slice(i, i + 250);
+      await requestJson(`${LOCAL_DB_API_BASE}/import-chunk/recipes`, {
+        method: "POST",
+        body: JSON.stringify({ recipes: chunk }),
+      });
+    }
+
+    // Step 2: Fetch items from DofusDB
+    updateProgress(40, "Paso 2/3: Descargando objetos", "Descargando catálogo de objetos de DofusDB en español...");
+    const itemsLimit = 50;
+    let itemsSkip = 0;
+    let totalItems = 22000;
+    let savedItemsCount = 0;
+    let currentBatch: any[] = [];
+
+    while (itemsSkip < totalItems) {
+      try {
+        const res = await fetch(`https://api.dofusdb.fr/items?$limit=${itemsLimit}&$skip=${itemsSkip}&lang=es&$sort=id`);
+        if (!res.ok) break;
+        const json = await res.json();
+        totalItems = json.total || totalItems;
+        const pageItems = json.data || [];
+        if (pageItems.length === 0) break;
+
+        for (const item of pageItems) {
+          const id = Number(item.id || item.ankama_id || 0);
+          if (!id) continue;
+          // Filter: only keep items that are needed (have recipe, are ingredient, or valid equipment/resource/consumable)
+          const isNeeded = neededItemIds.has(id) || !isOmittedItem(item);
+          if (isNeeded) {
+            currentBatch.push(item);
+          }
+        }
+
+        if (currentBatch.length >= 250) {
+          await requestJson(`${LOCAL_DB_API_BASE}/import-chunk/items`, {
+            method: "POST",
+            body: JSON.stringify({ items: currentBatch }),
+          });
+          savedItemsCount += currentBatch.length;
+          currentBatch = [];
+        }
+
+        itemsSkip += itemsLimit;
+        const pct = Math.round(40 + (itemsSkip / totalItems) * 50);
+        updateProgress(
+          Math.min(90, pct),
+          "Paso 2/3: Descargando y guardando objetos útiles",
+          `Procesados ${Math.min(itemsSkip, totalItems).toLocaleString()} de ${totalItems.toLocaleString()} (Guardados: ${savedItemsCount.toLocaleString()})...`
+        );
+      } catch (err) {
+        console.warn("Item fetch page error, continuing...", err);
+        break;
+      }
+    }
+
+    if (currentBatch.length > 0) {
+      await requestJson(`${LOCAL_DB_API_BASE}/import-chunk/items`, {
+        method: "POST",
+        body: JSON.stringify({ items: currentBatch }),
+      });
+      savedItemsCount += currentBatch.length;
+    }
+
+    // Step 3: Finalize
+    updateProgress(95, "Paso 3/3: Finalizando en Turso", "Calculando estadísticas y verificando base de datos...");
+    const response = await requestJson<BootstrapResponse>(
+      `${LOCAL_DB_API_BASE}/import-chunk/finalize`,
+      { method: "POST" }
+    );
 
     updateMemoryCache({
       items: response.items,
@@ -1274,22 +1379,15 @@ export async function performFullItemImport(
       activePriceProfileId: response.activePriceProfileId,
     });
 
-    if (onProgress) {
-      onProgress(syncStatusMemoryCache);
-    }
-
+    updateProgress(100, "Completado", `¡Importación en vivo finalizada con éxito (${response.items.length.toLocaleString()} objetos y ${Object.keys(response.recipes).length.toLocaleString()} recetas guardadas en Turso)!`);
     return { items: getImportedItems(), status: syncStatusMemoryCache };
   } catch (error) {
-    isDone = true;
-    clearInterval(pollInterval);
     syncStatusMemoryCache = {
       ...syncStatusMemoryCache,
       isLoading: false,
-      progressMessage: "Error durante la importación. Intenta de nuevo.",
+      progressMessage: `Error durante la importación: ${error instanceof Error ? error.message : String(error)}`,
     };
-    if (onProgress) {
-      onProgress(syncStatusMemoryCache);
-    }
+    if (onProgress) onProgress(syncStatusMemoryCache);
     emitDatabaseUpdated();
     throw error;
   }
@@ -1304,24 +1402,66 @@ export async function triggerFastSeedDatabase(
     localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
 
-  const loadingStatus: SyncStatus = {
-    ...syncStatusMemoryCache,
-    isLoading: true,
-    progressPercent: 25,
-    currentStep: "Sembrando base de datos",
-    progressMessage: "Insertando 9,762 objetos y 4,858 recetas directamente en Turso...",
+  const updateProgress = (pct: number, step: string, msg: string) => {
+    syncStatusMemoryCache = {
+      ...syncStatusMemoryCache,
+      isLoading: true,
+      progressPercent: pct,
+      currentStep: step,
+      progressMessage: msg,
+    };
+    if (onProgress) onProgress(syncStatusMemoryCache);
+    emitDatabaseUpdated();
   };
-  syncStatusMemoryCache = loadingStatus;
-  if (onProgress) onProgress(loadingStatus);
-  emitDatabaseUpdated();
 
   try {
-    const response = await requestJson<BootstrapResponse>(
-      `${LOCAL_DB_API_BASE}/fast-seed`,
-      {
+    updateProgress(5, "Iniciando Turso", "Preparando y limpiando tablas en Turso Cloud...");
+
+    // 1. Init
+    const initRes = await requestJson<{
+      totalItems: number;
+      totalRecipes: number;
+      itemChunks: number;
+      recipeChunks: number;
+    }>(`${LOCAL_DB_API_BASE}/seed-step/init`, { method: "POST" });
+
+    const { totalItems, totalRecipes, itemChunks, recipeChunks } = initRes;
+
+    // 2. Stream item chunks
+    for (let i = 0; i < itemChunks; i++) {
+      const chunkPct = Math.round(5 + ((i + 1) / itemChunks) * 50);
+      const count = Math.min((i + 1) * 400, totalItems);
+      updateProgress(
+        chunkPct,
+        `Paso 1/2: Guardando objetos en Turso (${i + 1}/${itemChunks})`,
+        `Guardando objetos y estadísticas: ${count.toLocaleString()} / ${totalItems.toLocaleString()}...`
+      );
+      await requestJson(`${LOCAL_DB_API_BASE}/seed-step/items`, {
         method: "POST",
-        body: JSON.stringify({ force }),
-      },
+        body: JSON.stringify({ chunkIndex: i, chunkSize: 400 }),
+      });
+    }
+
+    // 3. Stream recipe chunks
+    for (let i = 0; i < recipeChunks; i++) {
+      const chunkPct = Math.round(55 + ((i + 1) / recipeChunks) * 40);
+      const count = Math.min((i + 1) * 400, totalRecipes);
+      updateProgress(
+        chunkPct,
+        `Paso 2/2: Guardando recetas en Turso (${i + 1}/${recipeChunks})`,
+        `Guardando recetas de crafteo: ${count.toLocaleString()} / ${totalRecipes.toLocaleString()}...`
+      );
+      await requestJson(`${LOCAL_DB_API_BASE}/seed-step/recipes`, {
+        method: "POST",
+        body: JSON.stringify({ chunkIndex: i, chunkSize: 400 }),
+      });
+    }
+
+    // 4. Finalize
+    updateProgress(98, "Finalizando", "Actualizando índices y verificando base de datos...");
+    const response = await requestJson<BootstrapResponse>(
+      `${LOCAL_DB_API_BASE}/seed-step/finalize`,
+      { method: "POST" }
     );
 
     updateMemoryCache({
@@ -1335,14 +1475,13 @@ export async function triggerFastSeedDatabase(
       activePriceProfileId: response.activePriceProfileId,
     });
 
-    if (onProgress) onProgress(syncStatusMemoryCache);
-    emitDatabaseUpdated();
+    updateProgress(100, "Completado", `¡Base de datos sincronizada con éxito (${response.items.length.toLocaleString()} objetos y ${Object.keys(response.recipes).length.toLocaleString()} recetas)!`);
     return { items: getImportedItems(), status: syncStatusMemoryCache };
   } catch (err) {
     syncStatusMemoryCache = {
       ...syncStatusMemoryCache,
       isLoading: false,
-      progressMessage: "Error al sembrar base de datos.",
+      progressMessage: `Error al sembrar base de datos: ${err instanceof Error ? err.message : String(err)}`,
     };
     if (onProgress) onProgress(syncStatusMemoryCache);
     emitDatabaseUpdated();

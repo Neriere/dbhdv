@@ -192,6 +192,190 @@ export async function initDB() {
   }
 }
 
+export async function seedStepInit(): Promise<{ totalItems: number; totalRecipes: number; itemChunks: number; recipeChunks: number }> {
+  invalidateServerBootstrapCache();
+  const seedData = getDofusDbSeedData();
+  const totalItems = seedData.items?.length || 0;
+  const totalRecipes = seedData.recipes?.length || 0;
+  const chunkSize = 400;
+
+  // Clear existing items and recipes tables cleanly
+  await database.execute("DELETE FROM items");
+  await database.execute("DELETE FROM item_stats");
+  await database.execute("DELETE FROM recipes");
+  await database.execute("DELETE FROM recipe_ingredients");
+
+  const status: SyncStatus = {
+    ...getDefaultSyncStatus(),
+    isLoading: true,
+    progressPercent: 5,
+    currentStep: "Iniciando siembra de base de datos en Turso...",
+    progressMessage: `Preparando carga de ${totalItems.toLocaleString()} objetos y ${totalRecipes.toLocaleString()} recetas...`,
+    totalSteps: 4,
+    currentStepIndex: 1,
+  };
+  await setSyncStatus(status);
+
+  return {
+    totalItems,
+    totalRecipes,
+    itemChunks: Math.ceil(totalItems / chunkSize),
+    recipeChunks: Math.ceil(totalRecipes / chunkSize),
+  };
+}
+
+export async function seedStepItems(chunkIndex: number, chunkSize = 400): Promise<{ chunkIndex: number; processed: number; totalItems: number }> {
+  const seedData = getDofusDbSeedData();
+  const allItems = seedData.items || [];
+  const start = chunkIndex * chunkSize;
+  const chunk = allItems.slice(start, start + chunkSize);
+
+  if (chunk.length > 0) {
+    await upsertItems(chunk);
+  }
+
+  return {
+    chunkIndex,
+    processed: Math.min(start + chunk.length, allItems.length),
+    totalItems: allItems.length,
+  };
+}
+
+export async function seedStepRecipes(chunkIndex: number, chunkSize = 400): Promise<{ chunkIndex: number; processed: number; totalRecipes: number }> {
+  const seedData = getDofusDbSeedData();
+  const allRecipes = seedData.recipes || [];
+  const start = chunkIndex * chunkSize;
+  const chunk = allRecipes.slice(start, start + chunkSize);
+
+  if (chunk.length > 0) {
+    await upsertRecipes(chunk);
+  }
+
+  return {
+    chunkIndex,
+    processed: Math.min(start + chunk.length, allRecipes.length),
+    totalRecipes: allRecipes.length,
+  };
+}
+
+export async function seedStepFinalize(): Promise<BootstrapData> {
+  const seedData = getDofusDbSeedData();
+  const items = seedData.items || [];
+  const recipes = seedData.recipes || [];
+
+  let equipablesCount = 0;
+  let consumablesCount = 0;
+  let resourcesCount = 0;
+
+  for (const item of items) {
+    const superCategoryId = item.type?.superCategoryId ?? 0;
+    const typeId = item.typeId || item.type?.id || 0;
+
+    if (
+      superCategoryId === 1 ||
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 81].includes(typeId)
+    ) {
+      equipablesCount += 1;
+    } else if ([33, 37, 38, 42, 43, 68, 69, 104, 219].includes(typeId)) {
+      consumablesCount += 1;
+    } else {
+      resourcesCount += 1;
+    }
+  }
+
+  // Update has_recipe flag
+  await database.execute("UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes)");
+
+  const status: SyncStatus = {
+    lastSyncTimestamp: seedData.exportedAt || Date.now(),
+    totalImported: items.length,
+    recipesCount: recipes.length,
+    equipablesCount,
+    consumablesCount,
+    resourcesCount,
+    cosmeticsOmittedCount: 11986,
+    isLoading: false,
+    progressMessage: `Base de datos en Turso poblada con éxito (${items.length.toLocaleString()} objetos y ${recipes.length.toLocaleString()} recetas).`,
+    progressPercent: 100,
+    currentStep: "Completado",
+    totalSteps: 4,
+    currentStepIndex: 4,
+  };
+
+  await setSyncStatus(status);
+  await ensureDefaultPriceProfile();
+  invalidateServerBootstrapCache();
+
+  return await buildBootstrapData();
+}
+
+export async function importChunkInit(): Promise<void> {
+  invalidateServerBootstrapCache();
+  await database.execute("DELETE FROM items");
+  await database.execute("DELETE FROM item_stats");
+  await database.execute("DELETE FROM recipes");
+  await database.execute("DELETE FROM recipe_ingredients");
+  const status: SyncStatus = {
+    ...getDefaultSyncStatus(),
+    isLoading: true,
+    progressPercent: 5,
+    currentStep: "Iniciando importación desde DofusDB...",
+    progressMessage: "Limpiando base previa en Turso...",
+  };
+  await setSyncStatus(status);
+}
+
+export async function importChunkItems(items: DofusItem[]): Promise<{ count: number }> {
+  if (items && items.length > 0) {
+    const validItems = items.map((i) => normalizeSpanishItem(i as any)).filter((i) => i.id > 0);
+    if (validItems.length > 0) {
+      await upsertItems(validItems);
+    }
+  }
+  return { count: items?.length || 0 };
+}
+
+export async function importChunkRecipes(recipes: DofusRecipe[]): Promise<{ count: number }> {
+  if (recipes && recipes.length > 0) {
+    const validRecipes: DofusRecipe[] = [];
+    for (const r of recipes) {
+      const norm = normalizeRecipe(r as any);
+      if (norm) validRecipes.push(norm);
+    }
+    if (validRecipes.length > 0) {
+      await upsertRecipes(validRecipes);
+    }
+  }
+  return { count: recipes?.length || 0 };
+}
+
+export async function importChunkFinalize(): Promise<BootstrapData> {
+  await database.execute("UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes)");
+  
+  const countItemsRes = await database.execute("SELECT COUNT(*) as cnt FROM items");
+  const countRecipesRes = await database.execute("SELECT COUNT(*) as cnt FROM recipes");
+  const totalItems = Number(countItemsRes.rows[0]?.cnt ?? 0);
+  const totalRecipes = Number(countRecipesRes.rows[0]?.cnt ?? 0);
+
+  const status: SyncStatus = {
+    lastSyncTimestamp: Date.now(),
+    totalImported: totalItems,
+    recipesCount: totalRecipes,
+    equipablesCount: 0,
+    consumablesCount: 0,
+    resourcesCount: 0,
+    cosmeticsOmittedCount: 0,
+    isLoading: false,
+    progressMessage: `Importación en vivo finalizada con éxito (${totalItems.toLocaleString()} objetos y ${totalRecipes.toLocaleString()} recetas).`,
+    progressPercent: 100,
+    currentStep: "Completado",
+  };
+  await setSyncStatus(status);
+  await ensureDefaultPriceProfile();
+  invalidateServerBootstrapCache();
+  return await buildBootstrapData();
+}
+
 export async function seedDatabaseFromBundle(force = false): Promise<BootstrapData> {
   const countRes = await database.execute("SELECT COUNT(*) as cnt FROM items");
   const itemsCount = Number(countRes.rows[0]?.cnt ?? 0);

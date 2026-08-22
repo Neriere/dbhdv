@@ -26,6 +26,14 @@ import {
   exportFullDatabaseJSON,
   importFullDatabaseJSON,
   seedDatabaseFromBundle,
+  seedStepInit,
+  seedStepItems,
+  seedStepRecipes,
+  seedStepFinalize,
+  importChunkInit,
+  importChunkItems,
+  importChunkRecipes,
+  importChunkFinalize,
 } from "../src/server/localDataStore";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -127,6 +135,92 @@ app.post("/api/local-db/reset-sync-status", async (req, res) => {
     res.json(status);
   } catch (error) {
     res.status(500).json({ error: "Failed to reset sync status" });
+  }
+});
+
+app.post("/api/local-db/seed-step/init", async (req, res) => {
+  try {
+    const result = await seedStepInit();
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Init seed step failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/seed-step/items", async (req, res) => {
+  try {
+    const chunkIndex = Number(req.body?.chunkIndex) || 0;
+    const chunkSize = Number(req.body?.chunkSize) || 400;
+    const result = await seedStepItems(chunkIndex, chunkSize);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Items seed step failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/seed-step/recipes", async (req, res) => {
+  try {
+    const chunkIndex = Number(req.body?.chunkIndex) || 0;
+    const chunkSize = Number(req.body?.chunkSize) || 400;
+    const result = await seedStepRecipes(chunkIndex, chunkSize);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Recipes seed step failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/seed-step/finalize", async (req, res) => {
+  try {
+    const result = await seedStepFinalize();
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Finalize seed step failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/import-chunk/init", async (req, res) => {
+  try {
+    await importChunkInit();
+    res.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import chunk init failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/import-chunk/items", async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const result = await importChunkItems(items);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import chunk items failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/import-chunk/recipes", async (req, res) => {
+  try {
+    const recipes = Array.isArray(req.body?.recipes) ? req.body.recipes : [];
+    const result = await importChunkRecipes(recipes);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import chunk recipes failed";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/import-chunk/finalize", async (req, res) => {
+  try {
+    const result = await importChunkFinalize();
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Import chunk finalize failed";
+    res.status(500).json({ error: message });
   }
 });
 
