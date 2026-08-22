@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
 import { extractItemStats } from "../data/dofusRuneWeights";
-import dofusDbSeedData from "../data/dofusDbSeed.json";
+import { getDofusDbSeedData } from "../data/dofusDbSeedData";
 import {
   DofusEffect,
   DofusItem,
@@ -200,11 +200,7 @@ export async function seedDatabaseFromBundle(force = false): Promise<BootstrapDa
   }
 
   console.log("[Database] Seeding database from bundled Dofus dataset...");
-  const seedData = dofusDbSeedData as {
-    items: DofusItem[];
-    recipes: DofusRecipe[];
-    exportedAt?: number;
-  };
+  const seedData = getDofusDbSeedData();
 
   if (seedData && Array.isArray(seedData.items) && seedData.items.length > 0) {
     const items = seedData.items;
