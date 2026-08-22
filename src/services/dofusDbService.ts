@@ -13,6 +13,8 @@ import {
   isClassItem,
   isCrushableJob,
   isOmittedItem,
+  isCosmeticItem,
+  isPetItem,
   getJobForItem,
   DOFUS_JOBS,
 } from "../data/dofusJobs";
@@ -28,8 +30,8 @@ import {
 } from "../data/dofusRuneWeights";
 
 const LOCAL_DB_API_BASE = "/api/local-db";
-const CACHE_KEY = "dofus_database_cache_v4";
-const CACHE_TIMESTAMP_KEY = "dofus_database_cache_timestamp_v4";
+const CACHE_KEY = "dofus_database_cache_v5";
+const CACHE_TIMESTAMP_KEY = "dofus_database_cache_timestamp_v5";
 
 // IndexedDB lightweight storage for instant startup
 const IDB_NAME = "DofusDB_ClientCache";
@@ -289,15 +291,22 @@ function updateMemoryCache(payload: {
   let changedStructure = false;
   if (payload.items || payload.recipes) {
     const existingItemsMap = new Map<number, DofusItem>();
-    itemsMemoryCache.forEach((item) => existingItemsMap.set(item.id, item));
-    if (payload.items) {
+    if (payload.items && payload.items.length > 100) {
       payload.items.forEach((item) => existingItemsMap.set(item.id, item));
+    } else {
+      itemsMemoryCache.forEach((item) => existingItemsMap.set(item.id, item));
+      if (payload.items) {
+        payload.items.forEach((item) => existingItemsMap.set(item.id, item));
+      }
     }
     const combinedItems = Array.from(existingItemsMap.values());
-    const combinedRecipes = {
-      ...recipesMemoryCache,
-      ...(payload.recipes || {}),
-    };
+    const combinedRecipes =
+      payload.recipes && Object.keys(payload.recipes).length > 100
+        ? payload.recipes
+        : {
+            ...recipesMemoryCache,
+            ...(payload.recipes || {}),
+          };
 
     const merged = mergePresetData(combinedItems, combinedRecipes);
     itemsMemoryCache = merged.items;
@@ -352,9 +361,10 @@ function updateMemoryCache(payload: {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const isPostOrPut = init?.method === "POST" || init?.method === "PUT";
   const response = await fetch(url, {
     headers: {
-      "Content-Type": "application/json",
+      ...(isPostOrPut ? { "Content-Type": "application/json" } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -368,11 +378,42 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function executeBootstrapFetch(): Promise<BootstrapResponse> {
+  let profileQuery = "";
+  if (typeof window !== "undefined") {
+    const savedProfileId = localStorage.getItem("selected_dofus_price_profile_id");
+    if (savedProfileId && Number(savedProfileId) > 0) {
+      profileQuery = `?profileId=${savedProfileId}`;
+    }
+  }
+
+  const bootstrap = await requestJson<BootstrapResponse>(
+    `${LOCAL_DB_API_BASE}/bootstrap${profileQuery}`,
+  );
+
+  updateMemoryCache({
+    items: bootstrap.items,
+    recipes: bootstrap.recipes,
+    prices: bootstrap.prices,
+    priceUpdatedAt: bootstrap.priceUpdatedAt,
+    syncStatus: bootstrap.syncStatus,
+    syncSettings: bootstrap.syncSettings,
+    priceProfiles: bootstrap.priceProfiles,
+    activePriceProfileId: bootstrap.activePriceProfileId,
+  });
+
+  if (typeof window !== "undefined") {
+    void setIdbVal(CACHE_KEY, bootstrap);
+  }
+
+  return bootstrap;
+}
+
 export async function initializeDatabase(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
-  if (isDbInitialized && itemsMemoryCache.length > 0) {
+  if (isDbInitialized && itemsMemoryCache.length > 50) {
     return {
       items: itemsMemoryCache,
       recipes: recipesMemoryCache,
@@ -383,7 +424,12 @@ export async function initializeDatabase(): Promise<{
   if (typeof window !== "undefined") {
     try {
       const cachedBootstrap = await getIdbVal<BootstrapResponse>(CACHE_KEY);
-      if (cachedBootstrap && cachedBootstrap.items && cachedBootstrap.recipes) {
+      if (
+        cachedBootstrap &&
+        cachedBootstrap.items &&
+        cachedBootstrap.items.length > 50 &&
+        cachedBootstrap.recipes
+      ) {
         updateMemoryCache({
           items: cachedBootstrap.items,
           recipes: cachedBootstrap.recipes,
@@ -395,7 +441,7 @@ export async function initializeDatabase(): Promise<{
           activePriceProfileId: cachedBootstrap.activePriceProfileId,
         });
 
-        // Trigger background sync silently to update prices/recipes without blocking UI
+        // Background update check
         void fetchBootstrapInBackground();
 
         return {
@@ -415,57 +461,22 @@ async function fetchBootstrapInBackground(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
-  if (bootstrapPromise) {
-    const existingBootstrap = await bootstrapPromise;
-    return {
-      items: existingBootstrap.items,
-      recipes: existingBootstrap.recipes,
-    };
+  if (!bootstrapPromise) {
+    bootstrapPromise = executeBootstrapFetch().finally(() => {
+      bootstrapPromise = null;
+    });
   }
-
-  let profileQuery = "";
-  if (typeof window !== "undefined") {
-    const savedProfileId = localStorage.getItem("selected_dofus_price_profile_id");
-    if (savedProfileId && Number(savedProfileId) > 0) {
-      profileQuery = `?profileId=${savedProfileId}`;
-    }
-  }
-
-  bootstrapPromise = requestJson<BootstrapResponse>(
-    `${LOCAL_DB_API_BASE}/bootstrap${profileQuery}`,
-  );
 
   try {
-    const bootstrap = await bootstrapPromise;
-
-    if (typeof window !== "undefined") {
-      void setIdbVal(CACHE_KEY, bootstrap);
-    }
-
-    updateMemoryCache({
-      items: bootstrap.items,
-      recipes: bootstrap.recipes,
-      prices: bootstrap.prices,
-      priceUpdatedAt: bootstrap.priceUpdatedAt,
-      syncStatus: bootstrap.syncStatus,
-      syncSettings: bootstrap.syncSettings,
-      priceProfiles: bootstrap.priceProfiles,
-      activePriceProfileId: bootstrap.activePriceProfileId,
-    });
-
-    return {
-      items: itemsMemoryCache,
-      recipes: recipesMemoryCache,
-    };
+    await bootstrapPromise;
   } catch (err) {
     console.warn("Falló la carga de bootstrap en segundo plano:", err);
-    return {
-      items: itemsMemoryCache,
-      recipes: recipesMemoryCache,
-    };
-  } finally {
-    bootstrapPromise = null;
   }
+
+  return {
+    items: itemsMemoryCache,
+    recipes: recipesMemoryCache,
+  };
 }
 
 export function getStoredRecipes(): Record<number, DofusRecipe> {
@@ -474,6 +485,21 @@ export function getStoredRecipes(): Record<number, DofusRecipe> {
   }
   return recipesMemoryCache;
 }
+
+export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
+  17994: {
+    id: 17994,
+    name: { es: "Lapa", fr: "Bernique", en: "Limpet" },
+    iconId: 179940,
+    level: 200,
+    typeId: 41,
+    type: {
+      id: 41,
+      superCategoryId: 9,
+      name: { es: "Pescado", fr: "Poisson", en: "Fish" },
+    },
+  },
+};
 
 export function getItemName(item: unknown): string {
   if (!item || typeof item !== "object") {
@@ -485,6 +511,22 @@ export function getItemName(item: unknown): string {
     title?: string;
     name?: string | { es?: string; fr?: string; en?: string };
   };
+
+  if (typedItem.id && KNOWN_SPECIAL_INGREDIENTS[typedItem.id]) {
+    const known = KNOWN_SPECIAL_INGREDIENTS[typedItem.id];
+    if (
+      !typedItem.name ||
+      (typeof typedItem.name === "object" &&
+        (!typedItem.name.es || typedItem.name.es.startsWith("Objeto #") || typedItem.name.es.startsWith("Ingrediente #"))) ||
+      (typeof typedItem.name === "string" &&
+        (typedItem.name.startsWith("Objeto #") || typedItem.name.startsWith("Ingrediente #")))
+    ) {
+      return (
+        (typeof known.name === "object" ? known.name?.es : (known.name as string)) ||
+        `Objeto #${typedItem.id}`
+      );
+    }
+  }
 
   if (typeof typedItem.name === "string") {
     return typedItem.name;
@@ -556,6 +598,10 @@ export function getItemIconUrl(item: unknown): string {
   }
 
   let iconId = typed.iconId || typed.icon_id;
+  if (!iconId && typed.id && KNOWN_SPECIAL_INGREDIENTS[typed.id]?.iconId) {
+    iconId = KNOWN_SPECIAL_INGREDIENTS[typed.id]!.iconId;
+  }
+
   if (!iconId && typed.id && itemsMemoryCache.length > 0) {
     const found = itemsMemoryCache.find((i) => i.id === typed.id);
     if (found) {
@@ -577,6 +623,10 @@ export function getItemFallbackIconUrl(item: unknown): string {
 
   const typed = item as { id?: number; iconId?: number; icon_id?: number };
   let iconId = typed.iconId || typed.icon_id;
+  if (!iconId && typed.id && KNOWN_SPECIAL_INGREDIENTS[typed.id]?.iconId) {
+    iconId = KNOWN_SPECIAL_INGREDIENTS[typed.id]!.iconId;
+  }
+
   if (!iconId && typed.id && itemsMemoryCache.length > 0) {
     const found = itemsMemoryCache.find((i) => i.id === typed.id);
     if (found) {
@@ -584,7 +634,7 @@ export function getItemFallbackIconUrl(item: unknown): string {
     }
   }
 
-  const finalId = iconId || typed.id || 0;
+  const finalId = typed.id || iconId || 0;
   return `https://api.dofusdb.fr/img/items/${finalId}.png`;
 }
 
@@ -717,7 +767,10 @@ const presetItemMap = new Map<number, PresetCraftableItem>(
 );
 
 export function getCraftableItemsSnapshot(): CraftableItem[] {
-  if (cachedCraftableSnapshot) {
+  if (
+    cachedCraftableSnapshot &&
+    cachedCraftableSnapshot.length > PRESET_CRAFTABLE_ITEMS.length
+  ) {
     return cachedCraftableSnapshot;
   }
 
@@ -740,7 +793,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     const presetItem = presetItemMap.get(resultId);
     const itemToUse = existingItem || presetItem;
 
-    if (itemToUse && isOmittedItem(itemToUse)) {
+    if (itemToUse && isCosmeticItem(itemToUse as any)) {
       continue;
     }
 
@@ -864,7 +917,7 @@ export function getCrushableItemsSnapshot(): CraftableItem[] {
 
   const allCraftable = getCraftableItemsSnapshot();
   const crushables = allCraftable.filter((item) => {
-    if (isOmittedItem(item) || isClassItem(item)) return false;
+    if (isOmittedItem(item) || isClassItem(item) || isPetItem(item)) return false;
     if (!isCrushableJob(item.jobId)) return false;
     const stats = extractItemStats(item);
     return stats.length > 0;
@@ -959,6 +1012,27 @@ export async function saveAllMarketPrices(
   return pricesMemoryCache;
 }
 
+export async function importFullDatabaseJSON(data: unknown): Promise<void> {
+  const response = await requestJson<BootstrapResponse>(
+    `${LOCAL_DB_API_BASE}/import-json`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
+
+  updateMemoryCache({
+    items: response.items,
+    recipes: response.recipes,
+    prices: response.prices,
+    priceUpdatedAt: response.priceUpdatedAt,
+    syncStatus: response.syncStatus,
+    syncSettings: response.syncSettings,
+    priceProfiles: response.priceProfiles,
+    activePriceProfileId: response.activePriceProfileId,
+  });
+}
+
 export async function setActiveLocalPriceProfile(
   profileId: number,
 ): Promise<void> {
@@ -1030,30 +1104,105 @@ export async function fetchRecipeByResultId(
 export async function fetchItemDetailsById(
   itemId: number,
 ): Promise<DofusItem | null> {
+  const known = KNOWN_SPECIAL_INGREDIENTS[itemId];
   const localItem = itemsMemoryCache.find((item) => item.id === itemId);
   if (
     localItem &&
     localItem.name?.es &&
-    !localItem.name.es.startsWith("Objeto #")
+    !localItem.name.es.startsWith("Objeto #") &&
+    !localItem.name.es.startsWith("Ingrediente #")
   ) {
     return localItem;
+  }
+
+  if (known) {
+    const knownItem: DofusItem = {
+      id: itemId,
+      level: known.level || 1,
+      typeId: known.typeId || 0,
+      iconId: known.iconId || itemId,
+      name: {
+        es: typeof known.name === "object" ? known.name?.es || "" : known.name || "",
+        fr: typeof known.name === "object" ? known.name?.fr || "" : "",
+        en: typeof known.name === "object" ? known.name?.en || "" : "",
+      },
+      type: (known.type as any) || { id: known.typeId || 0, superCategoryId: 0, name: { es: "", fr: "", en: "" } },
+    };
+
+    if (!localItem) {
+      updateMemoryCache({ items: [...itemsMemoryCache, knownItem] });
+    }
   }
 
   try {
     const item = await requestJson<DofusItem>(
       `${LOCAL_DB_API_BASE}/items/${itemId}`,
     );
-    const nextItems = [...itemsMemoryCache];
-    const currentIndex = nextItems.findIndex((entry) => entry.id === item.id);
-    if (currentIndex >= 0) {
-      nextItems[currentIndex] = item;
-    } else {
-      nextItems.push(item);
+    if (item && item.id) {
+      const nextItems = [...itemsMemoryCache];
+      const currentIndex = nextItems.findIndex((entry) => entry.id === item.id);
+      if (currentIndex >= 0) {
+        nextItems[currentIndex] = item;
+      } else {
+        nextItems.push(item);
+      }
+      updateMemoryCache({ items: nextItems });
+      return item;
     }
-    updateMemoryCache({ items: nextItems });
-    return item;
   } catch (error) {
-    return localItem || null;
+    // Fallback to memory / known item
+  }
+
+  if (known) {
+    return {
+      id: itemId,
+      level: known.level || 1,
+      typeId: known.typeId || 0,
+      iconId: known.iconId || itemId,
+      name: {
+        es: typeof known.name === "object" ? known.name?.es || "" : known.name || "",
+        fr: typeof known.name === "object" ? known.name?.fr || "" : "",
+        en: typeof known.name === "object" ? known.name?.en || "" : "",
+      },
+      type: (known.type as any) || { id: known.typeId || 0, superCategoryId: 0, name: { es: "", fr: "", en: "" } },
+    };
+  }
+
+  return localItem || null;
+}
+
+export async function fetchLiveSyncStatus(): Promise<SyncStatus> {
+  try {
+    const status = await requestJson<SyncStatus>(`${LOCAL_DB_API_BASE}/sync-status`);
+    if (status) {
+      syncStatusMemoryCache = status;
+      emitDatabaseUpdated();
+    }
+    return status;
+  } catch {
+    return syncStatusMemoryCache;
+  }
+}
+
+export async function resetLocalSyncStatus(): Promise<SyncStatus> {
+  try {
+    const status = await requestJson<SyncStatus>(`${LOCAL_DB_API_BASE}/reset-sync-status`, {
+      method: "POST",
+    });
+    if (status) {
+      syncStatusMemoryCache = status;
+      emitDatabaseUpdated();
+    }
+    return status;
+  } catch {
+    syncStatusMemoryCache = {
+      ...syncStatusMemoryCache,
+      isLoading: false,
+      progressPercent: 100,
+      progressMessage: "Listo.",
+    };
+    emitDatabaseUpdated();
+    return syncStatusMemoryCache;
   }
 }
 
@@ -1068,7 +1217,9 @@ export async function performFullItemImport(
   const loadingStatus: SyncStatus = {
     ...syncStatusMemoryCache,
     isLoading: true,
-    progressMessage: "Importando a la base local...",
+    progressPercent: 2,
+    currentStep: "Iniciando importación",
+    progressMessage: "Conectando con DofusDB y preparando descarga...",
   };
   syncStatusMemoryCache = loadingStatus;
   if (onProgress) {
@@ -1076,29 +1227,120 @@ export async function performFullItemImport(
   }
   emitDatabaseUpdated();
 
-  const response = await requestJson<BootstrapResponse>(
-    `${LOCAL_DB_API_BASE}/import`,
-    {
-      method: "POST",
-    },
-  );
+  // Setup periodic polling to track real-time server download/save progress
+  let isDone = false;
+  const pollInterval = setInterval(async () => {
+    if (isDone) return;
+    try {
+      const liveStatus = await requestJson<SyncStatus>(`${LOCAL_DB_API_BASE}/sync-status`);
+      if (liveStatus && !isDone) {
+        syncStatusMemoryCache = liveStatus;
+        if (onProgress) {
+          onProgress(liveStatus);
+        }
+        emitDatabaseUpdated();
+      }
+    } catch {
+      // Ignore polling errors
+    }
+  }, 1000);
 
-  updateMemoryCache({
-    items: response.items,
-    recipes: response.recipes,
-    prices: response.prices,
-    priceUpdatedAt: response.priceUpdatedAt,
-    syncStatus: response.syncStatus,
-    syncSettings: response.syncSettings,
-    priceProfiles: response.priceProfiles,
-    activePriceProfileId: response.activePriceProfileId,
-  });
+  try {
+    const response = await requestJson<BootstrapResponse>(
+      `${LOCAL_DB_API_BASE}/import`,
+      {
+        method: "POST",
+      },
+    );
 
-  if (onProgress) {
-    onProgress(syncStatusMemoryCache);
+    isDone = true;
+    clearInterval(pollInterval);
+
+    updateMemoryCache({
+      items: response.items,
+      recipes: response.recipes,
+      prices: response.prices,
+      priceUpdatedAt: response.priceUpdatedAt,
+      syncStatus: response.syncStatus,
+      syncSettings: response.syncSettings,
+      priceProfiles: response.priceProfiles,
+      activePriceProfileId: response.activePriceProfileId,
+    });
+
+    if (onProgress) {
+      onProgress(syncStatusMemoryCache);
+    }
+
+    return { items: getImportedItems(), status: syncStatusMemoryCache };
+  } catch (error) {
+    isDone = true;
+    clearInterval(pollInterval);
+    syncStatusMemoryCache = {
+      ...syncStatusMemoryCache,
+      isLoading: false,
+      progressMessage: "Error durante la importación. Intenta de nuevo.",
+    };
+    if (onProgress) {
+      onProgress(syncStatusMemoryCache);
+    }
+    emitDatabaseUpdated();
+    throw error;
+  }
+}
+
+export async function triggerFastSeedDatabase(
+  force = true,
+  onProgress?: (status: SyncStatus) => void,
+): Promise<{ items: DofusItem[]; status: SyncStatus }> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
 
-  return { items: getImportedItems(), status: syncStatusMemoryCache };
+  const loadingStatus: SyncStatus = {
+    ...syncStatusMemoryCache,
+    isLoading: true,
+    progressPercent: 25,
+    currentStep: "Sembrando base de datos",
+    progressMessage: "Insertando 9,762 objetos y 4,858 recetas directamente en Turso...",
+  };
+  syncStatusMemoryCache = loadingStatus;
+  if (onProgress) onProgress(loadingStatus);
+  emitDatabaseUpdated();
+
+  try {
+    const response = await requestJson<BootstrapResponse>(
+      `${LOCAL_DB_API_BASE}/fast-seed`,
+      {
+        method: "POST",
+        body: JSON.stringify({ force }),
+      },
+    );
+
+    updateMemoryCache({
+      items: response.items,
+      recipes: response.recipes,
+      prices: response.prices,
+      priceUpdatedAt: response.priceUpdatedAt,
+      syncStatus: response.syncStatus,
+      syncSettings: response.syncSettings,
+      priceProfiles: response.priceProfiles,
+      activePriceProfileId: response.activePriceProfileId,
+    });
+
+    if (onProgress) onProgress(syncStatusMemoryCache);
+    emitDatabaseUpdated();
+    return { items: getImportedItems(), status: syncStatusMemoryCache };
+  } catch (err) {
+    syncStatusMemoryCache = {
+      ...syncStatusMemoryCache,
+      isLoading: false,
+      progressMessage: "Error al sembrar base de datos.",
+    };
+    if (onProgress) onProgress(syncStatusMemoryCache);
+    emitDatabaseUpdated();
+    throw err;
+  }
 }
 
 export type CraftStrategyMode =
@@ -1170,15 +1412,22 @@ export async function buildRecipeTree(
     }
 
     const fallbackItem = await fetchItemDetailsById(ingredientId);
+    const knownFallback = KNOWN_SPECIAL_INGREDIENTS[ingredientId];
     subIngredients.push({
       itemId: ingredientId,
       quantity: ingredientQuantity,
       item: fallbackItem || {
         id: ingredientId,
-        name: { es: `Ingrediente #${ingredientId}` },
-        level: 1,
-        typeId: 0,
-        iconId: 0,
+        name: {
+          es:
+            (typeof knownFallback?.name === "object"
+              ? knownFallback?.name?.es
+              : (knownFallback?.name as string)) ||
+            `Ingrediente #${ingredientId}`,
+        },
+        level: knownFallback?.level || 1,
+        typeId: knownFallback?.typeId || 0,
+        iconId: knownFallback?.iconId || ingredientId,
       },
       isCraftable: false,
       marketPrice: marketPrices[ingredientId] || 0,

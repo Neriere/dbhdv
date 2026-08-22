@@ -37,6 +37,7 @@ import {
   getStoredRecipes,
   saveMarketPrice,
   saveAllMarketPrices,
+  importFullDatabaseJSON,
   setActiveLocalPriceProfile,
   getItemName,
   getItemTypeName,
@@ -47,6 +48,7 @@ import {
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
 import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
 import { RuneIcon } from './RuneIcon';
+import { matchesSearchQuery } from '../utils/searchUtils';
 
 type PriceFilterCategory =
   | 'all'
@@ -209,32 +211,51 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     downloadAnchor.remove();
   };
 
+  const handleExportFullDatabaseJSON = () => {
+    window.location.href = '/api/local-db/export-json';
+  };
+
   const handleImportPricesJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const parsed = JSON.parse(e.target?.result as string);
-        if (typeof parsed === 'object' && parsed !== null) {
-          saveAllMarketPrices(parsed)
-            .then((updated) => {
-              setMarketPrices(updated);
-              const newDrafts: Record<number, string> = {};
-              for (const [id, price] of Object.entries(updated)) {
-                if (Number(price) > 0) newDrafts[Number(id)] = String(price);
-              }
-              setPriceDrafts(newDrafts);
-              alert('¡Precios importados correctamente!');
-            })
-            .catch((error) => {
-              console.error('No se pudieron importar los precios al archivo local:', error);
-              alert('No se pudieron importar los precios.');
-            });
+        if (typeof parsed !== 'object' || parsed === null) {
+          alert('Archivo JSON inválido.');
+          return;
+        }
+
+        // Check if it's a full DB backup structure (contains items, recipes or version)
+        if (parsed.version === 2 || parsed.items || parsed.recipes || parsed.prices) {
+          await importFullDatabaseJSON(parsed);
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices(updatedPrices);
+          setItems(getImportedItems());
+          const newDrafts: Record<number, string> = {};
+          for (const [id, price] of Object.entries(updatedPrices)) {
+            if (Number(price) > 0) newDrafts[Number(id)] = String(price);
+          }
+          setPriceDrafts(newDrafts);
+          alert('¡Base de datos y precios importados correctamente!');
+        } else {
+          // Standard flat prices map { [id]: price }
+          const updated = await saveAllMarketPrices(parsed);
+          setMarketPrices(updated);
+          const newDrafts: Record<number, string> = {};
+          for (const [id, price] of Object.entries(updated)) {
+            if (Number(price) > 0) newDrafts[Number(id)] = String(price);
+          }
+          setPriceDrafts(newDrafts);
+          alert('¡Precios importados correctamente!');
         }
       } catch (err) {
-        alert('Archivo JSON de precios inválido.');
+        console.error('Error al importar:', err);
+        alert('No se pudo importar el archivo JSON.');
+      } finally {
+        event.target.value = '';
       }
     };
     reader.readAsText(file);
@@ -319,14 +340,13 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // 1. Search Query Filter
+    // 1. Search Query Filter (Accent and case-insensitive)
     if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase().trim();
       result = result.filter((item) => {
-        const name = getItemName(item).toLowerCase();
-        const typeName = getItemTypeName(item).toLowerCase();
-        const idStr = String(item.id);
-        return name.includes(term) || typeName.includes(term) || idStr === term;
+        return matchesSearchQuery(
+          [getItemName(item), getItemTypeName(item), item.id],
+          searchTerm,
+        );
       });
     }
 
@@ -412,21 +432,32 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             <button
               onClick={handleExportPricesJSON}
               className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              title="Exportar copia de seguridad de precios en JSON"
+              title="Exportar precios en JSON"
             >
-              <Download className="w-3.5 h-3.5 text-amber-400" /> Exportar JSON
+              <Download className="w-3.5 h-3.5 text-amber-400" /> Precios JSON
+            </button>
+
+            <button
+              onClick={handleExportFullDatabaseJSON}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              title="Exportar copia de seguridad completa en JSON (todos los objetos, recetas y precios)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" /> Base JSON
             </button>
 
             <button
               onClick={handleExportDatabase}
               className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              title="Descargar la base SQLite completa"
+              title="Descargar la base SQLite completa (.db)"
             >
-              <Database className="w-3.5 h-3.5 text-amber-400" /> Exportar .db
+              <Database className="w-3.5 h-3.5 text-amber-400" /> .db
             </button>
 
-            <label className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm">
-              <Upload className="w-3.5 h-3.5 text-amber-400" /> Importar JSON
+            <label
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Importar archivo JSON (precios o base completa de datos)"
+            >
+              <Upload className="w-3.5 h-3.5 text-cyan-400" /> Importar JSON
               <input type="file" accept=".json" onChange={handleImportPricesJSON} className="hidden" />
             </label>
 

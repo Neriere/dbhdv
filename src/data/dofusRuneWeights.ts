@@ -38,7 +38,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "PA",
     color: "#f59e0b",
     characteristicId: 1,
-    effectIds: [111, 1],
+    effectIds: [111],
     unitWeight: 100,
     statPerRune: 1,
     category: "especial",
@@ -56,7 +56,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "PM",
     color: "#10b981",
     characteristicId: 23,
-    effectIds: [128, 23],
+    effectIds: [128],
     unitWeight: 90,
     statPerRune: 1,
     category: "especial",
@@ -74,7 +74,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "AL",
     color: "#38bdf8",
     characteristicId: 19,
-    effectIds: [117, 19, 116],
+    effectIds: [117],
     unitWeight: 51,
     statPerRune: 1,
     category: "especial",
@@ -92,7 +92,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "INV",
     color: "#a855f7",
     characteristicId: 26,
-    effectIds: [182, 26, 48],
+    effectIds: [182],
     unitWeight: 30,
     statPerRune: 1,
     category: "especial",
@@ -110,7 +110,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "CRI",
     color: "#ec4899",
     characteristicId: 18,
-    effectIds: [115, 18],
+    effectIds: [115],
     unitWeight: 10,
     statPerRune: 1,
     category: "especial",
@@ -127,8 +127,8 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     shortCode: "CAZA",
     symbol: "CAZA",
     color: "#84cc16",
-    characteristicId: 795,
-    effectIds: [795, 129, 66],
+    characteristicId: 109,
+    effectIds: [795, 129],
     unitWeight: 5,
     statPerRune: 1,
     category: "especial",
@@ -150,7 +150,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "FO",
     color: "#b45309",
     characteristicId: 10,
-    effectIds: [118, 10],
+    effectIds: [118],
     unitWeight: 1,
     statPerRune: 1,
     category: "primaria",
@@ -168,7 +168,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "INE",
     color: "#ef4444",
     characteristicId: 15,
-    effectIds: [126, 15],
+    effectIds: [126],
     unitWeight: 1,
     statPerRune: 1,
     category: "primaria",
@@ -186,7 +186,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "CHA",
     color: "#0ea5e9",
     characteristicId: 13,
-    effectIds: [123, 13],
+    effectIds: [123],
     unitWeight: 1,
     statPerRune: 1,
     category: "primaria",
@@ -204,7 +204,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "AGI",
     color: "#14b8a6",
     characteristicId: 14,
-    effectIds: [119, 14],
+    effectIds: [119],
     unitWeight: 1,
     statPerRune: 1,
     category: "primaria",
@@ -222,7 +222,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "VI",
     color: "#e11d48",
     characteristicId: 11,
-    effectIds: [125, 110, 11],
+    effectIds: [125],
     unitWeight: 1, // 1 Runa Vi (+5 Vi) has weight 1.0 (0.2 per point)
     statPerRune: 5, // 1 Runa Vi = 5 Vitalidad
     category: "primaria",
@@ -240,7 +240,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "SA",
     color: "#8b5cf6",
     characteristicId: 12,
-    effectIds: [124, 12],
+    effectIds: [124],
     unitWeight: 3,
     statPerRune: 1,
     category: "primaria",
@@ -258,7 +258,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "POT",
     color: "#f97316",
     characteristicId: 25,
-    effectIds: [186, 139, 138, 25],
+    effectIds: [138],
     unitWeight: 2,
     statPerRune: 1,
     category: "primaria",
@@ -280,7 +280,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DA",
     color: "#fb923c",
     characteristicId: 16,
-    effectIds: [112, 121, 16],
+    effectIds: [112],
     unitWeight: 20,
     statPerRune: 1,
     category: "dano",
@@ -298,7 +298,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "CU",
     color: "#f43f5e",
     characteristicId: 49,
-    effectIds: [178, 179, 49, 105, 114],
+    effectIds: [178],
     unitWeight: 10,
     statPerRune: 1,
     category: "dano",
@@ -316,7 +316,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DCRI",
     color: "#db2777",
     characteristicId: 86,
-    effectIds: [138, 220, 70, 86],
+    effectIds: [418],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -334,7 +334,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DFUE",
     color: "#dc2626",
     characteristicId: 89,
-    effectIds: [424, 226],
+    effectIds: [424],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -352,7 +352,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DTIE",
     color: "#92400e",
     characteristicId: 88,
-    effectIds: [422, 225],
+    effectIds: [422],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -370,7 +370,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DAGU",
     color: "#0284c7",
     characteristicId: 90,
-    effectIds: [426, 227],
+    effectIds: [426],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -388,7 +388,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DAIR",
     color: "#0d9488",
     characteristicId: 91,
-    effectIds: [428, 228],
+    effectIds: [428],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -406,7 +406,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DNEU",
     color: "#64748b",
     characteristicId: 92,
-    effectIds: [430, 229],
+    effectIds: [430],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -424,7 +424,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "DEMP",
     color: "#854d0e",
     characteristicId: 84,
-    effectIds: [223, 84, 87],
+    effectIds: [414],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -442,7 +442,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%TRP",
     color: "#eab308",
     characteristicId: 69,
-    effectIds: [136, 172, 69, 70],
+    effectIds: [226],
     unitWeight: 2,
     statPerRune: 1,
     category: "dano",
@@ -477,8 +477,8 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     shortCode: "DATRAM",
     symbol: "DTRP",
     color: "#ca8a04",
-    characteristicId: 68,
-    effectIds: [135, 173, 68],
+    characteristicId: 70,
+    effectIds: [225],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
@@ -512,8 +512,8 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     shortCode: "RENDAN",
     symbol: "RENV",
     color: "#c084fc",
-    characteristicId: 47,
-    effectIds: [220, 107, 143, 47, 50],
+    characteristicId: 50,
+    effectIds: [220],
     unitWeight: 10,
     statPerRune: 1,
     category: "secundaria",
@@ -548,7 +548,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%DIS",
     color: "#06b6d4",
     characteristicId: 120,
-    effectIds: [116, 121, 113, 118, 120],
+    effectIds: [2804],
     unitWeight: 15,
     statPerRune: 1,
     category: "dano",
@@ -565,8 +565,8 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     shortCode: "DACAC",
     symbol: "%CAC",
     color: "#e11d48",
-    characteristicId: 124,
-    effectIds: [117, 122, 114, 119, 124],
+    characteristicId: 125,
+    effectIds: [2800],
     unitWeight: 15,
     statPerRune: 1,
     category: "dano",
@@ -584,7 +584,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%HEC",
     color: "#9333ea",
     characteristicId: 123,
-    effectIds: [118, 125, 115, 122, 123],
+    effectIds: [2812],
     unitWeight: 15,
     statPerRune: 1,
     category: "dano",
@@ -602,7 +602,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%ARM",
     color: "#d97706",
     characteristicId: 122,
-    effectIds: [119, 126, 116, 123, 122],
+    effectIds: [2808],
     unitWeight: 15,
     statPerRune: 1,
     category: "dano",
@@ -624,7 +624,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%FUE",
     color: "#ef4444",
     characteristicId: 34,
-    effectIds: [213, 34],
+    effectIds: [213],
     unitWeight: 6,
     statPerRune: 1,
     category: "resistencia",
@@ -642,7 +642,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%TIE",
     color: "#b45309",
     characteristicId: 33,
-    effectIds: [210, 33],
+    effectIds: [210],
     unitWeight: 6,
     statPerRune: 1,
     category: "resistencia",
@@ -660,7 +660,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%AGU",
     color: "#0284c7",
     characteristicId: 35,
-    effectIds: [211, 35, 36],
+    effectIds: [211],
     unitWeight: 6,
     statPerRune: 1,
     category: "resistencia",
@@ -678,7 +678,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%AIR",
     color: "#14b8a6",
     characteristicId: 36,
-    effectIds: [212, 36, 37],
+    effectIds: [212],
     unitWeight: 6,
     statPerRune: 1,
     category: "resistencia",
@@ -696,7 +696,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%NEU",
     color: "#71717a",
     characteristicId: 37,
-    effectIds: [214, 37, 33],
+    effectIds: [214],
     unitWeight: 6,
     statPerRune: 1,
     category: "resistencia",
@@ -718,7 +718,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RFUE",
     color: "#f87171",
     characteristicId: 55,
-    effectIds: [243, 55, 40],
+    effectIds: [243],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -736,7 +736,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RTIE",
     color: "#d97706",
     characteristicId: 54,
-    effectIds: [240, 54, 39],
+    effectIds: [240],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -754,7 +754,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RAGU",
     color: "#38bdf8",
     characteristicId: 56,
-    effectIds: [241, 56, 41],
+    effectIds: [241],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -772,7 +772,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RAIR",
     color: "#2dd4bf",
     characteristicId: 57,
-    effectIds: [242, 57, 42],
+    effectIds: [242],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -790,7 +790,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RNEU",
     color: "#a1a1aa",
     characteristicId: 58,
-    effectIds: [244, 58, 38],
+    effectIds: [244],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -808,7 +808,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RCRI",
     color: "#f472b6",
     characteristicId: 87,
-    effectIds: [222, 250, 87, 71],
+    effectIds: [420],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -826,7 +826,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "REMP",
     color: "#ca8a04",
     characteristicId: 85,
-    effectIds: [221, 251, 85, 88, 86],
+    effectIds: [416],
     unitWeight: 2,
     statPerRune: 1,
     category: "resistencia",
@@ -844,7 +844,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "%RDIS",
     color: "#22d3ee",
     characteristicId: 121,
-    effectIds: [123, 127, 120, 121],
+    effectIds: [2807],
     unitWeight: 15,
     statPerRune: 1,
     category: "resistencia",
@@ -861,8 +861,8 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     shortCode: "RECAC",
     symbol: "%RCAC",
     color: "#fb7185",
-    characteristicId: 125,
-    effectIds: [124, 128, 121, 125],
+    characteristicId: 124,
+    effectIds: [2803],
     unitWeight: 15,
     statPerRune: 1,
     category: "resistencia",
@@ -884,7 +884,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "INI",
     color: "#fbbf24",
     characteristicId: 44,
-    effectIds: [174, 44],
+    effectIds: [174],
     unitWeight: 1, // 1 Runa Ini (+10 Ini) has weight 1.0 (0.1 per point)
     statPerRune: 10, // 1 Runa Ini = 10 Iniciativa
     category: "secundaria",
@@ -902,7 +902,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "PP",
     color: "#f59e0b",
     characteristicId: 48,
-    effectIds: [176, 48],
+    effectIds: [176],
     unitWeight: 3,
     statPerRune: 1,
     category: "secundaria",
@@ -920,7 +920,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "POD",
     color: "#a3e635",
     characteristicId: 40,
-    effectIds: [158, 40, 52],
+    effectIds: [158],
     unitWeight: 2.5, // 1 Runa Pod (+10 Pods) = 2.5 weight (0.25 per point)
     statPerRune: 10, // 1 Runa Pod = 10 Pods
     category: "secundaria",
@@ -938,7 +938,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "HUI",
     color: "#67e8f9",
     characteristicId: 78,
-    effectIds: [160, 78, 77, 752, 106],
+    effectIds: [752],
     unitWeight: 4,
     statPerRune: 1,
     category: "secundaria",
@@ -956,7 +956,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "PLA",
     color: "#fb923c",
     characteristicId: 79,
-    effectIds: [161, 79, 78, 753, 107],
+    effectIds: [753],
     unitWeight: 4,
     statPerRune: 1,
     category: "secundaria",
@@ -974,7 +974,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RTPA",
     color: "#fbbf24",
     characteristicId: 82,
-    effectIds: [162, 82, 410],
+    effectIds: [410],
     unitWeight: 7,
     statPerRune: 1,
     category: "secundaria",
@@ -992,7 +992,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "RTPM",
     color: "#34d399",
     characteristicId: 83,
-    effectIds: [163, 83, 412],
+    effectIds: [412],
     unitWeight: 7,
     statPerRune: 1,
     category: "secundaria",
@@ -1010,7 +1010,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "EQPA",
     color: "#fde047",
     characteristicId: 27,
-    effectIds: [164, 27, 84, 429],
+    effectIds: [160],
     unitWeight: 7,
     statPerRune: 1,
     category: "secundaria",
@@ -1028,7 +1028,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     symbol: "EQPM",
     color: "#6ee7b7",
     characteristicId: 28,
-    effectIds: [165, 28, 85, 430],
+    effectIds: [161],
     unitWeight: 7,
     statPerRune: 1,
     category: "secundaria",
@@ -1049,143 +1049,16 @@ export const BASE_RUNES_BY_CHARACTERISTIC: Record<number, BaseRuneDefinition> =
 export const BASE_RUNES_DEFAULT_PRICES: Record<number, number> =
   Object.fromEntries(DOFUS_BASE_RUNES.map((r) => [r.id, r.defaultPrice]));
 
-// Secondary lookup maps for all legacy / alternate characteristic IDs
+// Secondary lookup maps for legacy characteristic IDs
 const EXTRA_CHAR_MAP: Record<number, number> = {
-  // Primary characteristics
-  10: 1519, // Fo
-  118: 1519,
-  15: 1522, // Inte
-  126: 1522,
-  13: 1525, // Sue
-  14: 1524, // Agi
-  119: 1524,
-  11: 1523, // Vi
-  12: 1521, // Sa
-  124: 1521,
-  25: 7436, // Pot
-  139: 7436,
-  186: 7436,
-  // Special
-  1: 1557, // Ga PA
-  111: 1557,
-  23: 1558, // Ga PM
-  128: 1558,
-  19: 7438, // Al
-  117: 7438,
-  26: 7442, // Invo
-  182: 7442,
-  18: 7433, // Cri
-  115: 7433,
-  // Damages (Fixed: Removed weapon attack effectIds 95-99 that collided with elemental damage runes)
-  16: 7435, // Da
-  112: 7435,
-  49: 7434, // Cu
-  178: 7434,
-  179: 7434,
-  86: 11653, // Da Cri
-  70: 11653,
-  220: 11653,
-  89: 11659, // Da Fue
-  226: 11659,
-  424: 11659,
-  88: 11657, // Da Tie
-  225: 11657,
-  422: 11657,
-  90: 11661, // Da Agu
-  227: 11661,
-  426: 11661,
-  91: 11663, // Da Air
-  228: 11663,
-  428: 11663,
-  92: 11665, // Da Neu
-  229: 11665,
-  84: 11649, // Da Emp
-  223: 11649,
-  69: 7446, // Pui Trampas / % Daños Trampas
-  136: 7446,
-  172: 7446,
-  68: 7445, // Da Trampas (fijos)
-  135: 7445,
-  173: 7445,
-  47: 7437, // Reenvío Daños
-  50: 7437,
-  143: 7437,
-  107: 7437,
-  // Resistances %
-  34: 7457, // % Fue
-  213: 7457,
-  33: 7459, // % Tie
-  210: 7459,
-  35: 7560, // % Agu
-  211: 7560,
-  36: 7458, // % Air
-  212: 7458,
-  37: 7460, // % Neu
-  214: 7460,
-  // Resistances Flat
-  55: 7452, // Re Fue
-  243: 7452,
-  54: 7455, // Re Tie
-  39: 7455,
-  240: 7455,
-  56: 7454, // Re Agu
-  41: 7454,
-  241: 7454,
-  57: 7453, // Re Air
-  42: 7453,
-  242: 7453,
-  58: 7456, // Re Neu
-  38: 7456,
-  244: 7456,
-  87: 11655, // Re Cri
-  71: 11655,
-  250: 11655,
-  85: 11651, // Re Emp
-  251: 11651,
-  // Secondary
-  44: 7448, // Ini
-  174: 7448,
-  48: 7451, // Prosp
-  176: 7451,
-  40: 7443, // Pod
-  52: 7443,
-  158: 7443,
-  78: 11637, // Hui
-  77: 11637,
-  160: 11637,
-  752: 11637,
-  79: 11639, // Pla
-  161: 11639,
-  753: 11639,
-  82: 11645, // Ret PA
-  162: 11645,
-  410: 11645,
-  83: 11647, // Ret PM
-  163: 11647,
-  412: 11647,
-  27: 11641, // Re PA
-  164: 11641,
-  429: 11641,
-  28: 11643, // Re PM
-  165: 11643,
-  430: 11643,
-  // Exotic % Dmg / Res
-  120: 18720, // % Da Dis
-  113: 18720,
-  114: 18719, // % Da CC
-  122: 18721, // % Da Arm
-  116: 18721,
-  121: 18724, // % Re Dis
-  125: 18723, // % Re CC
-  // Hunting / Caza
-  795: 10057,
-  129: 10057,
-  66: 10057,
+  47: 7437, // Reenvío de Daños (legacy char id 47)
+  68: 7445, // Daños Trampas (legacy char id 68)
+  109: 10057, // Arma de caza (char id 109)
 };
 
-// Set of effect IDs that represent weapon attack damage lines (daño con el que pega el arma, NO estadísticas que dan runas)
+// Set of effect IDs that represent weapon attack damage / on-hit lines (daño o penalizaciones con el que pega el arma, NO estadísticas que dan runas)
 export const WEAPON_ATTACK_EFFECT_IDS = new Set([
-  91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 108
+  91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 108, 121, 127, 131, 132, 133, 134, 135, 136, 137, 141, 142, 143, 144, 145
 ]);
 
 /**
@@ -1225,6 +1098,7 @@ export function findRuneForEffect(
     effId === 795 ||
     effId === 129 ||
     charId === 795 ||
+    charId === 109 ||
     rawText.includes("arma de caza") ||
     rawText.includes("arme de chasse") ||
     rawText.includes("hunting weapon") ||
@@ -1235,15 +1109,17 @@ export function findRuneForEffect(
     return BASE_RUNES_BY_ID[10057] || null;
   }
 
-  // 1. Filter out weapon attack damage (category 2, weapon attack effect IDs, or characteristic -1/0)
+  // 1. Filter out weapon attack damage (category 2, category 3, weapon attack effect IDs, or invalid characteristics)
   if (
     effect.category === 2 ||
+    effect.category === 3 ||
     effect.characteristic === -1 ||
     (effect.category !== undefined && effect.category !== 0 && effect.category !== 1) ||
     WEAPON_ATTACK_EFFECT_IDS.has(effId)
   ) {
-    return null; // Weapon hit lines (daño de ataque del arma) never yield runes
+    return null; // Weapon hit lines (daño de ataque del arma / efectos de golpe) never yield runes
   }
+
   const fromVal = Number(effect.from ?? effect.diceNum ?? 0);
   const toVal = Number(effect.to ?? effect.diceSide ?? 0);
   if (fromVal < 0 || toVal < 0) {
@@ -1260,22 +1136,25 @@ export function findRuneForEffect(
     }
   }
 
-  // 3. Direct effect ID match (only if not a weapon attack effect)
+  // 3. Direct effect ID match (clean 1-to-1 matching without cross-contamination)
   if (effId > 0 && !WEAPON_ATTACK_EFFECT_IDS.has(effId)) {
     const found = DOFUS_BASE_RUNES.find((r) => r.effectIds.includes(effId));
     if (found) return found;
-    if (EXTRA_CHAR_MAP[effId] && BASE_RUNES_BY_ID[EXTRA_CHAR_MAP[effId]]) {
-      return BASE_RUNES_BY_ID[EXTRA_CHAR_MAP[effId]];
-    }
   }
 
   // 4. Keyword / formatted text matching fallback
   if (rawText.length > 0) {
-    if (rawText.startsWith("-") || rawText.includes("malus") || rawText.includes("retira") || rawText.includes("(daños") || rawText.includes("(daño)")) {
+    if (
+      rawText.startsWith("-") ||
+      rawText.includes("malus") ||
+      rawText.includes("retira") ||
+      rawText.includes("(daños") ||
+      rawText.includes("(daño)")
+    ) {
       return null;
     }
 
-    // Check for percentage resistance first to avoid collision with flat res
+    // Check for percentage resistance and percentage damages first
     if (rawText.includes("%") || rawText.includes("pourcent")) {
       if (rawText.includes("fuego") || rawText.includes("feu")) return BASE_RUNES_BY_ID[7457];
       if (rawText.includes("tierra") || rawText.includes("terre")) return BASE_RUNES_BY_ID[7459];
@@ -1283,8 +1162,10 @@ export function findRuneForEffect(
       if (rawText.includes("aire") || rawText.includes("air")) return BASE_RUNES_BY_ID[7458];
       if (rawText.includes("neutr")) return BASE_RUNES_BY_ID[7460];
       if (rawText.includes("crit") || rawText.includes("crít")) return BASE_RUNES_BY_ID[7433];
-      if (rawText.includes("dist")) return BASE_RUNES_BY_ID[18720];
-      if (rawText.includes("mêlée") || rawText.includes("melee") || rawText.includes("cuerpo a cuerpo") || rawText.includes("cac")) return BASE_RUNES_BY_ID[18719];
+      if (rawText.includes("dist")) return rawText.includes("res") ? BASE_RUNES_BY_ID[18724] : BASE_RUNES_BY_ID[18720];
+      if (rawText.includes("mêlée") || rawText.includes("melee") || rawText.includes("cuerpo a cuerpo") || rawText.includes("cac")) {
+        return rawText.includes("res") ? BASE_RUNES_BY_ID[18723] : BASE_RUNES_BY_ID[18719];
+      }
       if (rawText.includes("sort") || rawText.includes("hechiz")) return BASE_RUNES_BY_ID[18722];
       if (rawText.includes("arme") || rawText.includes("arma")) return BASE_RUNES_BY_ID[18721];
     }
@@ -1410,8 +1291,8 @@ export function extractItemStats(item: DofusItem): ExtractedItemStat[] {
 
     processedRuneIds.add(rune.id);
 
-    // Middle roll standard: round up to nearest integer (las estadísticas de runas son enteros)
-    const statAvg = statMin === statMax ? statMin : Math.ceil((statMin + statMax) / 2);
+    // Middle roll standard: round down (.5 -> floor) while ensuring >= statMin
+    const statAvg = statMin === statMax ? statMin : Math.max(statMin, Math.floor((statMin + statMax) / 2));
     let label = formatted;
     if (!label || label.trim().length === 0) {
       if (rune.id === 10057) {
@@ -1465,9 +1346,11 @@ export interface StatRuneYield {
   normalKamasValue: number;
 
   // Focus Crushing yield if THIS stat is focused
+  isFocusable: boolean; // false for Runa de Caza (10057)
   focusRunesPerItem: number; // Decimal (2 decimals, e.g. 137.34)
   focusBatchRunes: number;
   focusKamasValue: number; // Total Kamas from batch if this stat is focused
+  focusNetProfit: number; // Kamas value of this focus - total craft cost
   focusGainVsNormal: number; // Kamas difference (+/- compared to Total Normal Crushing)
   isBestFocus: boolean;
 
@@ -1480,7 +1363,9 @@ export interface StatRuneYield {
 
 export interface TopFocusOption {
   rank: 1 | 2 | 3;
-  rune: BaseRuneDefinition;
+  isNormal?: boolean;
+  title?: string;
+  rune: BaseRuneDefinition | null;
   runesGenerated: number;
   totalKamasValue: number;
   netProfit: number;
@@ -1511,10 +1396,10 @@ export interface CrushingResult {
   breakEvenCoefficient: number;
   focusedRuneId: number | null;
 
-  // Best focus recommendation (Top 1)
+  // Best focus/crushing recommendation (Top 1)
   bestFocusOption: TopFocusOption | null;
 
-  // Top 3 best focus options
+  // Top 3 best crushing strategies (including Sin Foco and specific focuses)
   top3FocusOptions: TopFocusOption[];
 }
 
@@ -1638,73 +1523,106 @@ export function calculateItemCrushing(
       : 0;
 
   // 2. Calculate focus yields for EACH stat individually (Con Focus)
-  const focusCalculations = evaluatedStats.map((statItem) => {
-    const unitPrice =
-      customRunePrices[statItem.rune.id] ??
-      BASE_RUNES_DEFAULT_PRICES[statItem.rune.id] ??
-      statItem.rune.defaultPrice;
+  // Note: Runa de Caza (ID 10057 / Arma de Caza) CANNOT be chosen as focus!
+  const focusCalculations = evaluatedStats
+    .filter((statItem) => statItem.rune.id !== 10057 && statItem.rune.unitWeight > 0)
+    .map((statItem) => {
+      const unitPrice =
+        customRunePrices[statItem.rune.id] ??
+        BASE_RUNES_DEFAULT_PRICES[statItem.rune.id] ??
+        statItem.rune.defaultPrice;
 
-    // Sum of half the BaseLinePower of all other lines
-    const otherHalfPower = evaluatedStats
-      .filter((s) => s.rune.id !== statItem.rune.id)
-      .reduce((sum, s) => sum + s.baseLinePower / 2, 0);
+      // Sum of half the BaseLinePower of all other lines (all item stats donate half power)
+      const otherHalfPower = evaluatedStats
+        .filter((s) => s.rune.id !== statItem.rune.id)
+        .reduce((sum, s) => sum + s.baseLinePower / 2, 0);
 
-    const totalFocusPower = statItem.baseLinePower + otherHalfPower;
-    const focusRunesRaw =
-      (totalFocusPower * coeffMultiplier) /
-      Math.max(0.001, statItem.rune.unitWeight);
-    const focusRunesPerItem = Number(focusRunesRaw.toFixed(2));
-    const focusKamasValue = Math.round(focusRunesRaw * unitPrice);
-    const focusGainVsNormal = focusKamasValue - normalTotalKamasValue;
+      const totalFocusPower = statItem.baseLinePower + otherHalfPower;
+      const focusRunesRaw =
+        (totalFocusPower * coeffMultiplier) /
+        Math.max(0.001, statItem.rune.unitWeight);
+      const focusRunesPerItem = Number(focusRunesRaw.toFixed(2));
+      const focusKamasValue = Math.round(focusRunesRaw * unitPrice);
+      const focusGainVsNormal = focusKamasValue - normalTotalKamasValue;
 
-    const fProfit = focusKamasValue - totalCraftCost;
-    const fRoi =
-      totalCraftCost > 0
-        ? Number(((fProfit / totalCraftCost) * 100).toFixed(1))
-        : 0;
+      const fProfit = focusKamasValue - totalCraftCost;
+      const fRoi =
+        totalCraftCost > 0
+          ? Number(((fProfit / totalCraftCost) * 100).toFixed(1))
+          : 0;
 
-    return {
-      rune: statItem.rune,
-      runeId: statItem.rune.id,
-      focusRunesPerItem,
-      focusBatchRunes: focusRunesPerItem,
-      focusKamasValue,
-      focusGainVsNormal,
-      netProfit: fProfit,
-      roiPercent: fRoi,
-    };
-  });
+      return {
+        rune: statItem.rune,
+        runeId: statItem.rune.id,
+        focusRunesPerItem,
+        focusBatchRunes: focusRunesPerItem,
+        focusKamasValue,
+        focusGainVsNormal,
+        netProfit: fProfit,
+        roiPercent: fRoi,
+      };
+    });
 
-  // Sort focus options to establish Top 3
-  const sortedFocus = [...focusCalculations].sort(
-    (a, b) => b.focusKamasValue - a.focusKamasValue,
+  // Rank all crushing strategies: Normal (Sin Foco) + All valid Focus options
+  const normalStrategy: TopFocusOption = {
+    rank: 1,
+    isNormal: true,
+    title: "Sin Foco",
+    rune: null,
+    runesGenerated: normalTotalRunesCount,
+    totalKamasValue: normalTotalKamasValue,
+    netProfit: normalNetProfit,
+    roiPercent: normalRoiPercent,
+    gainComparedToNormal: 0,
+  };
+
+  const focusStrategies: TopFocusOption[] = focusCalculations.map((fc) => ({
+    rank: 1,
+    isNormal: false,
+    title: `Foco ${fc.rune.name.replace('Runa ', '')}`,
+    rune: fc.rune,
+    runesGenerated: fc.focusRunesPerItem,
+    totalKamasValue: fc.focusKamasValue,
+    netProfit: fc.netProfit,
+    roiPercent: fc.roiPercent,
+    gainComparedToNormal: fc.focusGainVsNormal,
+  }));
+
+  // Pool all strategies and sort by total Kamas descending (highest gain first)
+  const allCrushingStrategies = [normalStrategy, ...focusStrategies].sort(
+    (a, b) => b.totalKamasValue - a.totalKamasValue,
   );
 
-  const top3FocusOptions: TopFocusOption[] = sortedFocus
+  const top3FocusOptions: TopFocusOption[] = allCrushingStrategies
     .slice(0, 3)
-    .map((fc, idx) => ({
+    .map((strat, idx) => ({
+      ...strat,
       rank: (idx + 1) as 1 | 2 | 3,
-      rune: fc.rune,
-      runesGenerated: fc.focusRunesPerItem,
-      totalKamasValue: fc.focusKamasValue,
-      netProfit: fc.netProfit,
-      roiPercent: fc.roiPercent,
-      gainComparedToNormal: fc.focusGainVsNormal,
     }));
 
   const bestFocusOption: TopFocusOption | null =
-    top3FocusOptions.length > 0 && top3FocusOptions[0].totalKamasValue > normalTotalKamasValue
-      ? top3FocusOptions[0]
-      : (top3FocusOptions[0] ?? null);
+    top3FocusOptions.length > 0 ? top3FocusOptions[0] : normalStrategy;
 
   const focusMap = new Map(focusCalculations.map((f) => [f.runeId, f]));
 
   // 3. Assemble combined StatRuneYield array
   const statYields: StatRuneYield[] = normalStatYields.map((ny) => {
     const statItem = ny.statItem;
-    const focusData = focusMap.get(statItem.rune.id)!;
+    const isFocusable = statItem.rune.id !== 10057 && statItem.rune.unitWeight > 0;
+    const focusData = focusMap.get(statItem.rune.id) ?? {
+      rune: statItem.rune,
+      runeId: statItem.rune.id,
+      focusRunesPerItem: 0,
+      focusBatchRunes: 0,
+      focusKamasValue: 0,
+      focusGainVsNormal: 0,
+      netProfit: -totalCraftCost,
+      roiPercent: 0,
+    };
+
     const isFocused = focusedRuneId !== null && focusedRuneId === statItem.rune.id;
-    const isBestFocus = bestFocusOption?.rune.id === statItem.rune.id;
+    const isBestFocus =
+      !bestFocusOption?.isNormal && bestFocusOption?.rune?.id === statItem.rune.id;
 
     const activeRunes =
       focusedRuneId === null
@@ -1727,12 +1645,14 @@ export function calculateItemCrushing(
       statSelectedVal: Number(statItem.statSelectedVal.toFixed(1)),
       unitWeight: statItem.rune.unitWeight,
       statTotalPower: Number(statItem.baseLinePower.toFixed(2)),
+      isFocusable,
       normalRunesPerItem: ny.normalRunesPerItem,
       normalBatchRunes: ny.normalRunesPerItem,
       normalKamasValue: ny.normalKamasValue,
       focusRunesPerItem: focusData.focusRunesPerItem,
       focusBatchRunes: focusData.focusRunesPerItem,
       focusKamasValue: focusData.focusKamasValue,
+      focusNetProfit: focusData.netProfit,
       focusGainVsNormal: focusData.focusGainVsNormal,
       isBestFocus,
       isFocused,

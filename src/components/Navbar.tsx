@@ -56,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-md">
-      <div className="max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <div className="flex items-center justify-between gap-4 min-h-16 py-3">
           
           <div className="flex items-center gap-3">

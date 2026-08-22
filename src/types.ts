@@ -117,6 +117,10 @@ export interface SyncStatus {
   cosmeticsOmittedCount: number;
   isLoading: boolean;
   progressMessage: string;
+  progressPercent?: number;
+  currentStep?: string;
+  totalSteps?: number;
+  currentStepIndex?: number;
 }
 
 export interface PriceProfile {

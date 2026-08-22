@@ -40,7 +40,7 @@ export default function App() {
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Main App Content Area */}
-      <main className="flex-1 max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-5">
         {activeTab === 'recipes' && (
           <RecipeCraftingCalculator
             initialSelectedItem={selectedItem}
@@ -80,7 +80,7 @@ export default function App() {
       </main>
 
       <footer className="border-t border-slate-900 bg-slate-950 py-5 text-xs text-slate-500">
-        <div className="max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p>
             Datos de <a href="https://api.dofusdb.fr" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-amber-400 underline">DofusDB</a>.
           </p>

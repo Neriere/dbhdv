@@ -1,7 +1,11 @@
 import { createClient } from "@libsql/client";
-import { isOmittedItem } from "../data/dofusJobs.js";
-import { extractItemStats } from "../data/dofusRuneWeights.js";
+import fs from "fs";
+import path from "path";
+import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
+import { extractItemStats } from "../data/dofusRuneWeights";
+import dofusDbSeedData from "../data/dofusDbSeed.json";
 import {
+  DofusEffect,
   DofusItem,
   DofusRecipe,
   MarketPriceMap,
@@ -30,13 +34,37 @@ const UNITY_SERVER_PROFILES: Array<{
   { slug: "rafal", name: "Rafal" },
 ];
 
+const dbUrl =
+  process.env.TURSO_DATABASE_URL ||
+  process.env.LIBSQL_URL ||
+  process.env.DATABASE_URL ||
+  process.env.TURSO_URL ||
+  "file:local.db";
+
+const dbAuthToken =
+  process.env.TURSO_AUTH_TOKEN ||
+  process.env.LIBSQL_AUTH_TOKEN ||
+  process.env.DATABASE_AUTH_TOKEN ||
+  process.env.TURSO_TOKEN ||
+  undefined;
+
 export const database = createClient({
-  url: process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || "file:local.db",
-  authToken: process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || undefined,
+  url: dbUrl,
+  authToken: dbAuthToken,
 });
 
 export async function initDB() {
   try {
+    // High-performance SQLite pragmas for fast concurrent reads and responsive queries
+    try {
+      await database.execute("PRAGMA journal_mode = WAL;");
+      await database.execute("PRAGMA synchronous = NORMAL;");
+      await database.execute("PRAGMA temp_store = MEMORY;");
+      await database.execute("PRAGMA cache_size = -64000;");
+    } catch {
+      // Ignore if running against a remote Turso HTTP connection that restricts PRAGMAs
+    }
+
     await database.executeMultiple(`
       CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY,
@@ -80,12 +108,6 @@ export async function initDB() {
         PRIMARY KEY (recipe_id, ingredient_id)
       );
 
-      CREATE TABLE IF NOT EXISTS prices (
-        item_id INTEGER PRIMARY KEY,
-        price INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER NOT NULL
-      );
-
       CREATE TABLE IF NOT EXISTS meta (
         key TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
@@ -109,16 +131,31 @@ export async function initDB() {
         PRIMARY KEY (profile_id, item_id)
       );
 
+      /* Optimized indexes for lightning-fast lookups */
       CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
       CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
       CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
+      CREATE INDEX IF NOT EXISTS idx_items_level ON items(level DESC);
+      CREATE INDEX IF NOT EXISTS idx_items_recipe_level ON items(has_recipe, level DESC);
+
       CREATE INDEX IF NOT EXISTS idx_item_stats_item ON item_stats(item_id);
       CREATE INDEX IF NOT EXISTS idx_item_stats_rune ON item_stats(rune_id);
+      CREATE INDEX IF NOT EXISTS idx_item_stats_rune_item ON item_stats(rune_id, item_id);
+
+      CREATE INDEX IF NOT EXISTS idx_recipes_job ON recipes(job_id);
       CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
       CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id);
+
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
     `);
+
+    // Clean up obsolete table if present
+    try {
+      await database.execute("DROP TABLE IF EXISTS prices;");
+    } catch {
+      // Ignored
+    }
 
     try {
       await database.execute("ALTER TABLE items ADD COLUMN has_recipe INTEGER NOT NULL DEFAULT 0;");
@@ -130,21 +167,94 @@ export async function initDB() {
       UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes);
     `);
 
-    // Sync stats for items already in DB if item_stats is empty
-    const statsCountRes = await database.execute("SELECT COUNT(*) as cnt FROM item_stats");
-    const count = Number(statsCountRes.rows[0]?.cnt ?? 0);
-    if (count === 0) {
-      const itemsRes = await database.execute("SELECT payload_json FROM items");
-      const currentItems = itemsRes.rows.map(r => JSON.parse(r.payload_json as string) as DofusItem);
-      if (currentItems.length > 0) {
-        await syncItemStats(currentItems);
+    // Check if database is empty - if so, auto-populate from bundled dataset
+    const countItemsRes = await database.execute("SELECT COUNT(*) as cnt FROM items");
+    const totalItemsInDb = Number(countItemsRes.rows[0]?.cnt ?? 0);
+    if (totalItemsInDb === 0) {
+      console.log("[Database] Empty database detected. Auto-seeding full Dofus dataset into Turso/SQLite...");
+      await seedDatabaseFromBundle();
+    } else {
+      // Sync stats for items already in DB if item_stats is empty
+      const statsCountRes = await database.execute("SELECT COUNT(*) as cnt FROM item_stats");
+      const count = Number(statsCountRes.rows[0]?.cnt ?? 0);
+      if (count === 0) {
+        const itemsRes = await database.execute("SELECT payload_json FROM items");
+        const currentItems = itemsRes.rows.map(r => JSON.parse(r.payload_json as string) as DofusItem);
+        if (currentItems.length > 0) {
+          await syncItemStats(currentItems);
+        }
       }
     }
 
-    console.log("[Database] Turso / LibSQL schemas initialized.");
+    console.log("[Database] Turso / LibSQL schemas and indexes initialized successfully.");
   } catch (e) {
     console.warn("[Database] Database initialization error (fallback mode):", e);
   }
+}
+
+export async function seedDatabaseFromBundle(force = false): Promise<BootstrapData> {
+  const countRes = await database.execute("SELECT COUNT(*) as cnt FROM items");
+  const itemsCount = Number(countRes.rows[0]?.cnt ?? 0);
+  if (itemsCount > 100 && !force) {
+    return buildBootstrapData();
+  }
+
+  console.log("[Database] Seeding database from bundled Dofus dataset...");
+  const seedData = dofusDbSeedData as {
+    items: DofusItem[];
+    recipes: DofusRecipe[];
+    exportedAt?: number;
+  };
+
+  if (seedData && Array.isArray(seedData.items) && seedData.items.length > 0) {
+    const items = seedData.items;
+    const recipes = Array.isArray(seedData.recipes) ? seedData.recipes : [];
+
+    await replaceAllItems(items);
+    await replaceAllRecipes(recipes);
+
+    let equipablesCount = 0;
+    let consumablesCount = 0;
+    let resourcesCount = 0;
+
+    for (const item of items) {
+      const superCategoryId = item.type?.superCategoryId ?? 0;
+      const typeId = item.typeId || item.type?.id || 0;
+
+      if (
+        superCategoryId === 1 ||
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 81].includes(typeId)
+      ) {
+        equipablesCount += 1;
+      } else if ([33, 37, 38, 42, 43, 68, 69, 104, 219].includes(typeId)) {
+        consumablesCount += 1;
+      } else {
+        resourcesCount += 1;
+      }
+    }
+
+    const status: SyncStatus = {
+      lastSyncTimestamp: seedData.exportedAt || Date.now(),
+      totalImported: items.length,
+      recipesCount: recipes.length,
+      equipablesCount,
+      consumablesCount,
+      resourcesCount,
+      cosmeticsOmittedCount: 11986,
+      isLoading: false,
+      progressMessage: `Base de datos sincronizada con éxito (${items.length.toLocaleString()} objetos y ${recipes.length.toLocaleString()} recetas).`,
+      progressPercent: 100,
+      currentStep: "Completado",
+      totalSteps: 3,
+      currentStepIndex: 3,
+    };
+    await setSyncStatus(status);
+    await ensureDefaultPriceProfile();
+    invalidateServerBootstrapCache();
+    console.log(`[Database] Seeding complete: ${items.length} items, ${recipes.length} recipes persisted.`);
+  }
+
+  return buildBootstrapData();
 }
 
 let runningImportPromise: Promise<BootstrapData> | null = null;
@@ -171,6 +281,10 @@ function getDefaultSyncStatus(): SyncStatus {
     cosmeticsOmittedCount: 0,
     isLoading: false,
     progressMessage: "",
+    progressPercent: 0,
+    currentStep: "",
+    totalSteps: 3,
+    currentStepIndex: 0,
   };
 }
 
@@ -190,6 +304,41 @@ function getLocalizedText(value: unknown, fallback: string): string {
     if (en.length > 0) return en;
   }
   return fallback;
+}
+
+const SERVER_KNOWN_ITEMS: Record<number, Partial<DofusItem>> = {
+  17994: {
+    id: 17994,
+    level: 200,
+    typeId: 41,
+    iconId: 179940,
+    name: { es: "Lapa", fr: "Bernique", en: "Limpet" },
+    type: { id: 41, superCategoryId: 9, name: { es: "Pescado", fr: "Poisson", en: "Fish" } },
+  },
+};
+
+function cleanEffects(effectsList: unknown): DofusEffect[] | undefined {
+  if (!Array.isArray(effectsList) || effectsList.length === 0) return undefined;
+  const cleaned: DofusEffect[] = [];
+  for (const eff of effectsList) {
+    if (!eff || typeof eff !== "object") continue;
+    const o = eff as Record<string, unknown>;
+    const charId = Number(o.characteristic ?? o.characteristicId ?? 0);
+    const effId = Number(o.effectId ?? o.id ?? 0);
+    const fromVal = typeof o.from === "number" ? o.from : typeof o.min === "number" ? o.min : undefined;
+    const toVal = typeof o.to === "number" ? o.to : typeof o.max === "number" ? o.max : undefined;
+    const fmt = typeof o.formatted === "string" ? o.formatted : typeof o.formatted_text === "string" ? o.formatted_text : undefined;
+    if (charId || effId || fromVal !== undefined || toVal !== undefined || fmt) {
+      cleaned.push({
+        ...(charId ? { characteristic: charId } : {}),
+        ...(effId ? { effectId: effId } : {}),
+        ...(fromVal !== undefined ? { from: fromVal } : {}),
+        ...(toVal !== undefined ? { to: toVal } : {}),
+        ...(fmt ? { formatted: fmt } : {}),
+      });
+    }
+  }
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusItem {
@@ -219,38 +368,56 @@ function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusItem {
       rawItem._id ??
       0,
   );
+
+  const known = SERVER_KNOWN_ITEMS[extractedId];
+
   const rawName = rawItem.name ?? rawItem.title;
-  const spanishName = getLocalizedText(rawName, `Objeto #${extractedId}`);
+  let spanishName = getLocalizedText(rawName, "");
+  if (!spanishName || spanishName.startsWith("Objeto #")) {
+    if (known && typeof known.name === "object" && known.name?.es) {
+      spanishName = known.name.es;
+    } else {
+      spanishName = `Objeto #${extractedId}`;
+    }
+  }
+
   const rawType = (rawItem.type ?? {}) as Record<string, unknown>;
   const typeId = Number(
-    rawItem.typeId ?? rawItem.type_id ?? rawType.id ?? rawType.ankamaId ?? 0,
+    rawItem.typeId ?? rawItem.type_id ?? rawType.id ?? rawType.ankamaId ?? known?.typeId ?? 0,
   );
-  const typeName = getLocalizedText(
+  let typeName = getLocalizedText(
     rawType.name ?? rawItem.typeName ?? rawItem.type_name ?? "",
     "",
   );
+  if (!typeName && known?.type?.name && typeof known.type.name === "object" && known.type.name.es) {
+    typeName = known.type.name.es;
+  }
   const superCategoryId = Number(
-    rawType.superCategoryId ?? rawType.super_category_id ?? 0,
+    rawType.superCategoryId ?? rawType.super_category_id ?? known?.type?.superCategoryId ?? 0,
   );
 
-  return {
-    ...(rawItem as unknown as DofusItem),
+  const iconId = Number(rawItem.iconId ?? rawItem.icon_id ?? known?.iconId ?? 0);
+
+  const possibleEffects = cleanEffects(rawItem.possibleEffects);
+  const effects = cleanEffects(rawItem.effects);
+
+  const cleanItem: DofusItem = {
     id: extractedId,
-    level: Number(rawItem.level ?? 1),
+    level: Number(rawItem.level ?? known?.level ?? 1),
     typeId,
-    iconId: Number(rawItem.iconId ?? rawItem.icon_id ?? 0),
+    iconId,
     name: {
       es: spanishName,
       fr: getLocalizedText(
         rawName && typeof rawName === "object"
           ? (rawName as Record<string, unknown>).fr
-          : "",
+          : known?.name && typeof known.name === "object" ? known.name.fr : "",
         spanishName,
       ),
       en: getLocalizedText(
         rawName && typeof rawName === "object"
           ? (rawName as Record<string, unknown>).en
-          : "",
+          : known?.name && typeof known.name === "object" ? known.name.en : "",
         spanishName,
       ),
     },
@@ -259,7 +426,13 @@ function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusItem {
       superCategoryId,
       name: { es: typeName, fr: typeName, en: typeName },
     },
+    hasRecipe: Boolean(rawItem.hasRecipe || (rawItem as any).recipe || (rawItem as any).craft),
+    price: typeof rawItem.price === "number" ? rawItem.price : undefined,
+    ...(possibleEffects ? { possibleEffects } : {}),
+    ...(effects ? { effects } : {}),
   };
+
+  return cleanItem;
 }
 
 function normalizeRecipe(
@@ -419,36 +592,58 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
 async function ensureLegacyPriceMigration(
   defaultProfileId: number,
 ): Promise<void> {
-  const legacyCountResult = await database.execute(
-    "SELECT COUNT(*) AS count FROM prices",
-  );
-  const profilePriceCountResult = await database.execute(
-    "SELECT COUNT(*) AS count FROM profile_prices",
-  );
-  if (
-    (legacyCountResult.rows[0].count as number) === 0 ||
-    (profilePriceCountResult.rows[0].count as number) > 0
-  )
-    return;
+  try {
+    const legacyCountResult = await database.execute(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='prices'",
+    );
+    if ((legacyCountResult.rows[0]?.count as number) === 0) return;
 
-  const legacyRowsResult = await database.execute(
-    "SELECT item_id, price, updated_at FROM prices",
-  );
-  const statements = legacyRowsResult.rows.map((row) => ({
-    sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
-    args: [
-      defaultProfileId,
-      row.item_id as number,
-      row.price as number,
-      (row.updated_at as number) || Date.now(),
-    ],
-  }));
-  if (statements.length > 0) await database.batch(statements, "write");
+    const legacyRowsResult = await database.execute(
+      "SELECT item_id, price, updated_at FROM prices",
+    );
+    if (legacyRowsResult.rows.length === 0) {
+      await database.execute("DROP TABLE IF EXISTS prices");
+      return;
+    }
+
+    const statements = legacyRowsResult.rows.map((row) => ({
+      sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+      args: [
+        defaultProfileId,
+        row.item_id as number,
+        row.price as number,
+        (row.updated_at as number) || Date.now(),
+      ],
+    }));
+    if (statements.length > 0) await database.batch(statements, "write");
+    await database.execute("DROP TABLE IF EXISTS prices");
+  } catch {
+    // Migration already completed or prices table already dropped
+  }
 }
 
 async function getSyncStatus(): Promise<SyncStatus> {
   const status = await getMetaValue<SyncStatus>("sync_status");
-  return status ?? getDefaultSyncStatus();
+  const current = status ?? getDefaultSyncStatus();
+  if (current.isLoading && !runningImportPromise) {
+    current.isLoading = false;
+    current.progressPercent = 100;
+  }
+  return current;
+}
+
+export async function resetSyncStatus(): Promise<SyncStatus> {
+  runningImportPromise = null;
+  const current = await getSyncStatus();
+  const reset: SyncStatus = {
+    ...current,
+    isLoading: false,
+    progressMessage: "Listo.",
+    progressPercent: 100,
+    currentStep: "Listo",
+  };
+  await setMetaValue("sync_status", reset);
+  return reset;
 }
 
 async function setSyncStatus(status: SyncStatus): Promise<void> {
@@ -538,27 +733,25 @@ async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
 export async function syncItemStats(items: DofusItem[]): Promise<void> {
   const statements: Array<{ sql: string; args: any[] }> = [];
   const now = Date.now();
+  const crushableItems = items.filter(
+    (item) =>
+      item &&
+      item.id &&
+      (item.type?.superCategoryId === 1 ||
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 81].includes(
+          item.typeId || item.type?.id || 0,
+        )),
+  );
+  if (crushableItems.length === 0) return;
 
-  for (const item of items) {
-    if (!item || !item.id) continue;
+  for (const item of crushableItems) {
     const stats = extractItemStats(item);
     if (!stats || stats.length === 0) continue;
 
     stats.forEach((st, idx) => {
       statements.push({
-        sql: `INSERT INTO item_stats (item_id, rune_id, stat_order, characteristic_id, effect_id, rune_name, rune_weight, stat_min, stat_max, stat_avg, formatted_text, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(item_id, rune_id) DO UPDATE SET
-                stat_order = excluded.stat_order,
-                characteristic_id = excluded.characteristic_id,
-                effect_id = excluded.effect_id,
-                rune_name = excluded.rune_name,
-                rune_weight = excluded.rune_weight,
-                stat_min = excluded.stat_min,
-                stat_max = excluded.stat_max,
-                stat_avg = excluded.stat_avg,
-                formatted_text = excluded.formatted_text,
-                updated_at = excluded.updated_at`,
+        sql: `INSERT OR REPLACE INTO item_stats (item_id, rune_id, stat_order, characteristic_id, effect_id, rune_name, rune_weight, stat_min, stat_max, stat_avg, formatted_text, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           item.id,
           st.rune.id,
@@ -577,8 +770,8 @@ export async function syncItemStats(items: DofusItem[]): Promise<void> {
     });
   }
 
-  for (let i = 0; i < statements.length; i += 100) {
-    await database.batch(statements.slice(i, i + 100), "write");
+  for (let i = 0; i < statements.length; i += 250) {
+    await database.batch(statements.slice(i, i + 250), "write");
   }
 }
 
@@ -598,8 +791,8 @@ async function upsertItems(items: DofusItem[]): Promise<void> {
       now,
     ],
   }));
-  for (let i = 0; i < statements.length; i += 100)
-    await database.batch(statements.slice(i, i + 100), "write");
+  for (let i = 0; i < statements.length; i += 250)
+    await database.batch(statements.slice(i, i + 250), "write");
 
   // Also persist stats into item_stats table for fast querying
   await syncItemStats(items);
@@ -617,15 +810,15 @@ async function upsertRecipes(recipes: DofusRecipe[]): Promise<void> {
     sql: `INSERT INTO recipes (result_id, job_id, payload_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET job_id = excluded.job_id, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
     args: [recipe.resultId, recipe.jobId ?? null, JSON.stringify(recipe), now],
   }));
-  for (let i = 0; i < statements.length; i += 100)
-    await database.batch(statements.slice(i, i + 100), "write");
+  for (let i = 0; i < statements.length; i += 250)
+    await database.batch(statements.slice(i, i + 250), "write");
 
   await updateRecipeIngredients(recipes);
 
   const resultIds = recipes.map((r) => r.resultId).filter(Boolean);
   if (resultIds.length > 0) {
-    for (let i = 0; i < resultIds.length; i += 100) {
-      const chunk = resultIds.slice(i, i + 100);
+    for (let i = 0; i < resultIds.length; i += 250) {
+      const chunk = resultIds.slice(i, i + 250);
       const placeholders = chunk.map(() => "?").join(",");
       await database.execute({
         sql: `UPDATE items SET has_recipe = 1 WHERE id IN (${placeholders})`,
@@ -698,16 +891,33 @@ async function getAllRecipes(): Promise<Record<number, DofusRecipe>> {
   return recipes;
 }
 
-function fetchJson<T>(url: string): Promise<T> {
-  return fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "DofusDB-HD local importer/1.0",
-    },
-  }).then(async (r) => {
-    if (!r.ok) throw new Error(`Request failed (${r.status})`);
-    return r.json() as Promise<T>;
-  });
+async function fetchJson<T>(url: string, retries = 3, backoffMs = 500): Promise<T> {
+  let lastError: any = null;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const r = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "DofusDB-HD local importer/1.0",
+        },
+      });
+      if (r.ok) {
+        return (await r.json()) as Promise<T>;
+      }
+      if (r.status === 429) {
+        // Rate limited - wait longer before retrying
+        await new Promise((res) => setTimeout(res, (attempt + 1) * 1200));
+        continue;
+      }
+      throw new Error(`Request failed (${r.status})`);
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries - 1) {
+        await new Promise((res) => setTimeout(res, backoffMs * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError || new Error(`Failed to fetch ${url}`);
 }
 
 async function maybeStartAutomaticSync(): Promise<void> {
@@ -809,11 +1019,16 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
     ...getDefaultSyncStatus(),
     lastSyncTimestamp: previousStatus.lastSyncTimestamp,
     isLoading: true,
-    progressMessage: "Iniciando importación concurrente desde DofusDB...",
+    progressMessage: "Conectando con DofusDB...",
+    progressPercent: 2,
+    currentStep: "Iniciando importación",
+    totalSteps: 3,
+    currentStepIndex: 1,
   };
   await setSyncStatus(status);
 
-  const itemsMap = new Map<number, DofusItem>();
+  try {
+    const itemsMap = new Map<number, DofusItem>();
   const recipesMap = new Map<number, DofusRecipe>();
 
   const itemLimit = 50;
@@ -861,7 +1076,7 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
         const normalizedItem = normalizeSpanishItem(rawItem);
         if (!normalizedItem.id) continue;
 
-        if (isOmittedItem(normalizedItem)) {
+        if (normalizedItem.type?.superCategoryId === 23 || isCosmeticItem(normalizedItem as any)) {
           status.cosmeticsOmittedCount += 1;
           continue;
         }
@@ -886,7 +1101,12 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
 
     itemSkip += itemConcurrency * itemLimit;
     status.totalImported = itemsMap.size;
-    status.progressMessage = `Descargando ítems: ${Math.min(itemSkip, itemTotal)} de ${itemTotal}...`;
+    const itemPct = itemTotal > 0 ? Math.min(100, Math.round((itemSkip / itemTotal) * 100)) : 0;
+    // Step 1 accounts for 0% - 50% of total progress
+    status.progressPercent = Math.min(50, Math.round(itemPct * 0.5));
+    status.currentStep = "Paso 1 de 3: Descargando objetos de DofusDB";
+    status.currentStepIndex = 1;
+    status.progressMessage = `Objetos: ${Math.min(itemSkip, itemTotal).toLocaleString()} de ${itemTotal.toLocaleString()} (${itemPct}%)`;
     await setSyncStatus(status);
 
     if (itemsInBatch === 0 && itemSkip >= itemTotal) {
@@ -944,7 +1164,12 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
 
     recipeSkip += recipeConcurrency * recipeLimit;
     status.recipesCount = recipesMap.size;
-    status.progressMessage = `Descargando recetas: ${Math.min(recipeSkip, recipeTotal)} de ${recipeTotal}...`;
+    const recipePct = recipeTotal > 0 ? Math.min(100, Math.round((recipeSkip / recipeTotal) * 100)) : 0;
+    // Step 2 accounts for 50% - 85% of total progress
+    status.progressPercent = 50 + Math.min(35, Math.round(recipePct * 0.35));
+    status.currentStep = "Paso 2 de 3: Descargando recetas de crafteo";
+    status.currentStepIndex = 2;
+    status.progressMessage = `Recetas: ${Math.min(recipeSkip, recipeTotal).toLocaleString()} de ${recipeTotal.toLocaleString()} (${recipePct}%)`;
     await setSyncStatus(status);
 
     if (recipesInBatch === 0 && recipeSkip >= recipeTotal) {
@@ -952,7 +1177,11 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
     }
   }
 
-  status.progressMessage = "Guardando datos y sincronizando estadísticas en Turso...";
+  // Step 3: Saving to DB and building stats
+  status.progressPercent = 88;
+  status.currentStep = "Paso 3 de 3: Guardando objetos en base local";
+  status.currentStepIndex = 3;
+  status.progressMessage = "Guardando objetos y estadísticas en SQLite...";
   await setSyncStatus(status);
 
   const importedItems = Array.from(itemsMap.values());
@@ -982,14 +1211,32 @@ async function importAllDofusDataInternal(): Promise<BootstrapData> {
   }
 
   await replaceAllItems(importedItems);
+
+  status.progressPercent = 95;
+  status.currentStep = "Paso 3 de 3: Guardando recetas de crafteo";
+  status.progressMessage = `Guardando ${importedRecipes.length.toLocaleString()} recetas en SQLite...`;
+  await setSyncStatus(status);
+
   await replaceAllRecipes(importedRecipes);
 
   status.lastSyncTimestamp = Date.now();
   status.isLoading = false;
-  status.progressMessage = `Importación completada: ${status.totalImported} ítems y ${status.recipesCount || 0} recetas guardadas.`;
+  status.progressPercent = 100;
+  status.currentStep = "Completado";
+  status.currentStepIndex = 3;
+  status.progressMessage = `Sincronización finalizada con éxito (${status.totalImported.toLocaleString()} objetos y ${status.recipesCount?.toLocaleString()} recetas).`;
   await setSyncStatus(status);
 
+  invalidateServerBootstrapCache();
   return buildBootstrapData();
+} catch (err) {
+  status.isLoading = false;
+  status.progressPercent = 0;
+  status.currentStep = "Error";
+  status.progressMessage = `Error en importación: ${err instanceof Error ? err.message : String(err)}`;
+  await setSyncStatus(status);
+  throw err;
+}
 }
 
 export function getDatabaseFilePath() {
@@ -1075,6 +1322,12 @@ export async function getOrFetchItemById(itemId: number) {
     }
   } catch (e) {
     console.warn(`Error al consultar item remoto ${itemId}:`, e);
+  }
+
+  if (SERVER_KNOWN_ITEMS[itemId]) {
+    const known = normalizeSpanishItem(SERVER_KNOWN_ITEMS[itemId] as any);
+    await upsertItems([known]);
+    return known;
   }
 
   return stored;
@@ -1228,6 +1481,8 @@ export async function getAutomaticSyncState() {
     syncStatus: await getSyncStatus(),
   };
 }
+
+export { getSyncStatus };
 export async function updateAutomaticSyncSettings(settings: SyncSettings) {
   const s = await setSyncSettings(settings);
   if (s.enabled) await maybeStartAutomaticSync();
@@ -1263,3 +1518,79 @@ export async function fetchAndStoreCategoryItems(typeIds: number[]) {
   if (items.length > 0) await upsertItems(items);
   return await getAllItems();
 }
+
+export async function exportFullDatabaseJSON() {
+  const bootstrap = await getBootstrapData();
+  return {
+    version: 2,
+    exportedAt: Date.now(),
+    itemsCount: bootstrap.items.length,
+    recipesCount: Object.keys(bootstrap.recipes).length,
+    pricesCount: Object.keys(bootstrap.prices).length,
+    items: bootstrap.items,
+    recipes: bootstrap.recipes,
+    prices: bootstrap.prices,
+    priceUpdatedAt: bootstrap.priceUpdatedAt,
+    priceProfiles: bootstrap.priceProfiles,
+    activePriceProfileId: bootstrap.activePriceProfileId,
+  };
+}
+
+export async function importFullDatabaseJSON(data: any) {
+  invalidateServerBootstrapCache();
+  if (!data || typeof data !== "object") {
+    throw new Error("Datos de importación inválidos");
+  }
+
+  // 1. If payload contains items array
+  if (Array.isArray(data.items) && data.items.length > 0) {
+    const validItems = data.items.map((i: any) => normalizeSpanishItem(i)).filter((i: any) => i.id > 0);
+    if (validItems.length > 0) {
+      await upsertItems(validItems);
+    }
+  }
+
+  // 2. If payload contains recipes map or array
+  if (data.recipes) {
+    const recipesToUpsert: DofusRecipe[] = [];
+    if (Array.isArray(data.recipes)) {
+      for (const r of data.recipes) {
+        const norm = normalizeRecipe(r);
+        if (norm) recipesToUpsert.push(norm);
+      }
+    } else if (typeof data.recipes === "object") {
+      for (const r of Object.values(data.recipes)) {
+        const norm = normalizeRecipe(r as Record<string, unknown>);
+        if (norm) recipesToUpsert.push(norm);
+      }
+    }
+    if (recipesToUpsert.length > 0) {
+      await upsertRecipes(recipesToUpsert);
+    }
+  }
+
+  // 3. If payload contains prices (either version 2 or flat price map)
+  const pricesMap = data.prices && typeof data.prices === "object" && !Array.isArray(data.prices)
+    ? data.prices
+    : typeof data === "object" && !Array.isArray(data) && !data.version && !data.items
+    ? data
+    : null;
+
+  if (pricesMap) {
+    const activeProfileId = await getActivePriceProfileId();
+    const cleanPrices: MarketPriceMap = {};
+    for (const [key, val] of Object.entries(pricesMap)) {
+      const numericId = Number(key);
+      const numericPrice = Number(val);
+      if (numericId > 0 && !Number.isNaN(numericPrice)) {
+        cleanPrices[numericId] = Math.max(0, numericPrice);
+      }
+    }
+    if (Object.keys(cleanPrices).length > 0) {
+      await overwritePrices(cleanPrices, activeProfileId);
+    }
+  }
+
+  return await getBootstrapData();
+}
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Wrench,
   Search,
@@ -61,6 +61,7 @@ import {
   getItemFallbackIconUrl,
   resolveMissingItemNamesInBatch,
 } from "../services/dofusDbService";
+import { matchesSearchQuery } from "../utils/searchUtils";
 
 // Icon Map helper for professions
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
@@ -152,6 +153,9 @@ export const RecipeCraftingCalculator: React.FC<{
   const [loadingTree, setLoadingTree] = useState<boolean>(false);
 
   const [activeSalePrice, setActiveSalePrice] = useState<number | "">("");
+  const [salePriceDraft, setSalePriceDraft] = useState<string>("");
+  const [salePriceSavedFeedback, setSalePriceSavedFeedback] = useState<boolean>(false);
+  const saleDebounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // FAST REACTIVE PRICE UPDATE:
   // Optimistically updates local React state immediately (0ms) so calculations update live on keystroke/blur
@@ -170,6 +174,35 @@ export const RecipeCraftingCalculator: React.FC<{
     saveMarketPrice(itemId, newPrice).catch((error) => {
       console.error(`No se pudo guardar el precio del item ${itemId}:`, error);
     });
+  };
+
+  const handleSalePriceInputChange = (val: string) => {
+    setSalePriceDraft(val);
+    if (saleDebounceTimerRef.current) {
+      clearTimeout(saleDebounceTimerRef.current);
+    }
+    if (!activePresetItem) return;
+
+    // Debounce recalculations and saving after user pauses typing (500ms)
+    saleDebounceTimerRef.current = setTimeout(() => {
+      const num = val === "" ? 0 : Math.max(0, Number(val));
+      setActiveSalePrice(num > 0 ? num : "");
+      handlePriceChange(activePresetItem.id, num);
+      setSalePriceSavedFeedback(true);
+      setTimeout(() => setSalePriceSavedFeedback(false), 1500);
+    }, 500);
+  };
+
+  const handleCommitSalePriceNow = (val: string) => {
+    if (saleDebounceTimerRef.current) {
+      clearTimeout(saleDebounceTimerRef.current);
+    }
+    if (!activePresetItem) return;
+    const num = val === "" ? 0 : Math.max(0, Number(val));
+    setActiveSalePrice(num > 0 ? num : "");
+    handlePriceChange(activePresetItem.id, num);
+    setSalePriceSavedFeedback(true);
+    setTimeout(() => setSalePriceSavedFeedback(false), 1500);
   };
 
   useEffect(() => {
@@ -200,9 +233,13 @@ export const RecipeCraftingCalculator: React.FC<{
     };
   }, []);
 
+  // Track last handled external initialSelectedItem to avoid resetting on recalculations
+  const lastHandledInitialItemRef = useRef<number | null>(null);
+
   // Handle external selection (e.g. from Global Profit Ranking)
   useEffect(() => {
-    if (initialSelectedItem) {
+    if (initialSelectedItem && initialSelectedItem.id !== lastHandledInitialItemRef.current) {
+      lastHandledInitialItemRef.current = initialSelectedItem.id;
       const foundPreset = PRESET_CRAFTABLE_ITEMS.find(
         (p) => p.id === initialSelectedItem.id,
       );
@@ -233,13 +270,16 @@ export const RecipeCraftingCalculator: React.FC<{
       const storedPrice = marketPrices[activePresetItem.id];
       if (typeof storedPrice === "number" && storedPrice > 0) {
         setActiveSalePrice(storedPrice);
+        setSalePriceDraft(String(storedPrice));
       } else {
         setActiveSalePrice("");
+        setSalePriceDraft("");
       }
     } else {
       setActiveSalePrice("");
+      setSalePriceDraft("");
     }
-  }, [activePresetItem?.id, marketPrices[activePresetItem?.id || 0]]);
+  }, [activePresetItem?.id]);
 
   // Build recipe tree ONLY when activePresetItem ID changes, NOT on every price edit!
   useEffect(() => {
@@ -331,9 +371,17 @@ export const RecipeCraftingCalculator: React.FC<{
           return false;
         }
         if (searchTerm.trim()) {
-          const name = getItemName(item).toLowerCase();
-          const term = searchTerm.toLowerCase();
-          if (!name.includes(term) && !item.id.toString().includes(term)) {
+          if (
+            !matchesSearchQuery(
+              [
+                getItemName(item),
+                getItemTypeName(item),
+                item.jobNameEs,
+                item.id,
+              ],
+              searchTerm,
+            )
+          ) {
             return false;
           }
         }
@@ -515,26 +563,31 @@ export const RecipeCraftingCalculator: React.FC<{
                 Precio de Venta Mercadillo
               </label>
               <div className="flex items-center justify-end gap-2">
-                <input
-                  type="number"
-                  value={activeSalePrice}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "") {
-                      setActiveSalePrice("");
-                      handlePriceChange(activePresetItem.id, 0);
-                    } else {
-                      const num = Math.max(0, Number(val));
-                      setActiveSalePrice(num);
-                      handlePriceChange(activePresetItem.id, num);
-                    }
-                  }}
-                  placeholder="0"
-                  className="w-36 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-right text-emerald-400 font-mono font-black text-lg focus:outline-none focus:border-amber-500 transition-colors"
-                />
-                <span className="text-xs font-bold text-slate-400 font-mono">
-                  Kamas
-                </span>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={salePriceDraft}
+                    onChange={(e) => handleSalePriceInputChange(e.target.value)}
+                    onBlur={() => handleCommitSalePriceNow(salePriceDraft)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCommitSalePriceNow(salePriceDraft);
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-36 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-right text-emerald-400 font-mono font-black text-lg focus:outline-none focus:border-amber-500 transition-colors pr-6"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-500 font-mono pointer-events-none">
+                    K
+                  </span>
+                </div>
+                {salePriceSavedFeedback && (
+                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg animate-pulse">
+                    <Check className="w-3.5 h-3.5" />
+                    Guardado
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -712,7 +765,7 @@ export const RecipeCraftingCalculator: React.FC<{
   return (
     <div className="space-y-4 w-full">
       {/* Job Selection Cards Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-2">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-black text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
             <Wrench className="w-4 h-4 text-amber-400" />
@@ -720,21 +773,21 @@ export const RecipeCraftingCalculator: React.FC<{
           </span>
           <span className="text-[11px] font-mono text-slate-500">
             {selectedJobId === "all"
-              ? "Todos los oficios"
-              : `Oficio ID: #${selectedJobId}`}
+              ? `Mostrando todos (${DOFUS_JOBS.length} oficios)`
+              : `Oficio: ${DOFUS_JOBS.find((j) => j.id === selectedJobId)?.nameEs || `ID #${selectedJobId}`}`}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
           <button
             onClick={() => setSelectedJobId("all")}
-            className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+            className={`px-3 py-2 rounded-xl font-bold transition-all flex items-center justify-center sm:justify-start gap-2 ${
               selectedJobId === "all"
                 ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
-                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+                : "bg-slate-950 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 hover:bg-slate-900"
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Todos ({DOFUS_JOBS.length})</span>
+            <Layers className="w-4 h-4 shrink-0" />
+            <span className="truncate">Todos ({DOFUS_JOBS.length})</span>
           </button>
 
           {DOFUS_JOBS.map((job) => {
@@ -744,14 +797,14 @@ export const RecipeCraftingCalculator: React.FC<{
               <button
                 key={job.id}
                 onClick={() => setSelectedJobId(job.id)}
-                className={`px-2.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+                className={`px-3 py-2 rounded-xl font-bold transition-all flex items-center justify-center sm:justify-start gap-2 ${
                   isSelected
                     ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
-                    : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+                    : "bg-slate-950 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 hover:bg-slate-900"
                 }`}
               >
-                <JobIcon className="w-3.5 h-3.5" />
-                <span>{job.nameEs}</span>
+                <JobIcon className="w-4 h-4 shrink-0 text-amber-400" />
+                <span className="truncate">{job.nameEs}</span>
               </button>
             );
           })}
@@ -1077,6 +1130,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[node.itemId] || node.marketPrice || 0;
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const totalPriceForQuantity = currentPrice * node.quantity;
   const hasSubCraft =
@@ -1089,6 +1143,27 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
 
   const isSubcraftCheaper = hasSubCraft && subCraftCost < directBuyCost;
   const savings = Math.abs(directBuyCost - subCraftCost);
+
+  const handleInputChange = (val: string) => {
+    setDraftPrice(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const numericVal = val === "" ? 0 : Number(val);
+      onPriceChange(node.itemId, numericVal);
+    }, 500);
+  };
+
+  const handleInputBlurOrEnter = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const nextValue =
+      draftPrice === null
+        ? currentPrice
+        : draftPrice === ""
+          ? 0
+          : Number(draftPrice);
+    onPriceChange(node.itemId, nextValue);
+    setDraftPrice(null);
+  };
 
   return (
     <div className="bg-slate-950 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-3.5 text-xs shadow-lg flex flex-col justify-between">
@@ -1148,21 +1223,13 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                   ? currentPrice
                   : ""
             }
-            onChange={(e) => {
-              const val = e.target.value;
-              setDraftPrice(val);
-              const numericVal = val === "" ? 0 : Number(val);
-              onPriceChange(node.itemId, numericVal);
-            }}
-            onBlur={() => {
-              const nextValue =
-                draftPrice === null
-                  ? currentPrice
-                  : draftPrice === ""
-                    ? 0
-                    : Number(draftPrice);
-              onPriceChange(node.itemId, nextValue);
-              setDraftPrice(null);
+            onChange={(e) => handleInputChange(e.target.value)}
+            onBlur={handleInputBlurOrEnter}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleInputBlurOrEnter();
+                (e.target as HTMLInputElement).blur();
+              }
             }}
             placeholder="0"
             className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-right text-amber-300 font-mono font-black text-base focus:outline-none focus:border-amber-400 transition-colors"

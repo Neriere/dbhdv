@@ -48,6 +48,7 @@ import {
 import { DofusItem, MarketPriceMap } from '../types';
 import {
   CRUSHING_ALLOWED_JOBS,
+  isPetItem,
 } from '../data/dofusJobs';
 import {
   BASE_RUNES_BY_ID,
@@ -82,6 +83,11 @@ import {
 } from '../services/dofusDbService';
 import { SafeImage } from './SafeImage';
 import { RuneIcon } from './RuneIcon';
+import { KamaDisplay } from './common/KamaDisplay';
+import { RecipeSidebar, RecipeIngredientDetail } from './crushing/RecipeSidebar';
+import { CrushingRunesTable } from './crushing/CrushingRunesTable';
+import { CrushingStrategyHero } from './crushing/CrushingStrategyHero';
+import { matchesSearchQuery } from '../utils/searchUtils';
 
 interface CrushingCalculatorProps {
   initialSelectedItem?: DofusItem | null;
@@ -110,6 +116,7 @@ type SortOption =
   | 'date_desc';
 
 const FILTER_PERSISTENCE_KEY = 'dofus_crushing_filters_v2';
+const CRUSHING_STATE_KEY = 'dofus_crushing_state_v2';
 
 interface SavedFiltersState {
   searchQuery?: string;
@@ -124,6 +131,22 @@ interface SavedFiltersState {
   currentPage?: number;
   isStatsFilterOpen?: boolean;
 }
+
+interface SavedCrushingViewState {
+  viewMode?: CrushingViewMode;
+  selectedItemId?: number | null;
+}
+
+const getInitialSavedViewState = (): SavedCrushingViewState => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(CRUSHING_STATE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error loading saved view state:', e);
+  }
+  return {};
+};
 
 const getInitialSavedFilters = (): SavedFiltersState => {
   if (typeof window === 'undefined') return {};
@@ -170,8 +193,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   initialSelectedItem,
   onSelectRecipeForCalculator,
 }) => {
+  const savedViewState = useMemo(() => getInitialSavedViewState(), []);
+
   // Navigation View Mode: 'catalog' (Listado) vs 'detail' (Simulador Detallado) vs 'rune_prices' (HDV Runas)
-  const [viewMode, setViewMode] = useState<CrushingViewMode>('catalog');
+  const [viewMode, setViewMode] = useState<CrushingViewMode>(savedViewState.viewMode ?? 'catalog');
   
   // Database & Cache state
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
@@ -180,6 +205,21 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const [selectedItem, setSelectedItem] = useState<CraftableItem | null>(null);
   const [savedCoefficients, setSavedCoefficients] = useState<Record<number, number>>({});
   const [savedTimestamps, setSavedTimestamps] = useState<Record<number, number>>({});
+
+  // Persist current viewMode and selectedItem in storage so switching tabs keeps exact section
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        CRUSHING_STATE_KEY,
+        JSON.stringify({
+          viewMode,
+          selectedItemId: selectedItem?.id ?? null,
+        })
+      );
+    } catch (e) {
+      console.error('Error saving crushing view state:', e);
+    }
+  }, [viewMode, selectedItem]);
 
   // =========================================================================
   // CATALOG ADVANCED FILTERS & STATE (Persistent across page reloads/views)
@@ -251,18 +291,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const detailSearchContainerRef = useRef<HTMLDivElement>(null);
 
   // Recipe ingredients state for detail view
-  interface RecipeIngredientDetail {
-    id: number;
-    name: string;
-    iconId: number;
-    quantity: number;
-    unitPrice: number;
-    marketBuyPrice: number;
-    subCraftCost: number;
-    isCraftable: boolean;
-    isCraftCheaper: boolean;
-    totalCost: number;
-  }
   const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredientDetail[]>([]);
   const [ingredientDrafts, setIngredientDrafts] = useState<Record<number, string>>({});
   const [itemHdvPriceDraft, setItemHdvPriceDraft] = useState<string>('');
@@ -298,7 +326,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     const storedPrices = getStoredMarketPrices();
     setMarketPrices(storedPrices);
     setPriceUpdatedAt(getStoredPriceUpdatedAt());
-    const snapshot = getCrushableItemsSnapshot();
+    const snapshot = getCrushableItemsSnapshot().filter((item) => !isPetItem(item));
     setCrushableItems(snapshot);
     setSavedCoefficients(getAllSavedItemCoefficients());
     setSavedTimestamps(getAllSavedItemCoefficientTimestamps());
@@ -310,6 +338,24 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       initialRuneDrafts[rune.id] = String(p);
     }
     setRunePriceDrafts(initialRuneDrafts);
+
+    // Restore previous selected item if not already selected
+    setSelectedItem((prev) => {
+      if (prev) {
+        // Keep updated item from latest snapshot if matching id
+        const updated = snapshot.find((i) => i.id === prev.id);
+        return updated || prev;
+      }
+      if (initialSelectedItem) {
+        const found = snapshot.find((i) => i.id === initialSelectedItem.id) || (initialSelectedItem as any);
+        return found;
+      }
+      if (savedViewState.selectedItemId) {
+        const savedItem = snapshot.find((i) => i.id === savedViewState.selectedItemId);
+        if (savedItem) return savedItem;
+      }
+      return null;
+    });
   };
 
   useEffect(() => {
@@ -331,14 +377,16 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     };
   }, []);
 
-  // Handle external navigation with initialSelectedItem
+  // Track last handled external initialSelectedItem to prevent reverting on recalculations
+  const lastHandledInitialItemRef = useRef<number | null>(null);
+
+  // Handle external navigation with initialSelectedItem (only when prop explicitly changes to a new item)
   useEffect(() => {
-    if (initialSelectedItem && crushableItems.length > 0) {
-      const found = crushableItems.find((i) => i.id === initialSelectedItem.id);
-      if (found) {
-        setSelectedItem(found);
-        setViewMode('detail');
-      }
+    if (initialSelectedItem && initialSelectedItem.id !== lastHandledInitialItemRef.current) {
+      lastHandledInitialItemRef.current = initialSelectedItem.id;
+      const found = crushableItems.find((i) => i.id === initialSelectedItem.id) || (initialSelectedItem as any);
+      setSelectedItem(found);
+      setViewMode('detail');
     }
   }, [initialSelectedItem, crushableItems]);
 
@@ -504,35 +552,68 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     setTimeout(() => setSavedCoeffFeedback(false), 2000);
   };
 
+  const ingDebounceTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
+  const hdvDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Handle updating ingredient price inline
   const handleUpdateIngredientPrice = async (ingId: number, rawValue: string) => {
+    if (ingDebounceTimersRef.current[ingId]) {
+      clearTimeout(ingDebounceTimersRef.current[ingId]);
+    }
     const numeric = Math.max(0, Math.trunc(Number(rawValue) || 0));
     setIngredientDrafts((prev) => ({ ...prev, [ingId]: String(numeric) }));
+    setMarketPrices((prev) => ({ ...prev, [ingId]: numeric }));
     await saveMarketPrice(ingId, numeric);
     setSavedIngFeedback(ingId);
     setTimeout(() => setSavedIngFeedback(null), 1500);
   };
 
+  // Debounced auto-save for ingredient price input
+  const handleIngredientPriceDraftChange = (ingId: number, rawValue: string) => {
+    setIngredientDrafts((prev) => ({ ...prev, [ingId]: rawValue }));
+    if (ingDebounceTimersRef.current[ingId]) {
+      clearTimeout(ingDebounceTimersRef.current[ingId]);
+    }
+    ingDebounceTimersRef.current[ingId] = setTimeout(() => {
+      void handleUpdateIngredientPrice(ingId, rawValue);
+    }, 600);
+  };
+
   // Handle updating finished item HDV sale price inline
   const handleUpdateItemHdvPrice = async (rawValue: string) => {
     if (!selectedItem) return;
+    if (hdvDebounceTimerRef.current) {
+      clearTimeout(hdvDebounceTimerRef.current);
+    }
     const numeric = Math.max(0, Math.trunc(Number(rawValue) || 0));
     setItemHdvPriceDraft(String(numeric));
+    setMarketPrices((prev) => ({ ...prev, [selectedItem.id]: numeric }));
     await saveMarketPrice(selectedItem.id, numeric);
     setSavedHdvFeedback(true);
     setTimeout(() => setSavedHdvFeedback(false), 1500);
+  };
+
+  // Debounced auto-save for HDV sale price input
+  const handleItemHdvPriceDraftChange = (rawValue: string) => {
+    setItemHdvPriceDraft(rawValue);
+    if (hdvDebounceTimerRef.current) {
+      clearTimeout(hdvDebounceTimerRef.current);
+    }
+    hdvDebounceTimerRef.current = setTimeout(() => {
+      void handleUpdateItemHdvPrice(rawValue);
+    }, 600);
   };
 
   // Handle updating rune price from detail or rune manager
   const handleUpdateRunePrice = async (runeId: number, rawValue: string) => {
     const numeric = Math.max(0, Math.trunc(Number(rawValue) || 0));
     setRunePriceDrafts((prev) => ({ ...prev, [runeId]: String(numeric) }));
+    setMarketPrices((prev) => ({ ...prev, [runeId]: numeric }));
     await saveMarketPrice(runeId, numeric);
     setSavedRuneIdFeedback(runeId);
     setTimeout(() => setSavedRuneIdFeedback(null), 1500);
   };
 
-  // Transition to detail view with selected item
   // Transition to detail view with selected item
   const handleOpenDetail = (item: CraftableItem) => {
     setSelectedItem(item);
@@ -551,10 +632,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     { id: 'anillo', label: 'Anillo', typeIds: [9], icon: Disc },
     { id: 'cinturon', label: 'Cinturón', typeIds: [10], icon: Sliders },
     { id: 'botas', label: 'Botas', typeIds: [11], icon: Footprints },
-    { id: 'arma', label: 'Arma', typeIds: [2, 3, 4, 5, 6, 7, 8, 19, 21, 22, 212], icon: Sword },
+    { id: 'arma_herrero', label: 'Arma (Herrero)', jobId: 11, typeIds: [5, 6, 7, 8, 19, 20, 21, 22, 212], icon: Sword },
+    { id: 'arma_escultor', label: 'Arma (Escultor)', jobId: 13, typeIds: [2, 3, 4], icon: Wand2 },
     { id: 'escudo', label: 'Escudo', typeIds: [82], icon: Shield },
     { id: 'trofeo', label: 'Trofeo', typeIds: [151, 271], icon: Trophy },
-    { id: 'mascota', label: 'Mascota', typeIds: [18, 121], icon: Sparkles },
   ], []);
 
   interface StatFilterDef {
@@ -844,7 +925,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     const allStatMap = new Map<string, StatFilterDef>(ALL_STAT_FILTERS.map((s) => [s.id, s]));
 
     // 1. Process simulations for each crushable item
-    const results = crushableItems.map((item) => {
+    const results = crushableItems
+      .filter((item) => !isPetItem(item))
+      .map((item) => {
       const singleCraftCost = getItemCraftCost(item);
       const savedCoeff = savedCoefficients[item.id] ?? 100;
       const coeffTimestamp = savedTimestamps[item.id] ?? null;
@@ -859,17 +942,24 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         {},
       );
 
-      // Best focus calculation
-      const bestFocus = sim.bestFocusOption;
-      const bestFocusProfit = bestFocus ? bestFocus.netProfit : sim.normalNetProfit;
-      const bestFocusValue = bestFocus ? bestFocus.totalKamasValue : sim.normalTotalKamasValue;
-      const bestFocusRoi = bestFocus ? bestFocus.roiPercent : sim.normalRoiPercent;
-      const bestFocusRune = bestFocus ? bestFocus.rune : null;
+      // Best strategy calculation (Top 1 crushing option, whether Normal or Focus)
+      const bestStrat = sim.bestFocusOption;
+      const bestStratProfit = bestStrat ? bestStrat.netProfit : sim.normalNetProfit;
+      const bestStratValue = bestStrat ? bestStrat.totalKamasValue : sim.normalTotalKamasValue;
+      const bestStratRoi = bestStrat ? bestStrat.roiPercent : sim.normalRoiPercent;
+      const bestStratIsNormal = bestStrat ? Boolean(bestStrat.isNormal) : true;
+      const bestStratRune = bestStrat && !bestStrat.isNormal ? bestStrat.rune : null;
 
       // Effective general profit (highest between normal and best focus)
-      const maxProfit = Math.max(sim.normalNetProfit, bestFocusProfit);
-      const maxKamasValue = Math.max(sim.normalTotalKamasValue, bestFocusValue);
-      const maxRoi = Math.max(sim.normalRoiPercent, bestFocusRoi);
+      const maxProfit = bestStratProfit;
+      const maxKamasValue = bestStratValue;
+      const maxRoi = bestStratRoi;
+
+      // Target rune yield if single stat filter is selected
+      const targetFilterRuneId = selectedStatFilterIds.length === 1 ? allStatMap.get(selectedStatFilterIds[0])?.runeId : null;
+      const targetRuneYield = targetFilterRuneId ? (sim.statYields.find(st => st.rune.id === targetFilterRuneId) || null) : null;
+      const runeSpecificRunes = targetRuneYield ? targetRuneYield.normalRunesPerItem : 0;
+      const runeSpecificKamas = targetRuneYield ? targetRuneYield.normalKamasValue : 0;
 
       return {
         item,
@@ -885,39 +975,64 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         normalProfit: sim.normalNetProfit,
         normalValue: sim.normalTotalKamasValue,
         normalRoi: sim.normalRoiPercent,
-        bestFocusProfit,
-        bestFocusValue,
-        bestFocusRoi,
-        bestFocusRune,
+        bestFocusProfit: bestStratProfit,
+        bestFocusValue: bestStratValue,
+        bestFocusRoi: bestStratRoi,
+        bestFocusRune: bestStratRune,
+        bestStratIsNormal,
         maxProfit,
         maxKamasValue,
         maxRoi,
         breakEvenCoeff: sim.breakEvenCoefficient,
+        targetRuneYield,
+        runeSpecificRunes,
+        runeSpecificKamas,
       };
     });
 
     // 2. Filter items
     const filtered = results.filter((entry) => {
-      // Search query
+      // Search query (Accent and case-insensitive)
       if (searchQuery.trim().length > 0) {
-        const q = searchQuery.toLowerCase().trim();
-        const name = getItemName(entry.item).toLowerCase();
-        const type = getItemTypeName(entry.item).toLowerCase();
-        if (!name.includes(q) && !type.includes(q) && !String(entry.item.id).includes(q)) {
+        if (
+          !matchesSearchQuery(
+            [
+              getItemName(entry.item),
+              getItemTypeName(entry.item),
+              entry.item.jobNameEs,
+              entry.item.id,
+            ],
+            searchQuery,
+          )
+        ) {
           return false;
         }
       }
 
       // Multi-select Equipment Slot filter
       if (selectedSlots.length > 0) {
-        const allowedTypeIds = new Set<number>();
+        let matchesSlot = false;
         for (const slotId of selectedSlots) {
+          if (slotId === 'arma') {
+            // Legacy backwards compatibility
+            if (entry.jobId === 11 || entry.jobId === 13 || [2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 212].includes(entry.typeId)) {
+              matchesSlot = true;
+              break;
+            }
+          }
           const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotId);
           if (slotDef) {
-            slotDef.typeIds.forEach((t) => allowedTypeIds.add(t));
+            if (slotDef.jobId && entry.jobId === slotDef.jobId) {
+              matchesSlot = true;
+              break;
+            }
+            if (slotDef.typeIds.includes(entry.typeId)) {
+              matchesSlot = true;
+              break;
+            }
           }
         }
-        if (allowedTypeIds.size > 0 && !allowedTypeIds.has(entry.typeId)) {
+        if (!matchesSlot) {
           return false;
         }
       }
@@ -1130,16 +1245,16 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           {/* Main Filter Control Box (Collapsible & Persistent Multi-Select) */}
           <div className="bg-[#0f0e17] border border-purple-900/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
             {/* 1. Essential Filters Row 1: Multi-select Equipment Slots */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-purple-900/40 max-w-full">
+            <div className="flex flex-wrap items-center gap-2 pb-1 max-w-full">
               <button
                 onClick={() => handleToggleSlot('all')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all shrink-0 ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-black whitespace-nowrap transition-all shrink-0 ${
                   selectedSlots.length === 0
                     ? 'bg-purple-600 text-white font-extrabold shadow-md shadow-purple-950/80 border border-purple-400'
                     : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-purple-950/40'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5" />
+                <Layers className="w-4 h-4" />
                 Todos
               </button>
               {EQUIPMENT_SLOTS.filter((s) => s.id !== 'all').map((slot) => {
@@ -1149,13 +1264,13 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                   <button
                     key={slot.id}
                     onClick={() => handleToggleSlot(slot.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all shrink-0 ${
                       isSelected
                         ? 'bg-purple-600 text-white font-extrabold shadow-md shadow-purple-950/80 border border-purple-400 ring-1 ring-purple-300'
                         : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-purple-950/40'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon className="w-4 h-4" />
                     {slot.label}
                   </button>
                 );
@@ -1163,11 +1278,11 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             </div>
 
             {/* 2. Essential Filters Row 2: Level, Coeff %, Date Dropdown & Stats Filter Toggle */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-purple-950/60">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-purple-950/60">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 {/* Level Inputs */}
-                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
-                  <span className="font-bold text-slate-400">Niv.</span>
+                <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-950/60 rounded-xl px-3 py-2 text-sm">
+                  <span className="font-bold text-slate-300">Niv.</span>
                   <input
                     type="number"
                     min="1"
@@ -1182,9 +1297,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       );
                       setCurrentPage(1);
                     }}
-                    className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-center text-sm font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
-                  <span className="text-slate-600 font-bold">-</span>
+                  <span className="text-slate-500 font-bold">-</span>
                   <input
                     type="number"
                     min="1"
@@ -1199,13 +1314,13 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       );
                       setCurrentPage(1);
                     }}
-                    className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-center text-sm font-mono font-bold text-amber-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                 </div>
 
                 {/* Coeff % Inputs */}
-                <div className="flex items-center gap-1 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
-                  <span className="font-bold text-slate-400">Coef %</span>
+                <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-950/60 rounded-xl px-3 py-2 text-sm">
+                  <span className="font-bold text-slate-300">Coef %</span>
                   <input
                     type="number"
                     min="1"
@@ -1220,9 +1335,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       );
                       setCurrentPage(1);
                     }}
-                    className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    className="w-16 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-center text-sm font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
-                  <span className="text-slate-600 font-bold">-</span>
+                  <span className="text-slate-500 font-bold">-</span>
                   <input
                     type="number"
                     min="1"
@@ -1237,21 +1352,21 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       );
                       setCurrentPage(1);
                     }}
-                    className="w-11 bg-slate-900 border border-slate-800 rounded px-1 text-center text-xs font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                    className="w-16 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-center text-sm font-mono font-bold text-purple-300 placeholder-slate-600 focus:outline-none focus:border-purple-500"
                   />
                 </div>
 
                 {/* Updated Date Dropdown */}
-                <div className="flex items-center gap-1.5 bg-slate-950/90 border border-purple-950/60 rounded-xl px-2.5 py-1.5 text-xs">
-                  <Clock className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="font-bold text-slate-400 hidden sm:inline">Fecha:</span>
+                <div className="flex items-center gap-2 bg-slate-950/90 border border-purple-950/60 rounded-xl px-3 py-2 text-sm">
+                  <Clock className="w-4 h-4 text-purple-400" />
+                  <span className="font-bold text-slate-300 hidden sm:inline">Fecha:</span>
                   <select
                     value={dateFilter}
                     onChange={(e) => {
                       setDateFilter(e.target.value as DateFilterOption);
                       setCurrentPage(1);
                     }}
-                    className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer"
+                    className="bg-transparent text-sm font-bold text-slate-200 focus:outline-none cursor-pointer"
                   >
                     <option value="all" className="bg-slate-950">Todo</option>
                     <option value="today" className="bg-slate-950">Hoy (&lt;24h)</option>
@@ -1265,10 +1380,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
               </div>
 
               {/* Stats Filter Toggle Button & Reset Button */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <button
                   onClick={() => setIsStatsFilterOpen(!isStatsFilterOpen)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm ${
                     selectedStatFilterIds.length > 0
                       ? 'bg-purple-600 text-white border border-purple-400 ring-1 ring-purple-300'
                       : isStatsFilterOpen
@@ -1276,17 +1391,17 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-900/90 text-slate-300 hover:text-white border border-purple-950/60 hover:border-purple-700'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <Sparkles className="w-4 h-4 text-purple-400" />
                   <span>Filtro de Estadísticas</span>
                   {selectedStatFilterIds.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-purple-900 text-white rounded-full text-[10px] font-black border border-purple-400/50">
+                    <span className="px-2 py-0.5 bg-purple-900 text-white rounded-full text-xs font-black border border-purple-400/50">
                       {selectedStatFilterIds.length}
                     </span>
                   )}
                   {isStatsFilterOpen ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
+                    <ChevronUp className="w-4 h-4" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <ChevronDown className="w-4 h-4" />
                   )}
                 </button>
 
@@ -1300,10 +1415,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                   searchQuery !== '') && (
                   <button
                     onClick={handleClearAllFilters}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 transition-colors"
                     title="Limpiar todos los filtros"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
+                    <RotateCcw className="w-4 h-4" />
                     Limpiar
                   </button>
                 )}
@@ -1316,14 +1431,14 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-purple-400" />
-                    <span className="text-xs font-bold text-purple-300">
+                    <span className="text-sm font-bold text-purple-300">
                       Seleccionar estadísticas (selección múltiple permitida):
                     </span>
                   </div>
                   {selectedStatFilterIds.length > 0 && (
                     <button
                       onClick={handleClearStatsOnly}
-                      className="text-[11px] font-bold text-red-400 hover:text-red-300 underline"
+                      className="text-xs font-bold text-red-400 hover:text-red-300 underline"
                     >
                       Limpiar estadísticas ({selectedStatFilterIds.length})
                     </button>
@@ -1333,17 +1448,17 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
                   {/* COLUMN 1: DAÑOS */}
                   <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                    <h4 className="text-purple-400 font-extrabold text-sm uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
                       Daños
                     </h4>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-2 gap-2">
                       {STAT_FILTERS_DAMAGES.map((stat) => {
                         const isSelected = selectedStatFilterIds.includes(stat.id);
                         return (
                           <button
                             key={stat.id}
                             onClick={() => handleToggleStatFilter(stat)}
-                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left group ${
                               isSelected
                                 ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
                                 : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
@@ -1351,7 +1466,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                             title={stat.name}
                           >
                             {renderStatButtonIcon(stat)}
-                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                            <span className="truncate text-xs font-bold">{stat.name}</span>
                           </button>
                         );
                       })}
@@ -1360,17 +1475,17 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
 
                   {/* COLUMN 2: RESISTENCIAS */}
                   <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                    <h4 className="text-purple-400 font-extrabold text-sm uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
                       Resistencias
                     </h4>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-2 gap-2">
                       {STAT_FILTERS_RESISTANCES.map((stat) => {
                         const isSelected = selectedStatFilterIds.includes(stat.id);
                         return (
                           <button
                             key={stat.id}
                             onClick={() => handleToggleStatFilter(stat)}
-                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left group ${
                               isSelected
                                 ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
                                 : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
@@ -1378,7 +1493,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                             title={stat.name}
                           >
                             {renderStatButtonIcon(stat)}
-                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                            <span className="truncate text-xs font-bold">{stat.name}</span>
                           </button>
                         );
                       })}
@@ -1387,17 +1502,17 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
 
                   {/* COLUMN 3: CARACTERÍSTICAS */}
                   <div className="bg-slate-950/60 border border-purple-950/40 rounded-xl p-3 space-y-2">
-                    <h4 className="text-purple-400 font-extrabold text-xs uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
+                    <h4 className="text-purple-400 font-extrabold text-sm uppercase tracking-wider text-center pb-2 border-b border-purple-950/60">
                       Características
                     </h4>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-3 gap-2">
                       {STAT_FILTERS_CHARACTERISTICS.map((stat) => {
                         const isSelected = selectedStatFilterIds.includes(stat.id);
                         return (
                           <button
                             key={stat.id}
                             onClick={() => handleToggleStatFilter(stat)}
-                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all text-left group ${
+                            className={`flex items-center gap-2 px-2 py-2 rounded-lg text-xs font-medium transition-all text-left group ${
                               isSelected
                                 ? 'bg-purple-600 text-white font-extrabold shadow-md border border-purple-300 ring-1 ring-purple-400'
                                 : 'bg-slate-900/60 hover:bg-purple-950/40 text-slate-300 hover:text-white border border-slate-800/60 hover:border-purple-800/40'
@@ -1405,7 +1520,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                             title={stat.name}
                           >
                             {renderStatButtonIcon(stat)}
-                            <span className="truncate text-[11px] font-semibold">{stat.name}</span>
+                            <span className="truncate text-xs font-bold">{stat.name}</span>
                           </button>
                         );
                       })}
@@ -1515,32 +1630,32 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           </div>
 
           {/* Results Summary Bar */}
-          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+          <div className="flex items-center justify-between text-sm text-slate-400 px-1 font-medium">
             <span>
-              Mostrando <strong>{paginatedCatalogItems.length}</strong> de <strong>{processedCatalogItems.length}</strong> equipables
+              Mostrando <strong className="text-slate-200">{paginatedCatalogItems.length}</strong> de <strong className="text-slate-200">{processedCatalogItems.length}</strong> equipables
             </span>
             <span>
-              Página <strong>{currentPage}</strong> de <strong>{totalPages}</strong>
+              Página <strong className="text-slate-200">{currentPage}</strong> de <strong className="text-slate-200">{totalPages}</strong>
             </span>
           </div>
 
           {/* Catalog Grid Cards */}
           {paginatedCatalogItems.length === 0 ? (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-              <Sparkles className="w-10 h-10 text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-white">No se encontraron equipables</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
+              <Sparkles className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="text-lg font-bold text-white">No se encontraron equipables</h3>
+              <p className="text-sm text-slate-400 max-w-md mx-auto">
                 No hay objetos que coincidan con los filtros seleccionados (oficio, nivel, runa o fecha de registro).
               </p>
               <button
                 onClick={handleClearAllFilters}
-                className="px-4 py-2 bg-purple-600 text-white font-black rounded-xl text-xs hover:bg-purple-500 transition-colors inline-block shadow-lg"
+                className="px-5 py-2.5 bg-purple-600 text-white font-black rounded-xl text-sm hover:bg-purple-500 transition-colors inline-block shadow-lg"
               >
                 Limpiar Filtros
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {paginatedCatalogItems.map((entry) => {
                 const item = entry.item;
                 const itemName = getItemName(item);
@@ -1551,22 +1666,22 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                   <div
                     key={item.id}
                     onClick={() => handleOpenDetail(item)}
-                    className="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-3.5 sm:p-4 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10 group flex flex-col justify-between gap-3"
+                    className="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-4 sm:p-4.5 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10 group flex flex-col justify-between gap-3.5"
                   >
                     {/* Top Identity Row */}
-                    <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors shadow-inner">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 group-hover:border-amber-500/40 transition-colors shadow-inner">
                         <SafeImage
                           src={iconUrl}
                           fallbackSrc={getItemFallbackIconUrl(item)}
                           alt={itemName}
-                          className="w-10 h-10 object-contain"
+                          className="w-12 h-12 object-contain"
                         />
                       </div>
 
                       <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-start justify-between gap-1.5">
-                          <span className="font-black text-white text-base leading-snug truncate group-hover:text-amber-400 transition-colors">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-black text-white text-base sm:text-lg leading-snug truncate group-hover:text-amber-400 transition-colors">
                             {itemName}
                           </span>
                           <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-slate-950 text-amber-400 border border-slate-800 shrink-0">
@@ -1582,14 +1697,14 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                               className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1"
                               title={`Registrado: ${formatFullDate(entry.coeffTimestamp)}`}
                             >
-                              <Percent className="w-3 h-3 text-amber-400" />
+                              <Percent className="w-3.5 h-3.5 text-amber-400" />
                               {entry.savedCoeff}%
-                              <span className="text-[10px] text-amber-400/70 font-normal">
+                              <span className="text-[11px] text-amber-400/80 font-normal">
                                 ({formatTimeAgo(entry.coeffTimestamp)})
                               </span>
                             </span>
                           ) : (
-                            <span className="text-xs font-mono text-slate-400 px-1.5 py-0.5 bg-slate-950/60 rounded border border-slate-800">
+                            <span className="text-xs font-mono text-slate-400 px-2 py-0.5 bg-slate-950/60 rounded border border-slate-800">
                               Coef: 100%
                             </span>
                           )}
@@ -1599,7 +1714,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
 
                     {/* Target Rune Highlight (if specific rune is filtered) */}
                     {entry.targetRuneYield && (
-                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2 flex items-center justify-between text-xs font-mono">
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 flex items-center justify-between text-xs sm:text-sm font-mono">
                         <div className="flex items-center gap-1.5 truncate">
                           <RuneIcon rune={entry.targetRuneYield.rune} size="xs" />
                           <span className="font-bold text-amber-300 truncate">
@@ -1613,12 +1728,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     )}
 
                     {/* Metrics 3-box Grid: Coste | Valor Runas | Ganancia */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 grid grid-cols-3 gap-2 text-center font-mono">
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 grid grid-cols-3 gap-2 text-center font-mono">
                       <div>
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                           Costo
                         </span>
-                        <span className="text-sm font-bold text-slate-200">
+                        <span className="text-sm sm:text-base font-bold text-slate-200">
                           {entry.singleCraftCost > 0
                             ? `${entry.singleCraftCost.toLocaleString()} K`
                             : '---'}
@@ -1628,7 +1743,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
                           Runas
                         </span>
-                        <span className="text-sm font-bold text-amber-300">
+                        <span className="text-sm sm:text-base font-bold text-amber-300">
                           {entry.maxKamasValue > 0
                             ? `${entry.maxKamasValue.toLocaleString()} K`
                             : '---'}
@@ -1639,7 +1754,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                           Ganancia
                         </span>
                         <span
-                          className={`text-sm font-black block ${
+                          className={`text-sm sm:text-base font-black block ${
                             entry.maxProfit >= 0
                               ? 'text-emerald-400'
                               : 'text-rose-400'
@@ -1652,17 +1767,31 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     </div>
 
                     {/* Bottom Action Footer */}
-                    <div className="pt-0.5 flex items-center justify-between text-xs text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
+                    <div className="pt-0.5 flex items-center justify-between text-xs sm:text-sm text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
                       <div className="flex items-center gap-2 flex-wrap">
                         {entry.maxRoi > 0 && (
                           <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-mono border border-emerald-500/30 font-bold">
                             +{entry.maxRoi.toFixed(0)}% ROI
                           </span>
                         )}
-                        {entry.bestFocusRune && !entry.targetRuneYield && (
-                          <span className="text-xs text-purple-300 flex items-center gap-1 font-semibold">
-                            <Sparkles className="w-3 h-3 text-purple-400" />
-                            Foco: {entry.bestFocusRune.name.replace('Runa ', '')}
+                        {!entry.targetRuneYield && (
+                          <span
+                            className={`text-xs sm:text-sm flex items-center gap-1 font-semibold ${
+                              entry.bestStratIsNormal
+                                ? 'text-amber-300'
+                                : 'text-purple-300'
+                            }`}
+                          >
+                            <Sparkles
+                              className={`w-3.5 h-3.5 ${
+                                entry.bestStratIsNormal
+                                  ? 'text-amber-400'
+                                  : 'text-purple-400'
+                              }`}
+                            />
+                            {entry.bestStratIsNormal
+                              ? 'Sin Foco'
+                              : `Foco: ${entry.bestFocusRune?.name.replace('Runa ', '')}`}
                           </span>
                         )}
                       </div>
@@ -1791,583 +1920,60 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             </div>
           </div>
 
-          {/* Main Detail Header Card: Info, Coeff, Presets, and 3-Box Strategic Summary */}
-          {(() => {
-            const craftCost = crushingSimulation.craftCost;
-            const hdvSalePrice = Number(marketPrices[selectedItem.id] || selectedItem.defaultMarketSalePrice || 0);
-            const hdvProfit = hdvSalePrice - craftCost;
-
-            const normalValue = crushingSimulation.normalTotalKamasValue;
-            const normalProfit = crushingSimulation.normalNetProfit;
-
-            const bestFocus = crushingSimulation.bestFocusOption;
-            const focusValue = bestFocus ? bestFocus.totalKamasValue : normalValue;
-            const focusProfit = bestFocus ? bestFocus.netProfit : normalProfit;
-            const focusRuneName = bestFocus ? bestFocus.rune.name.replace('Runa ', '') : '';
-
-            const highestRunesValue = Math.max(normalValue, focusValue);
-            const highestRunesProfit = Math.max(normalProfit, focusProfit);
-            const isFocusHigher = focusValue > normalValue;
-
-            const coeffTimestamp = savedTimestamps[selectedItem.id];
-
-            return (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
-                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-                  {/* Left: Item Identity */}
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-amber-500/30 flex items-center justify-center p-2 shadow-md shrink-0">
-                      <SafeImage
-                        key={selectedItem.id}
-                        src={getItemIconUrl(selectedItem)}
-                        fallbackSrc={getItemFallbackIconUrl(selectedItem)}
-                        alt={getItemName(selectedItem)}
-                        className="w-12 h-12 object-contain"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <h2 className="text-xl font-black text-white truncate">
-                          {getItemName(selectedItem)}
-                        </h2>
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 font-mono">
-                          Nv. {selectedItem.level || 1}
-                        </span>
-                        <span className="text-xs text-slate-400 font-medium">
-                          {getItemTypeName(selectedItem)} • {selectedItem.jobNameEs}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-1.5 flex-wrap">
-                        {onSelectRecipeForCalculator && (
-                          <button
-                            onClick={() => onSelectRecipeForCalculator(selectedItem)}
-                            className="flex items-center gap-1 text-xs font-bold text-amber-400 hover:text-amber-300 transition-colors"
-                          >
-                            Ver Receta Completa <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: Quick Controls (Presets & Coeficiente con Fecha) */}
-                  <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap shrink-0 border-t lg:border-t-0 lg:border-l border-slate-800 pt-3 lg:pt-0 lg:pl-5">
-                    {/* Jet Quick Presets */}
-                    <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
-                      <span className="text-xs font-bold text-slate-400 flex items-center gap-1 pr-1">
-                        <Sliders className="w-3.5 h-3.5 text-amber-400" /> Jets:
-                      </span>
-                      <button
-                        onClick={() => handleResetStatsToPreset('min')}
-                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-all"
-                      >
-                        Mín
-                      </button>
-                      <button
-                        onClick={() => handleResetStatsToPreset('avg')}
-                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 transition-all"
-                      >
-                        Prom
-                      </button>
-                      <button
-                        onClick={() => handleResetStatsToPreset('max')}
-                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-all"
-                      >
-                        Máx
-                      </button>
-                    </div>
-
-                    {/* Coeficiente (%) Manual Input & Save */}
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-2 bg-slate-950 border border-amber-500/30 rounded-xl px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <Percent className="w-4 h-4 text-amber-400" />
-                          <span className="text-xs font-black uppercase text-amber-400 tracking-wider">Coef:</span>
-                        </div>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            min="1"
-                            max="2000"
-                            value={coefficientPercent}
-                            onChange={(e) =>
-                              setCoefficientPercent(Math.max(1, Number(e.target.value) || 1))
-                            }
-                            className="w-20 bg-slate-900 border border-amber-500/40 rounded-lg px-2 py-1 text-center text-sm font-black text-amber-300 focus:outline-none focus:border-amber-400 font-mono"
-                          />
-                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs font-black text-amber-500">
-                            %
-                          </span>
-                        </div>
-                        <button
-                          onClick={handleSaveItemCoefficient}
-                          title="Guardar coeficiente para este objeto con fecha y hora"
-                          className={`p-2 rounded-lg text-xs font-bold transition-all ${
-                            savedCoeffFeedback
-                              ? 'bg-emerald-500 text-slate-950 font-black'
-                              : 'bg-slate-900 text-amber-300 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-950'
-                          }`}
-                        >
-                          {savedCoeffFeedback ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                        </button>
-                      </div>
-
-                      {/* Display date timestamp of saved coefficient */}
-                      <span className="text-[10px] text-slate-500 font-medium pr-1">
-                        {coeffTimestamp
-                          ? `Guardado: ${formatFullDate(coeffTimestamp)}`
-                          : 'Coeficiente base sin guardar'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Top Strategic Summary: Coste Craft, Venta HDV & Roto por Runas */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-3.5 border-t border-slate-800">
-                  {/* Box 1: Coste Craft */}
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <Layers className="w-4 h-4 text-amber-400" /> Coste Craft
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-xl sm:text-2xl font-mono font-black text-amber-300">
-                        {craftCost.toLocaleString()} K
-                      </span>
-                      <span className="text-xs text-slate-500 font-medium">
-                        {recipeIngredients.length} ingredientes
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Box 2: Venta Directa en HDV */}
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider mb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <Store className="w-4 h-4 text-emerald-400" /> Venta HDV
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <div className="relative">
-                          <input
-                            type="number"
-                            value={itemHdvPriceDraft}
-                            onChange={(e) => setItemHdvPriceDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleUpdateItemHdvPrice(itemHdvPriceDraft);
-                                (e.target as HTMLInputElement).blur();
-                              }
-                            }}
-                            className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono text-sm font-bold text-emerald-300 focus:outline-none focus:border-emerald-400 pr-5"
-                          />
-                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">
-                            K
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleUpdateItemHdvPrice(itemHdvPriceDraft)}
-                          title="Guardar precio HDV"
-                          className={`p-1.5 rounded-lg text-xs transition-all ${
-                            savedHdvFeedback
-                              ? 'bg-emerald-500 text-slate-950 font-bold'
-                              : 'bg-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {savedHdvFeedback ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-xs text-slate-400 font-semibold">Ganancia Venta:</span>
-                      <span className={`text-lg font-mono font-black ${hdvProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {hdvProfit >= 0 ? '+' : ''}{hdvProfit.toLocaleString()} K
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Box 3: Roto por Runas (Mejor valor detectado) */}
-                  <div className={`bg-slate-950/80 border rounded-xl p-4 flex flex-col justify-between ${
-                    highestRunesProfit > hdvProfit && highestRunesProfit > 0
-                      ? 'border-purple-500/50 bg-purple-950/20'
-                      : 'border-slate-800'
-                  }`}>
-                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider mb-1.5">
-                      <span className="flex items-center gap-1.5 text-purple-300">
-                        <Crosshair className="w-4 h-4 text-purple-400" /> Roto por Runas {isFocusHigher ? `(Foco ${focusRuneName})` : '(Sin Foco)'}
-                      </span>
-                      <span className="text-xs font-mono text-slate-300 font-bold">
-                        {highestRunesValue.toLocaleString()} K
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-xs text-slate-400 font-semibold">Ganancia Runas:</span>
-                      <span className={`text-lg font-mono font-black ${highestRunesProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {highestRunesProfit >= 0 ? '+' : ''}{highestRunesProfit.toLocaleString()} K
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {/* Main Detail Strategic Hero */}
+          <CrushingStrategyHero
+            selectedItem={selectedItem}
+            craftCost={crushingSimulation.craftCost}
+            marketSalePrice={Number(marketPrices[selectedItem.id] || selectedItem.defaultMarketSalePrice || 0)}
+            normalTotalKamasValue={crushingSimulation.normalTotalKamasValue}
+            normalNetProfit={crushingSimulation.normalNetProfit}
+            bestFocusOption={crushingSimulation.bestFocusOption}
+            coefficientPercent={coefficientPercent}
+            savedCoefficientTimestamp={savedTimestamps[selectedItem.id]}
+            savedCoeffFeedback={savedCoeffFeedback}
+            breakEvenCoefficient={crushingSimulation.breakEvenCoefficient}
+            onCoefficientChange={(newCoeff) => setCoefficientPercent(newCoeff)}
+            onSaveCoefficient={handleSaveItemCoefficient}
+            onResetStatsPreset={handleResetStatsToPreset}
+            onSelectRecipeForCalculator={onSelectRecipeForCalculator}
+          />
 
           {/* Main Content Layout: Left Compact Recipe | Right Main Runes Focus Table */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
             {/* Left Column: Compact Recipe & Ingredients Price Editor */}
-            <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4.5 h-4.5 text-amber-400" />
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                    Receta ({recipeIngredients.length})
-                  </h3>
-                </div>
-                <span className="text-xs font-mono font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
-                  {crushingSimulation.craftCost.toLocaleString()} K
-                </span>
-              </div>
-
-              {recipeIngredients.length > 0 ? (
-                <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1">
-                  {recipeIngredients.map((ing) => {
-                    const draftVal = ingredientDrafts[ing.id] ?? String(ing.unitPrice);
-                    const isSaved = savedIngFeedback === ing.id;
-
-                    return (
-                      <div
-                        key={ing.id}
-                        className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between gap-2.5 hover:border-slate-700 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 p-0.5 shrink-0 flex items-center justify-center">
-                            <SafeImage
-                              src={getItemIconUrl(ing)}
-                              fallbackSrc={getItemFallbackIconUrl(ing)}
-                              alt={ing.name}
-                              className="w-7 h-7 object-contain"
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-slate-100 truncate leading-tight">
-                              {ing.name}
-                            </p>
-                            <span className="text-xs font-mono text-amber-400 font-bold">
-                              x{ing.quantity} • {ing.totalCost.toLocaleString()} K
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <div className="relative">
-                            <input
-                              type="number"
-                              value={draftVal}
-                              onChange={(e) =>
-                                setIngredientDrafts((prev) => ({
-                                  ...prev,
-                                  [ing.id]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleUpdateIngredientPrice(ing.id, draftVal);
-                                  (e.target as HTMLInputElement).blur();
-                                }
-                              }}
-                              className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono text-sm font-bold text-slate-100 focus:outline-none focus:border-amber-500 pr-5"
-                            />
-                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">
-                              K
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => handleUpdateIngredientPrice(ing.id, draftVal)}
-                            title="Guardar precio"
-                            className={`p-1.5 rounded-lg text-xs transition-all ${
-                              isSaved
-                                ? 'bg-emerald-500 text-slate-950 font-bold'
-                                : 'bg-slate-800 text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-6 text-center text-xs text-slate-500">
-                  Sin receta registrada o es recurso base.
-                </div>
-              )}
+            <div className="lg:col-span-4 xl:col-span-3">
+              <RecipeSidebar
+                recipeIngredients={recipeIngredients}
+                totalCraftCost={crushingSimulation.craftCost}
+                ingredientDrafts={ingredientDrafts}
+                savedIngFeedback={savedIngFeedback}
+                onDraftChange={handleIngredientPriceDraftChange}
+                onSavePrice={handleUpdateIngredientPrice}
+              />
             </div>
 
             {/* Right Column: Main Central Runes & Focus Table */}
-            <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3.5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-800 pb-3.5">
-                <div className="flex items-center gap-2.5">
-                  <Sparkles className="w-4.5 h-4.5 text-amber-400" />
-                  <h3 className="text-base font-black text-white">
-                    Runas Obtenidas y Focos
-                  </h3>
-                </div>
-                <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-400 font-medium">
-                  <span>Mínimo Rentable: <strong className="text-orange-400 font-mono font-black">{crushingSimulation.breakEvenCoefficient}%</strong></span>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-xs">
-                      <th className="py-3 px-3.5 min-w-[150px]">Estadística (Jet)</th>
-                      <th className="py-3 px-3.5 min-w-[180px]">Runa</th>
-                      <th className="py-3 px-3.5 min-w-[120px]">Precio HDV</th>
-                      <th className="py-3 px-3.5 min-w-[130px] text-amber-400 bg-amber-500/5">Sin Foco</th>
-                      <th className="py-3 px-3.5 min-w-[170px] text-purple-300 bg-purple-500/5">Con Foco</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {crushingSimulation.statYields.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-500">
-                          Este objeto no posee estadísticas que generen runas conocidas.
-                        </td>
-                      </tr>
-                    ) : (
-                      crushingSimulation.statYields.map((yieldItem) => {
-                        const isCurrentFocus = focusedRuneId === yieldItem.rune.id;
-                        const isTop1 = crushingSimulation.top3FocusOptions[0]?.rune.id === yieldItem.rune.id;
-                        const isTop2 = crushingSimulation.top3FocusOptions[1]?.rune.id === yieldItem.rune.id;
-                        const isTop3 = crushingSimulation.top3FocusOptions[2]?.rune.id === yieldItem.rune.id;
-
-                        const draftPrice =
-                          runePriceDrafts[yieldItem.rune.id] ??
-                          String(yieldItem.unitPrice);
-
-                        const gainVsNormal =
-                          yieldItem.focusKamasValue -
-                          crushingSimulation.normalTotalKamasValue;
-
-                        return (
-                          <tr
-                            key={yieldItem.rune.id}
-                            className={`transition-colors ${
-                              isCurrentFocus
-                                ? 'bg-purple-950/30'
-                                : 'hover:bg-slate-950/40'
-                            }`}
-                          >
-                            {/* Tirada / Jet Controls */}
-                            <td className="py-2.5 px-3.5">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => handleStatChange(yieldItem.rune.id, String(yieldItem.statMin))}
-                                    className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition-all ${
-                                      yieldItem.statSelectedVal === yieldItem.statMin
-                                        ? 'bg-slate-700 text-white'
-                                        : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                                    }`}
-                                  >
-                                    Mín
-                                  </button>
-                                  <button
-                                    onClick={() => handleStatChange(yieldItem.rune.id, String(Math.ceil((yieldItem.statMin + yieldItem.statMax) / 2)))}
-                                    className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition-all ${
-                                      yieldItem.statSelectedVal === Math.ceil((yieldItem.statMin + yieldItem.statMax) / 2)
-                                        ? 'bg-amber-500 text-slate-950 font-black'
-                                        : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                                    }`}
-                                  >
-                                    Prom
-                                  </button>
-                                  <button
-                                    onClick={() => handleStatChange(yieldItem.rune.id, String(yieldItem.statMax))}
-                                    className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition-all ${
-                                      yieldItem.statSelectedVal === yieldItem.statMax
-                                        ? 'bg-slate-700 text-white'
-                                        : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                                    }`}
-                                  >
-                                    Máx
-                                  </button>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={yieldItem.statSelectedVal}
-                                    onChange={(e) =>
-                                      handleStatChange(yieldItem.rune.id, e.target.value)
-                                    }
-                                    className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-0.5 text-center text-sm font-mono font-bold text-white focus:outline-none focus:border-amber-500"
-                                  />
-                                  <span className="text-xs text-slate-400 font-mono">
-                                    ({yieldItem.statMin} - {yieldItem.statMax})
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Rune identity */}
-                            <td className="py-2.5 px-3.5">
-                              <div className="flex items-center gap-2.5">
-                                <RuneIcon rune={yieldItem.rune} size="sm" showTooltip />
-                                <div className="min-w-0">
-                                  <p className="font-bold text-white flex items-center gap-1.5 truncate leading-tight text-sm">
-                                    <span className="text-amber-400">+{yieldItem.statSelectedVal}</span>
-                                    <span className="truncate">{yieldItem.rune.name.replace('Runa ', '')}</span>
-                                  </p>
-                                  <span className="text-xs font-mono text-slate-400">
-                                    Peso: {yieldItem.unitWeight}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* HDV Price Editor */}
-                            <td className="py-2.5 px-3.5">
-                              <div className="flex items-center gap-1.5">
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    value={draftPrice}
-                                    onChange={(e) =>
-                                      setRunePriceDrafts((prev) => ({
-                                        ...prev,
-                                        [yieldItem.rune.id]: e.target.value,
-                                      }))
-                                    }
-                                    onBlur={() => {
-                                      handleUpdateRunePrice(
-                                        yieldItem.rune.id,
-                                        draftPrice,
-                                      );
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        handleUpdateRunePrice(
-                                          yieldItem.rune.id,
-                                          draftPrice,
-                                        );
-                                        (e.target as HTMLInputElement).blur();
-                                      }
-                                    }}
-                                    className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-right text-sm font-mono font-bold text-slate-100 focus:outline-none focus:border-amber-500 pr-5"
-                                  />
-                                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">
-                                    K
-                                  </span>
-                                </div>
-                                {savedRuneIdFeedback === yieldItem.rune.id && (
-                                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Normal Yield (Sin foco) */}
-                            <td className="py-3 px-3.5 bg-amber-500/5 font-mono">
-                              <div className="font-black text-amber-300 text-sm">
-                                {yieldItem.normalRunesPerItem.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })} <span className="text-xs text-amber-400/80 font-semibold">runas</span>
-                              </div>
-                              <div className="text-sm font-black text-amber-200/90 mt-0.5">
-                                {yieldItem.normalKamasValue.toLocaleString()} K
-                              </div>
-                            </td>
-
-                            {/* Focus Yield (Con foco) */}
-                            <td className="py-3 px-3.5 bg-purple-500/5 font-mono">
-                              <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <span
-                                    className={`font-black text-sm ${
-                                      isTop1
-                                        ? 'text-amber-300'
-                                        : isTop2
-                                        ? 'text-sky-300'
-                                        : isTop3
-                                        ? 'text-orange-300'
-                                        : 'text-slate-300'
-                                    }`}
-                                  >
-                                    {yieldItem.focusRunesPerItem.toLocaleString(undefined, {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })} <span className="text-xs text-purple-400/80 font-semibold">runas</span>
-                                  </span>
-                                  <div className="text-sm font-black text-purple-200 mt-0.5">
-                                    {yieldItem.focusKamasValue.toLocaleString()} K
-                                  </div>
-                                </div>
-
-                                <div className="text-right shrink-0">
-                                  {isTop1 && (
-                                    <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-xs">
-                                      TOP 1
-                                    </span>
-                                  )}
-                                  {isTop2 && (
-                                    <span className="px-2 py-0.5 rounded bg-sky-500 text-slate-950 font-black text-xs">
-                                      TOP 2
-                                    </span>
-                                  )}
-                                  {isTop3 && (
-                                    <span className="px-2 py-0.5 rounded bg-orange-500 text-slate-950 font-black text-xs">
-                                      TOP 3
-                                    </span>
-                                  )}
-                                  <div className="mt-0.5">
-                                    <span
-                                      className={`text-xs font-mono font-black ${
-                                        gainVsNormal >= 0 ? 'text-emerald-400' : 'text-slate-500'
-                                      }`}
-                                    >
-                                      {gainVsNormal >= 0 ? '+' : ''}
-                                      {gainVsNormal.toLocaleString()} K
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                  {/* Prominent Totals Table Footer */}
-                  {crushingSimulation.statYields.length > 0 && (
-                    <tfoot className="border-t-2 border-slate-700 bg-slate-950/90">
-                      <tr>
-                        <td colSpan={3} className="py-3 px-3.5 text-xs font-black uppercase text-slate-300 tracking-wider">
-                          Total Valor de Runas:
-                        </td>
-                        <td className="py-3 px-3.5 bg-amber-500/10 font-mono">
-                          <span className="text-base font-black text-amber-300">
-                            {crushingSimulation.normalTotalKamasValue.toLocaleString()} K
-                          </span>
-                        </td>
-                        <td className="py-3 px-3.5 bg-purple-500/10 font-mono">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-base font-black text-purple-300">
-                              {(crushingSimulation.bestFocusOption?.totalKamasValue ?? crushingSimulation.normalTotalKamasValue).toLocaleString()} K
-                            </span>
-                            <span className="text-xs font-black text-emerald-400">
-                              +{((crushingSimulation.bestFocusOption?.netProfit ?? crushingSimulation.normalNetProfit) >= 0 ? (crushingSimulation.bestFocusOption?.netProfit ?? crushingSimulation.normalNetProfit) : 0).toLocaleString()} K netos
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
+            <div className="lg:col-span-8 xl:col-span-9">
+              <CrushingRunesTable
+                statYields={crushingSimulation.statYields}
+                top3FocusOptions={crushingSimulation.top3FocusOptions}
+                normalTotalKamasValue={crushingSimulation.normalTotalKamasValue}
+                normalNetProfit={crushingSimulation.normalNetProfit}
+                bestFocusOption={crushingSimulation.bestFocusOption}
+                totalCraftCost={crushingSimulation.craftCost}
+                breakEvenCoefficient={crushingSimulation.breakEvenCoefficient}
+                runePriceDrafts={runePriceDrafts}
+                savedRuneIdFeedback={savedRuneIdFeedback}
+                focusedRuneId={focusedRuneId}
+                onStatChange={handleStatChange}
+                onPriceDraftChange={(runeId, val) =>
+                  setRunePriceDrafts((prev) => ({ ...prev, [runeId]: val }))
+                }
+                onSaveRunePrice={handleUpdateRunePrice}
+                onToggleFocus={(runeId) =>
+                  setFocusedRuneId((prev) => (prev === runeId ? null : runeId))
+                }
+              />
             </div>
           </div>
         </div>

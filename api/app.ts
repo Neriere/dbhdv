@@ -21,7 +21,12 @@ import {
   initDB,
   database,
   getItemStatsFromDb,
-} from "../src/server/localDataStore.js";
+  getSyncStatus,
+  resetSyncStatus,
+  exportFullDatabaseJSON,
+  importFullDatabaseJSON,
+  seedDatabaseFromBundle,
+} from "../src/server/localDataStore";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
 
@@ -50,7 +55,8 @@ const BASIC_AUTH_REALM =
   process.env.APP_BASIC_AUTH_REALM || "Acceso Privado DofusDB";
 
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
@@ -106,20 +112,38 @@ app.get("/api/local-db/meta", async (req, res) => {
   }
 });
 
+app.get("/api/local-db/sync-status", async (req, res) => {
+  try {
+    const status = await getSyncStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to load sync status" });
+  }
+});
+
+app.post("/api/local-db/reset-sync-status", async (req, res) => {
+  try {
+    const status = await resetSyncStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to reset sync status" });
+  }
+});
+
+app.post("/api/local-db/fast-seed", async (req, res) => {
+  try {
+    const force = Boolean(req.body?.force);
+    const data = await seedDatabaseFromBundle(force);
+    res.json(data);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Fast seed failed";
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post("/api/local-db/import", async (req, res) => {
   try {
-    try {
-      await database.execute("DELETE FROM recipes");
-    } catch (e) {}
-    try {
-      await database.execute("DELETE FROM items");
-    } catch (e) {}
-    try {
-      await database.execute(
-        "DELETE FROM servers WHERE name NOT IN ('Draconiros', 'Mikhal', 'Tal Kasha')",
-      );
-    } catch (e) {}
-
     const imported = await importAllDofusData();
     res.json(imported);
   } catch (error) {
@@ -271,6 +295,28 @@ app.post("/api/local-db/items/resolve-names", async (req, res) => {
 
 app.get("/api/local-db/export-database", (req, res) => {
   res.download(getDatabaseFilePath(), "dofus-local.db");
+});
+
+app.get("/api/local-db/export-json", async (req, res) => {
+  try {
+    const data = await exportFullDatabaseJSON();
+    res.setHeader("Content-Disposition", `attachment; filename=dofus_database_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    res.setHeader("Content-Type", "application/json");
+    res.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to export JSON database";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/import-json", async (req, res) => {
+  try {
+    const imported = await importFullDatabaseJSON(req.body);
+    res.json(imported);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to import JSON database";
+    res.status(500).json({ error: message });
+  }
 });
 
 app.get("/api/local-db/sync-settings", async (req, res) => {

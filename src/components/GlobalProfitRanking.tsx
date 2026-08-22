@@ -43,9 +43,11 @@ import {
   initializeDatabase,
   saveMarketPrice,
   getItemName,
+  getItemTypeName,
   getItemIconUrl,
   getItemFallbackIconUrl,
 } from "../services/dofusDbService";
+import { matchesSearchQuery } from "../utils/searchUtils";
 
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   FlaskConical,
@@ -228,11 +230,16 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         if (entry.craftCost > effMaxCraftCost) return false;
 
         if (searchTerm.trim()) {
-          const name = getItemName(entry.item).toLowerCase();
-          const term = searchTerm.toLowerCase();
           if (
-            !name.includes(term) &&
-            !entry.item.id.toString().includes(term)
+            !matchesSearchQuery(
+              [
+                getItemName(entry.item),
+                getItemTypeName(entry.item),
+                entry.jobName,
+                entry.item.id,
+              ],
+              searchTerm,
+            )
           ) {
             return false;
           }
