@@ -120,6 +120,9 @@ export const DofusImporter: React.FC<{
       if (onSyncComplete) onSyncComplete(result.items);
     } catch (e) {
       console.error("Import failed", e);
+      alert(
+        `No se pudo completar el rastreo en vivo de DofusDB (${e instanceof Error ? e.message : String(e)}). Puedes usar el botón verde "Sincronizar Turso (Rápido)" para cargar la base completa instantáneamente.`
+      );
     }
   };
 
