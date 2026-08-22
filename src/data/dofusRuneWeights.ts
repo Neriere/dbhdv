@@ -4,7 +4,7 @@
 // Normal Runes = (LinePower_i * (Coeff / 100)) / UnitWeight_i
 // Focus Runes = ((LinePower_K + SUM_other(LinePower_j / 2)) * (Coeff / 100)) / UnitWeight_K
 
-import { DofusEffect, DofusItem } from "../types";
+import { DofusEffect, DofusItem } from "../types.js";
 
 export interface BaseRuneDefinition {
   id: number; // Authentic Item ID for the rune in Dofus

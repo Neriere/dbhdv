@@ -1,9 +1,9 @@
 import { createClient } from "@libsql/client";
 import fs from "fs";
 import path from "path";
-import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
-import { extractItemStats } from "../data/dofusRuneWeights";
-import { getDofusDbSeedData } from "../data/dofusDbSeedData";
+import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs.js";
+import { extractItemStats } from "../data/dofusRuneWeights.js";
+import { getDofusDbSeedData } from "../data/dofusDbSeedData.js";
 import {
   DofusEffect,
   DofusItem,
@@ -13,7 +13,7 @@ import {
   PriceUpdatedAtMap,
   SyncSettings,
   SyncStatus,
-} from "../types";
+} from "../types.js";
 
 const DOFUS_API_BASE = "https://api.dofusdb.fr";
 

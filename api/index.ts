@@ -34,7 +34,7 @@ import {
   importChunkItems,
   importChunkRecipes,
   importChunkFinalize,
-} from "../src/server/localDataStore";
+} from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
 
