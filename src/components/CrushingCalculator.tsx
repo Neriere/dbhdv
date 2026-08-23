@@ -553,6 +553,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   };
 
   const ingDebounceTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
+  const runeDebounceTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
   const hdvDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle updating ingredient price inline
@@ -576,7 +577,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     }
     ingDebounceTimersRef.current[ingId] = setTimeout(() => {
       void handleUpdateIngredientPrice(ingId, rawValue);
-    }, 600);
+    }, 450);
   };
 
   // Handle updating finished item HDV sale price inline
@@ -601,17 +602,31 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     }
     hdvDebounceTimerRef.current = setTimeout(() => {
       void handleUpdateItemHdvPrice(rawValue);
-    }, 600);
+    }, 450);
   };
 
   // Handle updating rune price from detail or rune manager
   const handleUpdateRunePrice = async (runeId: number, rawValue: string) => {
+    if (runeDebounceTimersRef.current[runeId]) {
+      clearTimeout(runeDebounceTimersRef.current[runeId]);
+    }
     const numeric = Math.max(0, Math.trunc(Number(rawValue) || 0));
     setRunePriceDrafts((prev) => ({ ...prev, [runeId]: String(numeric) }));
     setMarketPrices((prev) => ({ ...prev, [runeId]: numeric }));
     await saveMarketPrice(runeId, numeric);
     setSavedRuneIdFeedback(runeId);
     setTimeout(() => setSavedRuneIdFeedback(null), 1500);
+  };
+
+  // Debounced auto-save for rune price input
+  const handleRunePriceDraftChange = (runeId: number, rawValue: string) => {
+    setRunePriceDrafts((prev) => ({ ...prev, [runeId]: rawValue }));
+    if (runeDebounceTimersRef.current[runeId]) {
+      clearTimeout(runeDebounceTimersRef.current[runeId]);
+    }
+    runeDebounceTimersRef.current[runeId] = setTimeout(() => {
+      void handleUpdateRunePrice(runeId, rawValue);
+    }, 450);
   };
 
   // Transition to detail view with selected item
@@ -720,9 +735,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     switch (type) {
       case 'plant':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            🌱
-          </span>
+          <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'fire':
         return (
@@ -742,9 +755,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'crit':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            💥
-          </span>
+          <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'zap':
         return (
@@ -756,9 +767,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'star':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            ★
-          </span>
+          <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'sword':
         return (
@@ -770,9 +779,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'fist':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            👊
-          </span>
+          <Sword className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'pm':
         return (
@@ -784,15 +791,11 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'invo':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            👹
-          </span>
+          <Shield className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'caza':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            🗡️
-          </span>
+          <Sword className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'moon':
         return (
@@ -808,21 +811,15 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'lock':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            🔒
-          </span>
+          <Shield className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'dodge':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            💨
-          </span>
+          <Wind className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'heal':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs font-mono" style={{ color }}>
-            ➕
-          </span>
+          <Heart className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'search':
         return (
@@ -830,9 +827,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         );
       case 'pod':
         return (
-          <span className="w-3.5 h-3.5 inline-flex items-center justify-center shrink-0 font-black text-xs" style={{ color }}>
-            🎒
-          </span>
+          <Layers className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         );
       case 'ini':
         return (
@@ -923,11 +918,110 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const processedCatalogItems = useMemo(() => {
     const now = Date.now();
     const allStatMap = new Map<string, StatFilterDef>(ALL_STAT_FILTERS.map((s) => [s.id, s]));
+    const targetFilterRuneId = selectedStatFilterIds.length === 1 ? allStatMap.get(selectedStatFilterIds[0])?.runeId : null;
 
-    // 1. Process simulations for each crushable item
-    const results = crushableItems
-      .filter((item) => !isPetItem(item))
-      .map((item) => {
+    // 1. FAST PRE-FILTERING: Filter candidate items first (Slot, Level, Coeff, Search Query, Date)
+    // to avoid executing heavy simulation and cost calculations on filtered-out items
+    const candidates = crushableItems.filter((item) => {
+      if (isPetItem(item)) return false;
+
+      const level = item.level || 1;
+      const typeId = item.typeId || item.type?.id || 0;
+
+      // Level filter (Manual numeric inputs)
+      if (typeof minLevel === 'number' && level < minLevel) return false;
+      if (typeof maxLevel === 'number' && level > maxLevel) return false;
+
+      const savedCoeff = savedCoefficients[item.id] ?? 100;
+      // Coefficient % filter
+      if (typeof minCoeff === 'number' && savedCoeff < minCoeff) return false;
+      if (typeof maxCoeff === 'number' && savedCoeff > maxCoeff) return false;
+
+      const hasCustomCoeff = savedCoefficients[item.id] !== undefined;
+      const coeffTimestamp = savedTimestamps[item.id] ?? null;
+
+      // Date of Coefficient filter
+      if (dateFilter === 'custom_only' && !hasCustomCoeff) return false;
+      if (dateFilter === 'default_only' && hasCustomCoeff) return false;
+      if (dateFilter === 'today') {
+        if (!coeffTimestamp || now - coeffTimestamp > 24 * 60 * 60 * 1000) return false;
+      }
+      if (dateFilter === '3days') {
+        if (!coeffTimestamp || now - coeffTimestamp > 3 * 24 * 60 * 60 * 1000) return false;
+      }
+      if (dateFilter === 'week') {
+        if (!coeffTimestamp || now - coeffTimestamp > 7 * 24 * 60 * 60 * 1000) return false;
+      }
+      if (dateFilter === 'month') {
+        if (!coeffTimestamp || now - coeffTimestamp > 30 * 24 * 60 * 60 * 1000) return false;
+      }
+
+      // Multi-select Equipment Slot filter
+      if (selectedSlots.length > 0) {
+        let matchesSlot = false;
+        for (const slotId of selectedSlots) {
+          if (slotId === 'arma') {
+            if (item.jobId === 11 || item.jobId === 13 || [2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 212].includes(typeId)) {
+              matchesSlot = true;
+              break;
+            }
+          }
+          const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotId);
+          if (slotDef) {
+            if (slotDef.jobId && item.jobId === slotDef.jobId) {
+              matchesSlot = true;
+              break;
+            }
+            if (slotDef.typeIds.includes(typeId)) {
+              matchesSlot = true;
+              break;
+            }
+          }
+        }
+        if (!matchesSlot) return false;
+      }
+
+      // Search query (Accent and case-insensitive)
+      if (searchQuery.trim().length > 0) {
+        if (
+          !matchesSearchQuery(
+            [
+              getItemName(item),
+              getItemTypeName(item),
+              item.jobNameEs,
+              item.id,
+            ],
+            searchQuery,
+          )
+        ) {
+          return false;
+        }
+      }
+
+      // Quick effect pre-check for stats filter if effects are present
+      if (selectedStatFilterIds.length > 0) {
+        const effs = item.possibleEffects || item.effects || [];
+        for (const statId of selectedStatFilterIds) {
+          const statDef = allStatMap.get(statId);
+          if (!statDef) continue;
+          if (statDef.textKey) {
+            const matchesText = effs.some((eff) => {
+              const formatted = (eff.formatted || eff.characteristicName || '').toLowerCase();
+              if (statDef.textKey === 'trampa') return formatted.includes('trampa');
+              if (statDef.textKey === 'pot_trampa') return formatted.includes('trampa') && (formatted.includes('potencia') || formatted.includes('%'));
+              if (statDef.textKey === 'reenvio') return formatted.includes('reenvío') || formatted.includes('reenvio') || formatted.includes('renvoi');
+              return false;
+            });
+            if (!matchesText) return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    // 2. Process simulations ONLY for matching candidates
+    const results = candidates.map((item) => {
       const singleCraftCost = getItemCraftCost(item);
       const savedCoeff = savedCoefficients[item.id] ?? 100;
       const coeffTimestamp = savedTimestamps[item.id] ?? null;
@@ -942,7 +1036,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         {},
       );
 
-      // Best strategy calculation (Top 1 crushing option, whether Normal or Focus)
+      // Best strategy calculation
       const bestStrat = sim.bestFocusOption;
       const bestStratProfit = bestStrat ? bestStrat.netProfit : sim.normalNetProfit;
       const bestStratValue = bestStrat ? bestStrat.totalKamasValue : sim.normalTotalKamasValue;
@@ -950,13 +1044,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       const bestStratIsNormal = bestStrat ? Boolean(bestStrat.isNormal) : true;
       const bestStratRune = bestStrat && !bestStrat.isNormal ? bestStrat.rune : null;
 
-      // Effective general profit (highest between normal and best focus)
       const maxProfit = bestStratProfit;
       const maxKamasValue = bestStratValue;
       const maxRoi = bestStratRoi;
 
-      // Target rune yield if single stat filter is selected
-      const targetFilterRuneId = selectedStatFilterIds.length === 1 ? allStatMap.get(selectedStatFilterIds[0])?.runeId : null;
       const targetRuneYield = targetFilterRuneId ? (sim.statYields.find(st => st.rune.id === targetFilterRuneId) || null) : null;
       const runeSpecificRunes = targetRuneYield ? targetRuneYield.normalRunesPerItem : 0;
       const runeSpecificKamas = targetRuneYield ? targetRuneYield.normalKamasValue : 0;
@@ -990,109 +1081,22 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       };
     });
 
-    // 2. Filter items
-    const filtered = results.filter((entry) => {
-      // Search query (Accent and case-insensitive)
-      if (searchQuery.trim().length > 0) {
-        if (
-          !matchesSearchQuery(
-            [
-              getItemName(entry.item),
-              getItemTypeName(entry.item),
-              entry.item.jobNameEs,
-              entry.item.id,
-            ],
-            searchQuery,
-          )
-        ) {
-          return false;
-        }
-      }
-
-      // Multi-select Equipment Slot filter
-      if (selectedSlots.length > 0) {
-        let matchesSlot = false;
-        for (const slotId of selectedSlots) {
-          if (slotId === 'arma') {
-            // Legacy backwards compatibility
-            if (entry.jobId === 11 || entry.jobId === 13 || [2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 212].includes(entry.typeId)) {
-              matchesSlot = true;
-              break;
+    // 3. Complete Stats Filter check (checks exact rune yields produced in simulation)
+    const filtered = selectedStatFilterIds.length > 0
+      ? results.filter((entry) => {
+          for (const statId of selectedStatFilterIds) {
+            const statDef = allStatMap.get(statId);
+            if (!statDef) continue;
+            if (statDef.runeId) {
+              const matchesStat = entry.sim.statYields.some((st) => st.rune.id === statDef.runeId);
+              if (!matchesStat) return false;
             }
           }
-          const slotDef = EQUIPMENT_SLOTS.find((s) => s.id === slotId);
-          if (slotDef) {
-            if (slotDef.jobId && entry.jobId === slotDef.jobId) {
-              matchesSlot = true;
-              break;
-            }
-            if (slotDef.typeIds.includes(entry.typeId)) {
-              matchesSlot = true;
-              break;
-            }
-          }
-        }
-        if (!matchesSlot) {
-          return false;
-        }
-      }
+          return true;
+        })
+      : results;
 
-      // Level filter (Manual numeric inputs)
-      if (typeof minLevel === 'number' && entry.level < minLevel) return false;
-      if (typeof maxLevel === 'number' && entry.level > maxLevel) return false;
-
-      // Coefficient % filter (Manual numeric inputs)
-      if (typeof minCoeff === 'number' && entry.savedCoeff < minCoeff) return false;
-      if (typeof maxCoeff === 'number' && entry.savedCoeff > maxCoeff) return false;
-
-      // Multi-Select Stats Filter (Must match all selected stats)
-      if (selectedStatFilterIds.length > 0) {
-        const effs = entry.item.possibleEffects || entry.item.effects || [];
-        for (const statId of selectedStatFilterIds) {
-          const statDef = allStatMap.get(statId);
-          if (!statDef) continue;
-
-          let matchesStat = false;
-          if (statDef.runeId) {
-            matchesStat = entry.sim.statYields.some((st) => st.rune.id === statDef.runeId);
-          }
-
-          if (!matchesStat && statDef.textKey) {
-            matchesStat = effs.some((eff) => {
-              const formatted = (eff.formatted || eff.characteristicName || '').toLowerCase();
-              if (statDef.textKey === 'trampa') return formatted.includes('trampa');
-              if (statDef.textKey === 'pot_trampa') return formatted.includes('trampa') && (formatted.includes('potencia') || formatted.includes('%'));
-              if (statDef.textKey === 'reenvio') return formatted.includes('reenvío') || formatted.includes('reenvio') || formatted.includes('renvoi');
-              return false;
-            });
-          }
-
-          if (!matchesStat) {
-            return false;
-          }
-        }
-      }
-
-      // Date of Coefficient filter
-      if (dateFilter === 'custom_only' && !entry.hasCustomCoeff) return false;
-      if (dateFilter === 'default_only' && entry.hasCustomCoeff) return false;
-      if (dateFilter === 'today') {
-        if (!entry.coeffTimestamp || now - entry.coeffTimestamp > 24 * 60 * 60 * 1000) return false;
-      }
-      if (dateFilter === '3days') {
-        if (!entry.coeffTimestamp || now - entry.coeffTimestamp > 3 * 24 * 60 * 60 * 1000) return false;
-      }
-      if (dateFilter === 'week') {
-        if (!entry.coeffTimestamp || now - entry.coeffTimestamp > 7 * 24 * 60 * 60 * 1000) return false;
-      }
-      if (dateFilter === 'month') {
-        if (!entry.coeffTimestamp || now - entry.coeffTimestamp > 30 * 24 * 60 * 60 * 1000) return false;
-      }
-
-      return true;
-    });
-
-    // 3. Sort items
+    // 4. Sort items
     return filtered.sort((a, b) => {
       if (sortBy === 'profit_desc') {
         return b.maxProfit - a.maxProfit;
@@ -1566,13 +1570,13 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                     onChange={(e) => setSortBy(e.target.value as SortOption)}
                     className="w-full bg-slate-950 border border-purple-950/60 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 font-bold focus:outline-none focus:border-purple-500 transition-all appearance-none cursor-pointer pr-9"
                   >
-                    <option value="profit_desc">🏆 Mayor Ganancia Total (Kamas)</option>
-                    <option value="coeff_desc">📈 Mayor Coeficiente (%)</option>
-                    <option value="roi_desc">💰 Mayor Rentabilidad (% ROI)</option>
-                    <option value="breakeven_asc">📉 Menor Coef. Rentable</option>
-                    <option value="cost_asc">💵 Menor Costo de Crafteo</option>
-                    <option value="level_desc">🎚️ Nivel (200 → 1)</option>
-                    <option value="date_desc">🕒 Coeficiente Más Reciente</option>
+                    <option value="profit_desc">Mayor Ganancia Total (Kamas)</option>
+                    <option value="coeff_desc">Mayor Coeficiente (%)</option>
+                    <option value="roi_desc">Mayor Rentabilidad (% ROI)</option>
+                    <option value="breakeven_asc">Menor Coef. Rentable</option>
+                    <option value="cost_asc">Menor Costo de Crafteo</option>
+                    <option value="level_desc">Nivel (200 → 1)</option>
+                    <option value="date_desc">Coeficiente Más Reciente</option>
                   </select>
                   <ArrowUpDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 </div>
@@ -1939,9 +1943,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           />
 
           {/* Main Content Layout: Left Compact Recipe | Right Main Runes Focus Table */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             {/* Left Column: Compact Recipe & Ingredients Price Editor */}
-            <div className="lg:col-span-4 xl:col-span-3">
+            <div className="lg:col-span-5 xl:col-span-4">
               <RecipeSidebar
                 recipeIngredients={recipeIngredients}
                 totalCraftCost={crushingSimulation.craftCost}
@@ -1953,7 +1957,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             </div>
 
             {/* Right Column: Main Central Runes & Focus Table */}
-            <div className="lg:col-span-8 xl:col-span-9">
+            <div className="lg:col-span-7 xl:col-span-8">
               <CrushingRunesTable
                 statYields={crushingSimulation.statYields}
                 top3FocusOptions={crushingSimulation.top3FocusOptions}
@@ -1966,9 +1970,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                 savedRuneIdFeedback={savedRuneIdFeedback}
                 focusedRuneId={focusedRuneId}
                 onStatChange={handleStatChange}
-                onPriceDraftChange={(runeId, val) =>
-                  setRunePriceDrafts((prev) => ({ ...prev, [runeId]: val }))
-                }
+                onPriceDraftChange={handleRunePriceDraftChange}
                 onSaveRunePrice={handleUpdateRunePrice}
                 onToggleFocus={(runeId) =>
                   setFocusedRuneId((prev) => (prev === runeId ? null : runeId))
@@ -2006,7 +2008,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                   }`}
                 >
-                  ⭐ Especiales
+                  Especiales
                 </button>
                 <button
                   onClick={() => setRuneCategoryFilter('primaria')}
@@ -2016,7 +2018,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                   }`}
                 >
-                  ⚡ Primarias
+                  Primarias
                 </button>
                 <button
                   onClick={() => setRuneCategoryFilter('resistencia')}
@@ -2026,7 +2028,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                   }`}
                 >
-                  🛡️ Resistencias
+                  Resistencias
                 </button>
                 <button
                   onClick={() => setRuneCategoryFilter('dano')}
@@ -2036,7 +2038,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                   }`}
                 >
-                  💥 Daños
+                  Daños
                 </button>
                 <button
                   onClick={() => setRuneCategoryFilter('secundaria')}
@@ -2046,7 +2048,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                   }`}
                 >
-                  ✨ Secundarias
+                  Secundarias
                 </button>
               </div>
 
@@ -2082,9 +2084,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                       <h4 className="text-xs sm:text-sm font-black text-white truncate">
                         {rune.name}
                       </h4>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        {rune.description}
-                      </p>
                     </div>
                   </div>
 

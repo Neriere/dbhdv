@@ -81,6 +81,7 @@ const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Drumstick,
   Fish,
   Heart,
+  Sparkles,
 };
 
 const getJobBadgeStyle = (jobName: string) => {
@@ -97,6 +98,8 @@ const getJobBadgeStyle = (jobName: string) => {
     return "bg-cyan-500/20 border-cyan-500/40 text-cyan-300";
   if (name.includes("pescador"))
     return "bg-blue-500/20 border-blue-500/40 text-blue-300";
+  if (name.includes("runa") || name.includes("forjamagia"))
+    return "bg-violet-500/20 border-violet-500/40 text-violet-300";
   if (
     name.includes("equipamiento") ||
     name.includes("forjador") ||
@@ -365,56 +368,58 @@ export const RecipeCraftingCalculator: React.FC<{
     const effMinProfit = minProfitKamas === "" ? 0 : Number(minProfitKamas);
     const effMinRoi = minRoiPercent === "" ? 0 : Number(minRoiPercent);
 
-    return allCraftableItems
-      .filter((item) => {
-        if (selectedJobId !== "all" && item.jobId !== selectedJobId) {
-          return false;
+    // 1. Filter and pre-compute metrics once per item
+    const candidates: Array<{ item: PresetCraftableItem; metrics: ReturnType<typeof getItemMetrics>; name: string }> = [];
+
+    for (const item of allCraftableItems) {
+      if (selectedJobId !== "all" && item.jobId !== selectedJobId) {
+        continue;
+      }
+      if (item.level < effMinLevel || item.level > effMaxLevel) {
+        continue;
+      }
+      const itemName = getItemName(item);
+      if (searchTerm.trim()) {
+        if (
+          !matchesSearchQuery(
+            [
+              itemName,
+              getItemTypeName(item),
+              item.jobNameEs,
+              item.id,
+            ],
+            searchTerm,
+          )
+        ) {
+          continue;
         }
-        if (item.level < effMinLevel || item.level > effMaxLevel) {
-          return false;
-        }
-        if (searchTerm.trim()) {
-          if (
-            !matchesSearchQuery(
-              [
-                getItemName(item),
-                getItemTypeName(item),
-                item.jobNameEs,
-                item.id,
-              ],
-              searchTerm,
-            )
-          ) {
-            return false;
-          }
-        }
+      }
 
-        const metrics = getItemMetrics(item);
-        if (onlyProfitable && metrics.netProfit <= 0) return false;
-        if (effMinProfit > 0 && metrics.netProfit < effMinProfit) return false;
-        if (effMinRoi > 0 && metrics.roi < effMinRoi) return false;
+      const metrics = getItemMetrics(item);
+      if (onlyProfitable && metrics.netProfit <= 0) continue;
+      if (effMinProfit > 0 && metrics.netProfit < effMinProfit) continue;
+      if (effMinRoi > 0 && metrics.roi < effMinRoi) continue;
 
-        return true;
-      })
-      .sort((a, b) => {
-        const aIsNamed = !getItemName(a).startsWith("Objeto #");
-        const bIsNamed = !getItemName(b).startsWith("Objeto #");
-        if (aIsNamed && !bIsNamed) return -1;
-        if (!aIsNamed && bIsNamed) return 1;
+      candidates.push({ item, metrics, name: itemName });
+    }
 
-        const aMetrics = getItemMetrics(a);
-        const bMetrics = getItemMetrics(b);
+    // 2. High-speed sort using pre-computed values without repeated metric calculations
+    candidates.sort((a, b) => {
+      const aIsNamed = !a.name.startsWith("Objeto #");
+      const bIsNamed = !b.name.startsWith("Objeto #");
+      if (aIsNamed && !bIsNamed) return -1;
+      if (!aIsNamed && bIsNamed) return 1;
 
-        if (sortBy === "profit_desc")
-          return bMetrics.netProfit - aMetrics.netProfit;
-        if (sortBy === "roi_desc") return bMetrics.roi - aMetrics.roi;
-        if (sortBy === "cost_asc") return aMetrics.cost - bMetrics.cost;
-        if (sortBy === "level_asc") return a.level - b.level;
-        if (sortBy === "level_desc") return b.level - a.level;
-        if (sortBy === "name")
-          return getItemName(a).localeCompare(getItemName(b));
-        return 0;
-      });
+      if (sortBy === "profit_desc") return b.metrics.netProfit - a.metrics.netProfit;
+      if (sortBy === "roi_desc") return b.metrics.roi - a.metrics.roi;
+      if (sortBy === "cost_asc") return a.metrics.cost - b.metrics.cost;
+      if (sortBy === "level_asc") return a.item.level - b.item.level;
+      if (sortBy === "level_desc") return b.item.level - a.item.level;
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      return 0;
+    });
+
+    return candidates.map((c) => c.item);
   }, [
     allCraftableItems,
     selectedJobId,
@@ -700,10 +705,17 @@ export const RecipeCraftingCalculator: React.FC<{
           {/* Horizontal Ingredients Section */}
           <div className="space-y-4 pt-4 border-t border-slate-800">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                <Layers className="w-5 h-5 text-amber-400" />
-                Ingredientes y Precios de Mercadillo
-              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-400" />
+                  Ingredientes y Precios de Mercadillo
+                </h2>
+                {recipeTree?.subIngredients && recipeTree.subIngredients.filter((s) => (marketPrices[s.itemId] || 0) <= 0).length > 0 && (
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    ⚠️ {recipeTree.subIngredients.filter((s) => (marketPrices[s.itemId] || 0) <= 0).length} sin precio
+                  </span>
+                )}
+              </div>
             </div>
 
             {loadingTree ? (
@@ -1418,9 +1430,15 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
 
       <div className="flex items-center justify-between text-[11px] font-mono px-0.5">
         <span className="text-slate-400 font-bold">Total ({sub.quantity}x):</span>
-        <span className="text-emerald-400 font-black">
-          {subTotal.toLocaleString()} K
-        </span>
+        {currentPrice > 0 ? (
+          <span className="text-emerald-400 font-black">
+            {subTotal.toLocaleString()} K
+          </span>
+        ) : (
+          <span className="text-amber-400/80 font-bold text-[10px]">
+            0 K (sin precio)
+          </span>
+        )}
       </div>
 
       {hasSubSubCraft && (

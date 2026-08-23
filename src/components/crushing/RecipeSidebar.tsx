@@ -54,15 +54,22 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
     };
   }, [recipeIngredients, totalCraftCost]);
 
+  const unpricedCount = recipeIngredients.filter((i) => i.unitPrice <= 0).length;
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3.5">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <Layers className="w-5 h-5 text-amber-400" />
           <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-white">
             Receta ({recipeIngredients.length})
           </h3>
+          {unpricedCount > 0 && (
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              ⚠️ {unpricedCount} sin precio
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <KamaDisplay
@@ -86,20 +93,20 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
             return (
               <div
                 key={ing.id}
-                className={`bg-slate-950/70 border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${
+                className={`bg-slate-950/80 border rounded-xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all ${
                   isBottleneck
-                    ? 'border-amber-500/40 bg-amber-950/10 hover:border-amber-500/60'
+                    ? 'border-amber-500/40 bg-amber-950/15 hover:border-amber-500/60'
                     : 'border-slate-800/80 hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900 border border-slate-800 p-1 shrink-0 flex items-center justify-center relative">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 p-1 shrink-0 flex items-center justify-center relative shadow-inner">
                       <SafeImage
                         src={getItemIconUrl(ing)}
                         fallbackSrc={getItemFallbackIconUrl(ing)}
                         alt={ing.name}
-                        className="w-7 h-7 sm:w-8 sm:h-8 object-contain"
+                        className="w-8 h-8 object-contain"
                       />
                       {isBottleneck && (
                         <span
@@ -109,8 +116,8 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <p className="text-sm font-bold text-slate-100 truncate leading-tight">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs sm:text-sm font-bold text-slate-100 truncate leading-snug" title={ing.name}>
                           {ing.name}
                         </p>
                         {isBottleneck && (
@@ -119,10 +126,14 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs sm:text-sm font-mono text-amber-400 font-bold mt-0.5 whitespace-nowrap">
-                        <span>x{ing.quantity}</span>
-                        <span className="text-slate-500">•</span>
-                        <span>{ing.totalCost.toLocaleString('de-DE')} K</span>
+                      <div className="flex items-center gap-1.5 text-xs font-mono font-bold mt-0.5 whitespace-nowrap">
+                        <span className="text-slate-300">x{ing.quantity}</span>
+                        <span className="text-slate-600">•</span>
+                        {ing.unitPrice > 0 ? (
+                          <span className="text-amber-400 font-black">{ing.totalCost.toLocaleString('de-DE')} K</span>
+                        ) : (
+                          <span className="text-amber-400/80 font-semibold text-[11px]">0 K (sin precio)</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -142,7 +153,7 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
                             (e.target as HTMLInputElement).blur();
                           }
                         }}
-                        className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono text-sm font-bold text-slate-100 focus:outline-none focus:border-amber-500 pr-5"
+                        className="w-20 sm:w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono text-xs sm:text-sm font-bold text-slate-100 focus:outline-none focus:border-amber-500 pr-5"
                       />
                       <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
                         K
@@ -155,7 +166,7 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
                       className={`p-1.5 rounded-lg text-xs transition-all ${
                         isSaved
                           ? 'bg-emerald-500 text-slate-950 font-bold animate-pulse'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
                       }`}
                     >
                       {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}

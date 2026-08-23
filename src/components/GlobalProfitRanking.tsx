@@ -181,15 +181,28 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   }, [databaseVersion]);
 
   const rankedItems: CalculatedRecipeRanking[] = useMemo(() => {
-    return allCraftableItems.map((item) => {
-      let craftCost = 0;
-      if (item.recipeData && item.recipeData.ingredientIds) {
-        item.recipeData.ingredientIds.forEach((ingId, idx) => {
-          const qty = item.recipeData.quantities[idx] || 1;
-          const ingPrice = marketPrices[ingId] || 0;
-          craftCost += ingPrice * qty;
-        });
+    const results: CalculatedRecipeRanking[] = [];
+
+    for (const item of allCraftableItems) {
+      if (!item.recipeData || !item.recipeData.ingredientIds || item.recipeData.ingredientIds.length === 0) {
+        continue;
       }
+
+      // STRICT FILTER: Only show items that have 100% of their ingredients with a price entered (> 0)
+      const allIngredientsPriced = item.recipeData.ingredientIds.every(
+        (ingId) => (marketPrices[ingId] || 0) > 0
+      );
+
+      if (!allIngredientsPriced) {
+        continue;
+      }
+
+      let craftCost = 0;
+      item.recipeData.ingredientIds.forEach((ingId, idx) => {
+        const qty = item.recipeData.quantities[idx] || 1;
+        const ingPrice = marketPrices[ingId] || 0;
+        craftCost += ingPrice * qty;
+      });
 
       const salePrice = marketPrices[item.id] || 0;
       const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.03) : 0;
@@ -213,7 +226,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         bestStrategy = saleNetProfit >= crushNetProfit ? "hdv" : "crush";
       }
 
-      return {
+      results.push({
         item,
         craftCost,
         salePrice,
@@ -229,8 +242,10 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         bestRoiPercent,
         jobName: item.jobNameEs,
         jobId: item.jobId,
-      };
-    });
+      });
+    }
+
+    return results;
   }, [allCraftableItems, marketPrices]);
 
   const filteredRankings = useMemo(() => {
@@ -498,27 +513,30 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
       {/* Global Profit Rankings Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
         {filteredRankings.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
-            <Trophy className="w-10 h-10 mx-auto text-slate-600 mb-2 opacity-40" />
-            <p className="text-sm font-bold text-slate-400">
-              No se encontraron recetas.
+          <div className="p-12 text-center space-y-3">
+            <Trophy className="w-12 h-12 mx-auto text-slate-600 opacity-40" />
+            <p className="text-sm font-bold text-slate-300">
+              No se encontraron recetas con 100% de ingredientes costeados.
+            </p>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Solo se listan recetas donde todos sus ingredientes tienen un precio mayor a 0 K ingresado en el Gestor de Precios o en sus fichas.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-mono tracking-wider text-[10px]">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 uppercase font-mono tracking-wider text-xs">
                 <tr>
-                  <th className="py-3 px-3 w-10 text-center">#</th>
-                  <th className="py-3 px-3">Objeto</th>
-                  <th className="py-3 px-3 text-right">Costo</th>
-                  <th className="py-3 px-3 text-right">Venta HDV</th>
-                  <th className="py-3 px-3 text-right">Runas</th>
-                  <th className="py-3 px-3 text-center">Ganancia</th>
-                  <th className="py-3 px-3 text-center">Acciones</th>
+                  <th className="py-3 px-3 w-12 text-center font-bold">#</th>
+                  <th className="py-3 px-4 min-w-[260px] font-bold">Objeto y Oficio</th>
+                  <th className="py-3 px-4 text-right w-36 sm:w-44 font-bold">Costo Crafteo</th>
+                  <th className="py-3 px-4 text-right w-44 sm:w-52 font-bold">Venta HDV</th>
+                  <th className="py-3 px-4 text-right w-36 sm:w-44 font-bold">Valor Runas</th>
+                  <th className="py-3 px-4 text-center w-40 sm:w-48 font-bold">Mejor Ganancia</th>
+                  <th className="py-3 px-4 text-center w-36 font-bold">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-sans">
+              <tbody className="divide-y divide-slate-800/60 font-sans text-xs sm:text-sm">
                 {paginatedRankings.map((entry, idx) => {
                   const absoluteIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE + idx;
                   const rank = absoluteIndex + 1;
@@ -541,60 +559,68 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                       key={item.id}
                       className="hover:bg-slate-800/40 transition-colors group"
                     >
-                      <td className="py-2.5 px-3 text-center font-mono font-bold">
+                      {/* Rank badge */}
+                      <td className="py-3.5 px-3 text-center font-mono font-bold">
                         {rank === 1 && (
-                          <span className="w-6 h-6 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs">
+                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs shadow-md">
                             1
                           </span>
                         )}
                         {rank === 2 && (
-                          <span className="w-6 h-6 mx-auto rounded-full bg-slate-300 text-slate-950 flex items-center justify-center font-black text-xs">
+                          <span className="w-7 h-7 mx-auto rounded-full bg-slate-300 text-slate-950 flex items-center justify-center font-black text-xs shadow-md">
                             2
                           </span>
                         )}
                         {rank === 3 && (
-                          <span className="w-6 h-6 mx-auto rounded-full bg-amber-700 text-white flex items-center justify-center font-black text-xs">
+                          <span className="w-7 h-7 mx-auto rounded-full bg-amber-700 text-white flex items-center justify-center font-black text-xs shadow-md">
                             3
                           </span>
                         )}
                         {rank > 3 && (
-                          <span className="text-slate-500 font-mono text-xs">
+                          <span className="text-slate-500 font-mono text-xs font-semibold">
                             #{rank}
                           </span>
                         )}
                       </td>
 
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <img
-                            src={iconUrl}
-                            alt={itemName}
-                            className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 p-1 object-contain shrink-0"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = fallbackIcon;
-                            }}
-                          />
-                          <div className="min-w-0">
-                            <div className="font-extrabold text-white text-xs sm:text-sm group-hover:text-amber-400 transition-colors flex items-center gap-1.5 truncate">
-                              <span className="truncate">{itemName}</span>
-                              <span className="text-[10px] font-mono font-bold text-amber-300 px-1.5 py-0.2 rounded-full bg-amber-500/10 border border-amber-500/20 shrink-0">
+                      {/* Item Info */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 shadow-inner group-hover:border-amber-500/40 transition-colors">
+                            <img
+                              src={iconUrl}
+                              alt={itemName}
+                              className="w-9 h-9 object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = fallbackIcon;
+                              }}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white text-sm group-hover:text-amber-400 transition-colors leading-snug">
+                                {itemName}
+                              </span>
+                              <span className="text-[11px] font-mono font-bold text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 shrink-0">
                                 Niv. {item.level}
                               </span>
                             </div>
-                            <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1 mt-0.5">
-                              <JobIcon className="w-3 h-3 text-amber-400" />
+                            <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5 mt-1">
+                              <JobIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                               <span>{entry.jobName}</span>
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono font-bold text-xs text-slate-200">
+                      {/* Craft Cost */}
+                      <td className="py-3.5 px-4 text-right font-mono font-black text-sm text-slate-200">
                         {entry.craftCost.toLocaleString()} K
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono">
-                        <div className="inline-flex items-center justify-end gap-1">
+                      {/* Sale Price (HDV) */}
+                      <td className="py-3.5 px-4 text-right font-mono">
+                        <div className="inline-flex items-center justify-end gap-1.5">
                           <input
                             type="number"
                             value={
@@ -637,76 +663,82 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                               }
                             }}
                             placeholder="0"
-                            className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-0.5 text-right font-mono text-xs font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
+                            className="w-28 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-right font-mono text-xs font-bold text-amber-300 focus:border-amber-400 focus:outline-none transition-colors"
                           />
-                          {isSaved && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                          {isSaved && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
                         </div>
-                        <div className="text-[11px] mt-0.5">
+                        <div className="text-xs mt-1">
                           {entry.salePrice > 0 ? (
                             <span className={entry.saleNetProfit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
                               {entry.saleNetProfit >= 0 ? "+" : ""}{entry.saleNetProfit.toLocaleString()} K
                             </span>
                           ) : (
-                            <span className="text-slate-600">---</span>
+                            <span className="text-slate-600 font-mono text-xs">Sin precio HDV</span>
                           )}
                         </div>
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono">
+                      {/* Runes Value */}
+                      <td className="py-3.5 px-4 text-right font-mono">
                         {entry.canCrush ? (
                           <>
-                            <span className="text-slate-300 font-bold block">
+                            <span className="text-slate-200 font-bold text-sm block">
                               {entry.runicEstimatedValue.toLocaleString()} K
                             </span>
-                            <span className={entry.crushNetProfit >= 0 ? "text-purple-400 font-bold text-[11px]" : "text-rose-400 font-bold text-[11px]"}>
+                            <span className={entry.crushNetProfit >= 0 ? "text-purple-400 font-bold text-xs" : "text-rose-400 font-bold text-xs"}>
                               {entry.crushNetProfit >= 0 ? "+" : ""}{entry.crushNetProfit.toLocaleString()} K
                             </span>
                           </>
                         ) : (
-                          <span className="text-slate-600 text-[11px]">---</span>
+                          <span className="text-slate-600 text-xs">No rompible</span>
                         )}
                       </td>
 
-                      <td className="py-3 px-3 text-center font-mono">
-                        <div className={`font-black text-xs ${entry.bestNetProfit > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {/* Best Net Profit */}
+                      <td className="py-3.5 px-4 text-center font-mono">
+                        <div className={`font-black text-sm sm:text-base ${entry.bestNetProfit > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {entry.bestNetProfit > 0 ? "+" : ""}{entry.bestNetProfit.toLocaleString()} K
                         </div>
                         {entry.bestStrategy !== "none" && (
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border mt-0.5 ${
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border mt-1 ${
                             entry.bestStrategy === "hdv"
                               ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
                               : "bg-purple-500/20 text-purple-300 border-purple-500/40"
                           }`}>
-                            {entry.bestStrategy === "hdv" ? "HDV" : "Runas"} ({entry.bestRoiPercent > 0 ? "+" : ""}{entry.bestRoiPercent.toFixed(0)}%)
+                            {entry.bestStrategy === "hdv" ? "Venta HDV" : "Machacado"} ({entry.bestRoiPercent > 0 ? "+" : ""}{entry.bestRoiPercent.toFixed(0)}%)
                           </span>
                         )}
                       </td>
 
-                      <td className="py-2.5 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => onSelectRecipeForCalculator(item)}
-                            className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-amber-500 hover:text-slate-950 border border-slate-800 text-slate-300 font-bold text-[11px] transition-all flex items-center gap-1"
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-amber-500 hover:text-slate-950 border border-slate-800 text-slate-200 font-bold text-xs transition-all flex items-center gap-1 shadow-sm"
+                            title="Ver calculadora de crafteo"
                           >
                             <span>Crafteo</span>
-                            <ArrowUpRight className="w-3 h-3" />
+                            <ArrowUpRight className="w-3.5 h-3.5" />
                           </button>
 
                           {entry.canCrush && onSelectForCrushing && (
                             <button
                               onClick={() => onSelectForCrushing(item)}
-                              className="px-2 py-1 rounded-lg bg-slate-950 hover:bg-purple-500/20 border border-slate-800 hover:border-purple-500/40 text-purple-300 font-bold text-[11px] transition-all flex items-center gap-1"
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-purple-500/20 border border-slate-800 hover:border-purple-500/40 text-purple-300 font-bold text-xs transition-all flex items-center gap-1 shadow-sm"
+                              title="Romper en la Rompedora"
                             >
-                              <Zap className="w-3 h-3 text-purple-400" />
+                              <Zap className="w-3.5 h-3.5 text-purple-400" />
                               <span>Romper</span>
                             </button>
                           )}
 
                           <button
                             onClick={() => handleAddToCart(item)}
-                            className="p-1 rounded-lg bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 transition-all"
+                            className="p-1.5 rounded-lg bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 transition-all shadow-sm"
+                            title="Añadir ingredientes a lista de compras"
                           >
-                            {isAddedCart ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <ShoppingCart className="w-3.5 h-3.5" />}
+                            {isAddedCart ? <Check className="w-4 h-4 text-emerald-400" /> : <ShoppingCart className="w-4 h-4" />}
                           </button>
                         </div>
                       </td>

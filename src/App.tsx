@@ -76,7 +76,7 @@ export default function App() {
       />
 
       {/* Main App Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4">
+      <main className="flex-1 w-full max-w-[1760px] mx-auto px-3 sm:px-5 lg:px-8 py-4">
         <Suspense
           fallback={
             <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
@@ -141,7 +141,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-4 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+        <div className="max-w-[1760px] mx-auto px-3 sm:px-5 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <p>
             Dofus HDV - Datos sincronizados con <a href="https://api.dofusdb.fr" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-amber-400 underline">DofusDB</a> & Turso SQLite.
           </p>

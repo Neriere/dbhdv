@@ -104,7 +104,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
-      <div className="w-full mx-auto px-2 sm:px-4 lg:px-6">
+      <div className="w-full max-w-[1760px] mx-auto px-3 sm:px-5 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-2 py-2">
           {/* Left: Brand & Theme Selector */}
           <div className="flex items-center gap-2 shrink-0">
@@ -124,9 +124,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               onChange={(e) => handleThemeSelect(e.target.value as DofusTheme)}
               className="bg-slate-950 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer transition-colors shadow-inner"
             >
-              <option value="bonta" className="bg-slate-900 text-sky-300">⚔ Bonta</option>
-              <option value="brakmar" className="bg-slate-900 text-rose-300">🔥 Brakmar</option>
-              <option value="pandala" className="bg-slate-900 text-lime-300">🎋 Pandala</option>
+              <option value="bonta" className="bg-slate-900 text-sky-300">Bonta</option>
+              <option value="brakmar" className="bg-slate-900 text-rose-300">Brakmar</option>
+              <option value="pandala" className="bg-slate-900 text-lime-300">Pandala</option>
             </select>
           </div>
 

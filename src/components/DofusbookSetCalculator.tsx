@@ -29,12 +29,10 @@ import {
   DofusbookBuildAnalysis,
   DofusbookEquipmentItem,
   DofusItem,
-  PriceProfile,
 } from '../types';
 import {
   fetchDofusbookAnalysis,
   getActivePriceProfileId,
-  getPriceProfiles,
   saveMarketPrice,
   addDofusbookItemsToShoppingList,
   getItemIconUrl,
@@ -49,19 +47,6 @@ interface DofusbookSetCalculatorProps {
   onNavigateToShopping?: () => void;
 }
 
-const PRESET_EXAMPLES = [
-  {
-    label: 'Panda Aire Nv. 60',
-    url: 'https://d-bk.net/fr/d/10s7V',
-    desc: 'Set de daño por empuje y agilidad',
-  },
-  {
-    label: 'Caster Nv. 199',
-    url: 'https://d-bk.net/fr/d/10s7V',
-    desc: 'Demostración rápida',
-  },
-];
-
 export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
   onSelectRecipeForCalculator,
   onSelectForCrushing,
@@ -70,7 +55,6 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
   const [urlInput, setUrlInput] = useState('');
   const [excludeDofus, setExcludeDofus] = useState(true);
   const [excludeTrophies, setExcludeTrophies] = useState(false);
-  const [profiles, setProfiles] = useState<PriceProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,11 +68,33 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
   const [tempPriceInput, setTempPriceInput] = useState<string>('');
 
   useEffect(() => {
-    const profs = getPriceProfiles();
-    setProfiles(profs);
-    const active = getActivePriceProfileId();
-    setActiveProfileId(active);
-  }, []);
+    const handleDatabaseUpdated = () => {
+      const newActiveProfileId = getActivePriceProfileId();
+      setActiveProfileId((prevProfileId) => {
+        if (prevProfileId !== newActiveProfileId) {
+          // If we have an active analysis, refresh it with the new profile prices
+          if (analysis && (urlInput || analysis.url)) {
+            fetchDofusbookAnalysis(urlInput || analysis.url, {
+              excludeDofus,
+              excludeTrophies,
+              profileId: newActiveProfileId,
+            })
+              .then((data) => setAnalysis(data))
+              .catch((err) => console.warn('Error re-fetching for updated profile:', err));
+          }
+          return newActiveProfileId;
+        }
+        return prevProfileId;
+      });
+    };
+
+    setActiveProfileId(getActivePriceProfileId());
+    window.addEventListener('dofus_database_updated', handleDatabaseUpdated);
+
+    return () => {
+      window.removeEventListener('dofus_database_updated', handleDatabaseUpdated);
+    };
+  }, [analysis, urlInput, excludeDofus, excludeTrophies]);
 
   const handleAnalyze = async (overrideUrl?: string) => {
     const targetUrl = (overrideUrl || urlInput).trim();
@@ -117,25 +123,6 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       );
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleProfileChange = async (newProfileId: number) => {
-    setActiveProfileId(newProfileId);
-    if (analysis && (urlInput || analysis.url)) {
-      try {
-        setIsLoading(true);
-        const data = await fetchDofusbookAnalysis(urlInput || analysis.url, {
-          excludeDofus,
-          excludeTrophies,
-          profileId: newProfileId,
-        });
-        setAnalysis(data);
-      } catch (err) {
-        console.warn('Error re-fetching for new profile:', err);
-      } finally {
-        setIsLoading(false);
-      }
     }
   };
 
@@ -407,22 +394,6 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
               Coloca el enlace para desglosar el costo
             </p>
           </div>
-
-          {/* Server Profile Selector */}
-          <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl shrink-0">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Servidor:</span>
-            <select
-              value={activeProfileId}
-              onChange={(e) => handleProfileChange(Number(e.target.value))}
-              className="bg-slate-900 text-amber-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-slate-700 outline-none cursor-pointer hover:border-amber-500/50 transition-colors"
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Input & Options Form */}
@@ -486,61 +457,42 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
             </button>
           </div>
 
-          {/* Quick Examples & Toggles Row */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
-            {/* Quick preset examples */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-slate-400 font-semibold">Ejemplos rápidos:</span>
-              {PRESET_EXAMPLES.map((ex) => (
-                <button
-                  key={ex.label}
-                  type="button"
-                  onClick={() => handleAnalyze(ex.url)}
-                  className="px-2 py-0.5 bg-slate-800/80 hover:bg-slate-700 text-amber-300 hover:text-amber-200 rounded-md border border-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
-                  title={ex.desc}
-                >
-                  ⚡ {ex.label}
-                </button>
-              ))}
-            </div>
+          {/* Toggles Row */}
+          <div className="flex flex-wrap items-center justify-end gap-3 pt-1 text-xs">
+            {/* Exclude Dofus toggle (Active by default) */}
+            <button
+              type="button"
+              onClick={toggleExcludeDofus}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold text-xs transition-all cursor-pointer ${
+                excludeDofus
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Excluir los Dofus del cálculo de precio del set"
+            >
+              {excludeDofus ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>Excluir Dofus</span>
+              <span className="text-[10px] px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-mono">
+                {excludeDofus ? 'ON' : 'OFF'}
+              </span>
+            </button>
 
-            {/* Toggles */}
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Exclude Dofus toggle (Active by default) */}
-              <button
-                type="button"
-                onClick={toggleExcludeDofus}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold text-xs transition-all cursor-pointer ${
-                  excludeDofus
-                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                }`}
-                title="Excluir los Dofus del cálculo de precio del set"
-              >
-                {excludeDofus ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
-                <span>Excluir Dofus</span>
-                <span className="text-[10px] px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-mono">
-                  {excludeDofus ? 'ON' : 'OFF'}
-                </span>
-              </button>
-
-              {/* Exclude Trophies toggle */}
-              <button
-                type="button"
-                onClick={toggleExcludeTrophies}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold text-xs transition-all cursor-pointer ${
-                  excludeTrophies
-                    ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                }`}
-                title="Excluir trofeos del cálculo"
-              >
-                <span>Excluir Trofeos</span>
-                <span className="text-[10px] px-1 py-0.2 rounded bg-slate-700 text-slate-300 font-mono">
-                  {excludeTrophies ? 'ON' : 'OFF'}
-                </span>
-              </button>
-            </div>
+            {/* Exclude Trophies toggle */}
+            <button
+              type="button"
+              onClick={toggleExcludeTrophies}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold text-xs transition-all cursor-pointer ${
+                excludeTrophies
+                  ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Excluir trofeos del cálculo"
+            >
+              <span>Excluir Trofeos</span>
+              <span className="text-[10px] px-1 py-0.2 rounded bg-slate-700 text-slate-300 font-mono">
+                {excludeTrophies ? 'ON' : 'OFF'}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -563,7 +515,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black text-lg shadow-md">
-                🛡️
+                <Shield className="w-5 h-5 text-slate-950" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">

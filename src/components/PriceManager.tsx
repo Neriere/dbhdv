@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Search,
   Coins,
@@ -17,12 +17,9 @@ import {
   ExternalLink,
   Download,
   Upload,
-  Trash2,
   Filter,
-  Layers,
   Hammer,
   AlertCircle,
-  Database,
   Zap,
   ChevronLeft,
   ChevronRight,
@@ -91,6 +88,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   }, [searchTerm, activeCategory]);
 
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
+  const debounceTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimersRef.current).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
 
   useEffect(() => {
     const hydrateState = () => {
@@ -174,7 +179,12 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     return set;
   }, [databaseVersion]);
 
-  const handlePriceUpdate = (itemId: number, rawValue: string) => {
+  const handlePriceUpdate = useCallback((itemId: number, rawValue: string) => {
+    if (debounceTimersRef.current[itemId]) {
+      clearTimeout(debounceTimersRef.current[itemId]);
+      delete debounceTimersRef.current[itemId];
+    }
+
     const numericPrice = Math.max(0, parseInt(rawValue, 10) || 0);
     saveMarketPrice(itemId, numericPrice)
       .then((updated) => {
@@ -186,7 +196,20 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       .catch((error) => {
         console.error(`No se pudo guardar el precio del item ${itemId}:`, error);
       });
-  };
+  }, []);
+
+  const handlePriceDraftChange = useCallback((itemId: number, value: string) => {
+    setPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
+
+    if (debounceTimersRef.current[itemId]) {
+      clearTimeout(debounceTimersRef.current[itemId]);
+    }
+
+    // Auto-save after 450ms of inactivity
+    debounceTimersRef.current[itemId] = setTimeout(() => {
+      handlePriceUpdate(itemId, value);
+    }, 450);
+  }, [handlePriceUpdate]);
 
   // Quick increment price helper (+100, +1000, etc.)
   const handleQuickAddPrice = (itemId: number, addAmount: number) => {
@@ -197,19 +220,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
 
   const handleClearPrice = (itemId: number) => {
     handlePriceUpdate(itemId, '0');
-  };
-
-  const handleClearAllPrices = () => {
-    if (window.confirm('¿Estás seguro de reiniciar TODOS los precios de mercadillo guardados a 0?')) {
-      saveAllMarketPrices({})
-        .then((emptyPrices) => {
-          setMarketPrices(emptyPrices);
-          setPriceDrafts({});
-        })
-        .catch((error) => {
-          console.error('No se pudieron limpiar los precios guardados:', error);
-        });
-    }
   };
 
   const handleExportPricesJSON = () => {
@@ -400,21 +410,38 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       without_price: 0,
     };
 
+    const runeIdsSet = new Set(DOFUS_BASE_RUNES.map((r) => r.id));
+    const equipTypeIdsSet = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 19, 82, 112, 151, 217, 271]);
+    const campesinoTypes = new Set([34, 33, 37, 58, 60, 68, 46, 28, 128, 129]);
+    const lenadorTypes = new Set([38, 95, 96, 98, 183, 185, 242, 12, 170]);
+    const alquimistaTypes = new Set([12, 26, 35, 36, 70, 71, 79, 179, 183, 206, 228, 167, 62]);
+    const mineroTypes = new Set([39, 40, 50, 51, 83, 85, 307, 308, 167, 153, 66, 91]);
+    const pescadorTypes = new Set([41, 49, 134, 135, 64]);
+    const cazadorTypes = new Set([63, 69, 187, 56, 59, 150]);
+    const ganaderoTypes = new Set([99, 323, 326, 327]);
+
     for (const item of items) {
-      if (matchCategory(item, 'dofus')) counts.dofus++;
-      if (matchCategory(item, 'runes')) counts.runes++;
-      if (recipeIngredientIds.has(item.id) || allResourceTypesSet.has(Number(item.typeId || item.type?.id || 0))) {
+      const typeId = Number(item.typeId || item.type?.id || 0);
+      const isDof = typeId === 23 || isDofusItem(item);
+      const isRune = typeId === 78 || typeId === 18 || runeIdsSet.has(item.id);
+
+      if (isDof) counts.dofus++;
+      if (isRune) counts.runes++;
+
+      if (recipeIngredientIds.has(item.id) || allResourceTypesSet.has(typeId)) {
         counts.craft_ingredients++;
       }
-      if (matchCategory(item, 'campesino')) counts.campesino++;
-      if (matchCategory(item, 'lenador')) counts.lenador++;
-      if (matchCategory(item, 'alquimista')) counts.alquimista++;
-      if (matchCategory(item, 'minero')) counts.minero++;
-      if (matchCategory(item, 'pescador')) counts.pescador++;
-      if (matchCategory(item, 'cazador')) counts.cazador++;
-      if (matchCategory(item, 'ganadero')) counts.ganadero++;
-      if (matchCategory(item, 'monsters')) counts.monsters++;
-      if (matchCategory(item, 'equipment')) counts.equipment++;
+
+      if (campesinoTypes.has(typeId)) counts.campesino++;
+      if (lenadorTypes.has(typeId)) counts.lenador++;
+      if (alquimistaTypes.has(typeId)) counts.alquimista++;
+      if (mineroTypes.has(typeId)) counts.minero++;
+      if (pescadorTypes.has(typeId)) counts.pescador++;
+      if (cazadorTypes.has(typeId)) counts.cazador++;
+      if (ganaderoTypes.has(typeId)) counts.ganadero++;
+      if (monsterDropTypeIds.has(typeId)) counts.monsters++;
+      if (equipTypeIdsSet.has(typeId)) counts.equipment++;
+
       if (Number(marketPrices[item.id]) > 0) counts.has_price++;
       else counts.without_price++;
     }
@@ -444,17 +471,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               <Tag className="w-3.5 h-3.5 text-amber-400" />
               {categoryCounts.has_price} Precios Guardados
             </span>
-
-            {categoryCounts.has_price > 0 && (
-              <button
-                onClick={handleClearAllPrices}
-                className="px-2.5 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 text-red-300 text-xs font-bold transition-all flex items-center gap-1"
-                title="Vaciar todos los precios guardados"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Limpiar Precios</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -734,7 +750,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                           min="0"
                           step="1"
                           value={draftVal}
-                          onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                          onChange={(e) => handlePriceDraftChange(item.id, e.target.value)}
                           onBlur={(e) => handlePriceUpdate(item.id, e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {

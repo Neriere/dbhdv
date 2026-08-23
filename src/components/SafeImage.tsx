@@ -60,6 +60,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({
       className={className}
       onError={handleError}
       loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       {...props}
     />

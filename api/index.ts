@@ -272,6 +272,7 @@ app.get("/api/local-db/items/:id", async (req, res) => {
     const itemId = Number(req.params.id);
     if (!itemId) return res.status(400).json({ error: "Invalid item id" });
 
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
     const item = await getOrFetchItemById(itemId);
     if (!item) return res.status(404).json({ error: "Item not found" });
 
@@ -288,6 +289,7 @@ app.get("/api/local-db/item-stats/:id", async (req, res) => {
     const itemId = Number(req.params.id);
     if (!itemId) return res.status(400).json({ error: "Invalid item id" });
 
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
     const stats = await getItemStatsFromDb(itemId);
     res.json({ itemId, stats });
   } catch (error) {
@@ -302,6 +304,7 @@ app.get("/api/local-db/recipes/:resultId", async (req, res) => {
     const resultId = Number(req.params.resultId);
     if (!resultId) return res.status(400).json({ error: "Invalid result id" });
 
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
     const recipe = await getOrFetchRecipeByResultId(resultId);
     if (!recipe) return res.status(404).json({ error: "Recipe not found" });
 

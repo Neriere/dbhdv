@@ -28,12 +28,18 @@ import {
   DEFAULT_INGREDIENT_PRICES,
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
+import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
 import {
   BASE_RUNES_BY_ID,
   DOFUS_BASE_RUNES,
   extractItemStats,
   calculateItemCrushing,
 } from "../data/dofusRuneWeights";
+
+const ALL_PRESET_ITEMS: PresetCraftableItem[] = [
+  ...PRESET_CRAFTABLE_ITEMS,
+  ...CRAFTABLE_RUNES,
+];
 
 const LOCAL_DB_API_BASE = "/api/local-db";
 const CACHE_KEY = "dofus_database_cache_v5";
@@ -238,6 +244,8 @@ let bootstrapPromise: Promise<BootstrapResponse> | null = null;
 // Pre-computed and cached snapshots for ultra-fast UI rendering
 let cachedCraftableSnapshot: CraftableItem[] | null = null;
 let cachedCrushableSnapshot: CraftableItem[] | null = null;
+let ingredientToRecipesIndex: Map<number, Set<number>> = new Map();
+let recipeTreeMapCache: Map<string, RecipeTreeNode> = new Map();
 
 function emitDatabaseUpdated(): void {
   if (typeof window !== "undefined") {
@@ -253,7 +261,7 @@ function mergePresetData(
   items.forEach((item) => itemMap.set(item.id, item));
 
   const mergedRecipes: Record<number, DofusRecipe> = { ...recipes };
-  for (const preset of PRESET_CRAFTABLE_ITEMS) {
+  for (const preset of ALL_PRESET_ITEMS) {
     const itemWithFlag = {
       ...preset,
       hasRecipe: true,
@@ -279,9 +287,29 @@ function mergePresetData(
   return { items: allItems, recipes: mergedRecipes };
 }
 
+function rebuildIngredientReverseIndex(): void {
+  const newIndex = new Map<number, Set<number>>();
+  for (const [resultIdStr, recipe] of Object.entries(recipesMemoryCache)) {
+    const resultId = Number(resultIdStr);
+    if (!resultId || !recipe?.ingredientIds) continue;
+    for (const ingId of recipe.ingredientIds) {
+      if (!ingId) continue;
+      let set = newIndex.get(ingId);
+      if (!set) {
+        set = new Set<number>();
+        newIndex.set(ingId, set);
+      }
+      set.add(resultId);
+    }
+  }
+  ingredientToRecipesIndex = newIndex;
+}
+
 function invalidateDerivedCaches(): void {
   cachedCraftableSnapshot = null;
   cachedCrushableSnapshot = null;
+  recipeTreeMapCache.clear();
+  rebuildIngredientReverseIndex();
 }
 
 function updateMemoryCache(payload: {
@@ -510,6 +538,18 @@ export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
       id: 41,
       superCategoryId: 9,
       name: { es: "Pescado", fr: "Poisson", en: "Fish" },
+    },
+  },
+  10057: {
+    id: 10057,
+    name: { es: "Runa de caza", fr: "Rune de Chasse", en: "Hunting Rune" },
+    iconId: 78023,
+    level: 1,
+    typeId: 78,
+    type: {
+      id: 78,
+      superCategoryId: 0,
+      name: { es: "Runa", fr: "Rune", en: "Rune" },
     },
   },
 };
@@ -776,13 +816,13 @@ export function getActivePriceProfileId(): number {
 }
 
 const presetItemMap = new Map<number, PresetCraftableItem>(
-  PRESET_CRAFTABLE_ITEMS.map((item) => [item.id, item]),
+  ALL_PRESET_ITEMS.map((item) => [item.id, item]),
 );
 
 export function getCraftableItemsSnapshot(): CraftableItem[] {
   if (
     cachedCraftableSnapshot &&
-    cachedCraftableSnapshot.length > PRESET_CRAFTABLE_ITEMS.length
+    cachedCraftableSnapshot.length > ALL_PRESET_ITEMS.length
   ) {
     return cachedCraftableSnapshot;
   }
@@ -899,7 +939,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     });
   }
 
-  for (const preset of PRESET_CRAFTABLE_ITEMS) {
+  for (const preset of ALL_PRESET_ITEMS) {
     if (processedResultIds.has(preset.id)) {
       continue;
     }
@@ -1513,6 +1553,12 @@ export async function buildRecipeTree(
     return null;
   }
 
+  // Fast cache lookup for root requests with default depth
+  const cacheKey = currentDepth === 0 ? `${itemId}_${quantityNeeded}_${maxDepth}_${activePriceProfileIdMemoryCache}` : null;
+  if (cacheKey && recipeTreeMapCache.has(cacheKey)) {
+    return JSON.parse(JSON.stringify(recipeTreeMapCache.get(cacheKey)!));
+  }
+
   const item = await fetchItemDetailsById(itemId);
   if (!item) {
     return null;
@@ -1539,6 +1585,9 @@ export async function buildRecipeTree(
   };
 
   if (!isCraftable || !recipe) {
+    if (cacheKey) {
+      recipeTreeMapCache.set(cacheKey, JSON.parse(JSON.stringify(node)));
+    }
     return node;
   }
 
@@ -1588,7 +1637,30 @@ export async function buildRecipeTree(
   }
 
   node.subIngredients = subIngredients;
+  if (cacheKey) {
+    recipeTreeMapCache.set(cacheKey, JSON.parse(JSON.stringify(node)));
+  }
   return node;
+}
+
+/**
+ * Returns all craftable items that use the specified ingredient ID in their recipes (O(1) indexed lookup)
+ */
+export function getRecipesUsingIngredient(ingredientId: number): CraftableItem[] {
+  if (ingredientToRecipesIndex.size === 0) {
+    rebuildIngredientReverseIndex();
+  }
+  const resultIds = ingredientToRecipesIndex.get(ingredientId);
+  if (!resultIds || resultIds.size === 0) return [];
+
+  const allCraftable = getCraftableItemsSnapshot();
+  const resultMap = new Map<number, CraftableItem>();
+  for (const item of allCraftable) {
+    if (resultIds.has(item.id)) {
+      resultMap.set(item.id, item);
+    }
+  }
+  return Array.from(resultMap.values());
 }
 
 export function calculateTreeCraftCost(

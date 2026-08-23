@@ -661,6 +661,24 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
       },
     ],
   },
+  {
+    id: 78,
+    nameEs: "Runas",
+    nameFr: "Runes",
+    icon: "Sparkles",
+    ankamaJobIds: [78],
+    description: "Fabricación y transmutación de Runas de forjamagia (Runas Bu y Runas Su).",
+    categories: [
+      {
+        id: "runas",
+        nameEs: "Runa",
+        nameFr: "Rune",
+        dofusDbTypes: [78],
+        dofusDuTypes: [78],
+        keywords: ["runa", "rune", "forjamagia", "forgemagie"],
+      },
+    ],
+  },
 ];
 
 /**
