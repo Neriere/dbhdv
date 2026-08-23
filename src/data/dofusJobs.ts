@@ -77,6 +77,24 @@ export function isPetItem(item?: {
   return false;
 }
 
+export function isDofusItem(item?: {
+  id?: number;
+  typeId?: number;
+  type?: { id?: number; superCategoryId?: number; name?: any };
+  name?: any;
+} | null): boolean {
+  if (!item) return false;
+  const typeId = Number(item.typeId || item.type?.id || 0);
+  if (typeId === 23) return true;
+  const typeNameEs = (typeof item.type?.name === "object" ? item.type.name?.es || "" : String(item.type?.name || "")).toLowerCase();
+  const typeNameFr = (typeof item.type?.name === "object" ? item.type.name?.fr || "" : "").toLowerCase();
+  if (typeNameEs === "dofus" || typeNameFr === "dofus") return true;
+  const nameEs = (typeof item.name === "object" ? item.name?.es || "" : String(item.name || "")).toLowerCase();
+  const nameFr = (typeof item.name === "object" ? item.name?.fr || "" : "").toLowerCase();
+  if (/^dofus\b/i.test(nameEs) || /^dofus\b/i.test(nameFr) || /\bdofus\b/i.test(nameEs)) return true;
+  return false;
+}
+
 /**
  * Helper to test if an item is purely cosmetic, appearance, quest item or obsolete dummy item
  */
@@ -88,20 +106,32 @@ export function isOmittedItem(item: {
     id?: number;
     superCategoryId?: number;
     name?: { es?: string; fr?: string; en?: string } | string;
-  };
+  } | string;
 }): boolean {
   if (!item) return true;
+
+  const rawType = (item as any)?.type;
+  const typeId = Number(
+    item.typeId ||
+    (typeof rawType === "object" ? rawType?.id : typeof rawType === "number" ? rawType : 0) ||
+    0
+  );
+  const superCatId = Number(
+    (typeof rawType === "object" ? rawType?.superCategoryId : 0) || 0
+  );
+
+  // Los Dofus auténticos (tipo 23) nunca deben omitirse para la gestión de precios
+  if (typeId === 23) {
+    return false;
+  }
 
   // 1. Ejecutar filtro de cosméticos / apariencias
   if (isCosmeticItem(item as any)) {
     return true;
   }
 
-  const typeId = Number(item.typeId || item.type?.id || 0);
-  const superCatId = Number(item.type?.superCategoryId || 0);
-
-  // 2. Supercategorías no comerciales / misiones (SuperCategory 4: Objetos de misión, 5: Mutaciones/Búsquedas, 23: Apariencias)
-  if ([4, 5, 23, 14, 15].includes(superCatId)) {
+  // 2. Supercategorías no comerciales / misiones (SuperCategory 4: Objetos de misión, 5: Mutaciones/Búsquedas, 14: Certificados temporales, 15: No intercambiables, 23: Apariencias)
+  if ([4, 5, 14, 15, 23].includes(superCatId)) {
     return true;
   }
 
@@ -110,7 +140,7 @@ export function isOmittedItem(item: {
     return true;
   }
 
-  // 4. Tipos obsoletos exclusivamente de roleplay, títulos, auras y emotes
+  // 4. Tipos obsoletos exclusivamente de roleplay, títulos, auras, emotes, fichas
   if (
     [
       166, 173, 199, 200, 203, 204, 214, 222, 246, 247, 248, 249, 250,
@@ -147,17 +177,24 @@ export function isOmittedItem(item: {
     nameFr.startsWith("[!]") ||
     nameEn.startsWith("[!]") ||
     nameEs.includes("[!]") ||
-    nameFr.includes("[!]")
+    nameFr.includes("[!]") ||
+    nameEn.includes("[!]") ||
+    nameEs.startsWith("[test]") ||
+    nameEs.startsWith("[debug]")
   ) {
     return true;
   }
 
-  const typeNameStr = typeof item.type?.name === "string" ? item.type.name : "";
+  const typeNameStr = typeof (item.type as any)?.name === "string"
+    ? (item.type as any).name
+    : typeof item.type === "string"
+      ? item.type
+      : "";
   const typeNameEs = (
-    typeof item.type?.name === "object" ? item.type.name?.es || "" : typeNameStr
+    typeof (item.type as any)?.name === "object" ? (item.type as any).name?.es || "" : typeNameStr
   ).toLowerCase().trim();
   const typeNameFr = (
-    typeof item.type?.name === "object" ? item.type.name?.fr || "" : ""
+    typeof (item.type as any)?.name === "object" ? (item.type as any).name?.fr || "" : ""
   ).toLowerCase().trim();
 
   const text = `${nameEs} ${nameFr} ${nameEn} ${typeNameEs} ${typeNameFr}`;
@@ -176,6 +213,7 @@ export function isOmittedItem(item: {
   if (
     /^\d+\s+(insignia|insignias|ficha|fichas|alma|almas)\b/i.test(nameEs) ||
     nameEs.includes("insignias de") ||
+    nameEs.includes("insignia de") ||
     nameEs.includes("abono desértico") ||
     nameEs.includes("abono desertico") ||
     text.includes("selocalipsis") ||

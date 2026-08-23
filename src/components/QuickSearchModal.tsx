@@ -10,6 +10,7 @@ import {
   getItemIconUrl,
   getItemFallbackIconUrl,
 } from '../services/dofusDbService';
+import { isCrushableJob, isPetItem, getJobForItem, isOmittedItem } from '../data/dofusJobs';
 import { matchesSearchQuery } from '../utils/searchUtils';
 import { SafeImage } from './SafeImage';
 import { KamaDisplay } from './common/KamaDisplay';
@@ -86,7 +87,8 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
 
   const handleAddToList = (item: DofusItem, recipe?: DofusRecipe) => {
     addToShoppingList(item, 1, recipe);
-    setAddedItemNotice(`¡${item.name?.es || 'Objeto'} añadido a la Lista de Compras!`);
+    const itemName = item.name?.es || item.name?.fr || `Objeto #${item.id}`;
+    setAddedItemNotice(`¡${itemName} añadido a la Lista de Compras!`);
     setTimeout(() => setAddedItemNotice(null), 2500);
   };
 
@@ -248,16 +250,14 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
                       <span className="hidden sm:inline">Romper</span>
                     </button>
 
-                    {recipe && (
-                      <button
-                        onClick={() => handleAddToList(item, recipe)}
-                        className="p-1.5 sm:px-2.5 sm:py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
-                        title="Añadir a Lista de Compras"
-                      >
-                        <ShoppingCart className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">+ Lista</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleAddToList(item, recipe)}
+                      className="p-1.5 sm:px-2.5 sm:py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                      title={recipe ? 'Añadir receta a Lista de Compras' : 'Añadir ingrediente a Lista de Compras'}
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">+ Lista</span>
+                    </button>
 
                     {onSelectForPriceManager && (
                       <button

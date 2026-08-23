@@ -193,6 +193,58 @@ export interface ConsolidatedIngredient {
 
 export type DofusTheme = 'bonta' | 'brakmar' | 'pandala';
 
+// Dofusbook Set Calculator Types
+export interface DofusbookIngredientBreakdown {
+  id: number;
+  name: string;
+  nameFr?: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  iconId: number;
+}
+
+export interface DofusbookEquipmentItem {
+  id: number;
+  slotName: string; // 'Sombrero', 'Capa', 'Amuleto', 'Anillo 1', 'Anillo 2', 'Cinturón', 'Botas', 'Arma', 'Escudo', 'Mascota / Montura', 'Dofus / Trofeo'
+  rawName: string;
+  item: DofusItem | null;
+  recipe: DofusRecipe | null;
+  craftCost: number;
+  marketPrice: number;
+  isDofus: boolean;
+  isTrophy: boolean;
+  isPrysmaradite: boolean;
+  isCraftable: boolean;
+  cheaperOption: 'craft' | 'buy' | 'equal' | 'no_recipe' | 'dofus_excluded';
+  savings: number; // absolute difference
+  missingIngredientsCount: number;
+  ingredientsBreakdown: DofusbookIngredientBreakdown[];
+  userChoice?: 'craft' | 'buy' | 'exclude';
+}
+
+export interface DofusbookBuildTotals {
+  totalCraftCost: number;
+  totalMarketPrice: number;
+  totalOptimalCost: number;
+  totalSavings: number;
+  craftablePiecesCount: number;
+  excludedDofusCount: number;
+  excludedTrophiesCount: number;
+  totalPieces: number;
+}
+
+export interface DofusbookBuildAnalysis {
+  url: string;
+  resolvedUrl?: string;
+  buildName: string;
+  characterClass?: string;
+  buildLevel?: number;
+  items: DofusbookEquipmentItem[];
+  totals: DofusbookBuildTotals;
+  consolidatedIngredients: ConsolidatedIngredient[];
+}
+
 // Market Arbitrage Analysis
 export interface ArbitrageOpportunity {
   item: DofusItem;

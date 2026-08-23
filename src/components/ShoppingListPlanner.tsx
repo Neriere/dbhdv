@@ -28,6 +28,7 @@ import {
 } from '../services/dofusDbService';
 import { SafeImage } from './SafeImage';
 import { KamaDisplay } from './common/KamaDisplay';
+import { QuickSearchModal } from './QuickSearchModal';
 
 interface ShoppingListPlannerProps {
   onSelectRecipeForCalculator: (item: DofusItem) => void;
@@ -37,6 +38,7 @@ interface ShoppingListPlannerProps {
 
 export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
   onSelectRecipeForCalculator,
+  onSelectForCrushing,
   onOpenQuickSearch,
 }) => {
   const [items, setItems] = useState<ShoppingListItem[]>(getShoppingList());
@@ -45,10 +47,19 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
   const [copied, setCopied] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [editPriceValue, setEditPriceValue] = useState<string>('');
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
   const refreshList = () => {
     setItems(getShoppingList());
     setMarketPrices(getAllStoredPrices());
+  };
+
+  const handleOpenSearch = () => {
+    if (onOpenQuickSearch) {
+      onOpenQuickSearch();
+    } else {
+      setIsSearchModalOpen(true);
+    }
   };
 
   useEffect(() => {
@@ -140,8 +151,8 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           <button
-            onClick={onOpenQuickSearch}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md"
+            onClick={handleOpenSearch}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" /> Añadir
           </button>
@@ -180,16 +191,10 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">Tu lista de compras está vacía</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Añade objetos desde la calculadora para consolidar los ingredientes requeridos.
+            <p className="text-xs text-slate-400 mt-1">
+              Usa el botón <span className="text-amber-400 font-semibold">&ldquo;+ Añadir&rdquo;</span> para buscar y agregar objetos o recetas a tu lista.
             </p>
           </div>
-          <button
-            onClick={onOpenQuickSearch}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md inline-flex items-center gap-1.5"
-          >
-            <Search className="w-3.5 h-3.5" /> Explorar Objetos
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -221,14 +226,18 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
                         {entry.item.name?.es || `Objeto #${entry.itemId}`}
                       </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                        <span>Nv. {entry.item.level}</span>
-                        <span>•</span>
-                        <button
-                          onClick={() => onSelectRecipeForCalculator(entry.item)}
-                          className="text-amber-400 hover:underline flex items-center gap-0.5"
-                        >
-                          <Wrench className="w-3 h-3" /> Ver
-                        </button>
+                        <span>Nv. {entry.item.level || 1}</span>
+                        {entry.recipe && (
+                          <>
+                            <span>•</span>
+                            <button
+                              onClick={() => onSelectRecipeForCalculator(entry.item)}
+                              className="text-amber-400 hover:underline flex items-center gap-0.5"
+                            >
+                              <Wrench className="w-3 h-3" /> Ver
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -417,6 +426,22 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Quick Search Modal for adding items to shopping list */}
+      <QuickSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectForCalculator={(item) => {
+          onSelectRecipeForCalculator(item);
+          setIsSearchModalOpen(false);
+        }}
+        onSelectForCrushing={(item) => {
+          if (onSelectForCrushing) {
+            onSelectForCrushing(item);
+          }
+          setIsSearchModalOpen(false);
+        }}
+      />
     </div>
   );
 };

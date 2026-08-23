@@ -1,6 +1,6 @@
 {
   "name": "DofusDB API & Crushing Explorer",
-  "description": "Explorador interactivo de la API de DofusDB, guía de endpoints, esquemas de datos, simulador de machacado (brisage) y plantillas de código para proyectos de Dofus.",
+  "description": "Calculadora de sets de Dofusbook, comparador de crafteo vs compra en HDV, gestor de precios multiserver, simulador de machacado (brisage) y sincronización con DofusDB y SQLite/Turso.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

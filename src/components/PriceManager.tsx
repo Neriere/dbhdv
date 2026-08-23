@@ -47,12 +47,13 @@ import {
 } from '../services/dofusDbService';
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
 import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
-import { isOmittedItem } from '../data/dofusJobs';
+import { isOmittedItem, isDofusItem } from '../data/dofusJobs';
 import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
 
 type PriceFilterCategory =
   | 'all'
+  | 'dofus'
   | 'runes'
   | 'craft_ingredients'
   | 'campesino'
@@ -312,6 +313,9 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     const typeId = Number(item.typeId || item.type?.id || 0);
 
     if (cat === 'all') return true;
+    if (cat === 'dofus') {
+      return typeId === 23 || isDofusItem(item);
+    }
     if (cat === 'runes') {
       return typeId === 78 || typeId === 18 || DOFUS_BASE_RUNES.some((r) => r.id === item.id);
     }
@@ -380,6 +384,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: items.length,
+      dofus: 0,
       runes: 0,
       craft_ingredients: 0,
       campesino: 0,
@@ -396,6 +401,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     };
 
     for (const item of items) {
+      if (matchCategory(item, 'dofus')) counts.dofus++;
       if (matchCategory(item, 'runes')) counts.runes++;
       if (recipeIngredientIds.has(item.id) || allResourceTypesSet.has(Number(item.typeId || item.type?.id || 0))) {
         counts.craft_ingredients++;
@@ -539,6 +545,17 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               Producción y uso
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setActiveCategory('dofus')}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  activeCategory === 'dofus'
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md font-black ring-1 ring-amber-400/50'
+                    : 'bg-slate-950 border-slate-800 text-amber-400 hover:text-amber-300 hover:border-amber-500/40'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Dofus ({categoryCounts.dofus})
+              </button>
               <button
                 onClick={() => setActiveCategory('runes')}
                 className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${

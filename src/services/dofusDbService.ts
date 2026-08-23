@@ -1,5 +1,6 @@
 import {
   ConsolidatedIngredient,
+  DofusbookBuildAnalysis,
   DofusEffect,
   DofusItem,
   DofusRecipe,
@@ -18,6 +19,7 @@ import {
   isOmittedItem,
   isCosmeticItem,
   isPetItem,
+  isDofusItem,
   getJobForItem,
   DOFUS_JOBS,
 } from "../data/dofusJobs";
@@ -313,7 +315,7 @@ function updateMemoryCache(payload: {
           };
 
     const merged = mergePresetData(combinedItems, combinedRecipes);
-    itemsMemoryCache = merged.items;
+    itemsMemoryCache = merged.items.filter((item) => !isOmittedItem(item));
     recipesMemoryCache = merged.recipes;
     changedStructure = true;
   }
@@ -804,7 +806,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     const presetItem = presetItemMap.get(resultId);
     const itemToUse = existingItem || presetItem;
 
-    if (itemToUse && isCosmeticItem(itemToUse as any)) {
+    if (itemToUse && (isCosmeticItem(itemToUse as any) || isDofusItem(itemToUse as any))) {
       continue;
     }
 
@@ -851,7 +853,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
   }
 
   for (const item of importedItems) {
-    if (processedResultIds.has(item.id) || isOmittedItem(item)) {
+    if (processedResultIds.has(item.id) || isOmittedItem(item) || isDofusItem(item)) {
       continue;
     }
 
@@ -1659,9 +1661,9 @@ export function getAllLocalItems(): DofusItem[] {
     void initializeDatabase();
   }
   if (itemsMemoryCache.length > 0) {
-    return itemsMemoryCache;
+    return itemsMemoryCache.filter((item) => !isOmittedItem(item));
   }
-  return PRESET_CRAFTABLE_ITEMS;
+  return PRESET_CRAFTABLE_ITEMS.filter((item) => !isOmittedItem(item));
 }
 
 export function getItemById(id: number): DofusItem | undefined {
@@ -1806,11 +1808,31 @@ export function getConsolidatedShoppingIngredients(
 
   for (const entry of shoppingList) {
     const recipe = entry.recipe || getRecipeByResultId(entry.itemId);
+    const batchQty = Math.max(1, entry.targetQuantity);
+
     if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+      // Direct raw resource / uncraftable item added to shopping list
+      const directId = entry.itemId;
+      const directItem = entry.item || getItemById(directId) || undefined;
+      const unitPrice = marketPrices[directId] || getStoredItemPrice(directId) || 0;
+
+      const existing = map.get(directId);
+      if (existing) {
+        existing.totalQuantityRequired += batchQty;
+        existing.totalPrice = existing.totalQuantityRequired * existing.unitPrice;
+      } else {
+        map.set(directId, {
+          itemId: directId,
+          item: directItem,
+          totalQuantityRequired: batchQty,
+          unitPrice,
+          totalPrice: batchQty * unitPrice,
+          isChecked: false,
+        });
+      }
       continue;
     }
 
-    const batchQty = Math.max(1, entry.targetQuantity);
     for (let i = 0; i < recipe.ingredientIds.length; i++) {
       const ingId = recipe.ingredientIds[i];
       const ingQty = (recipe.quantities[i] || 1) * batchQty;
@@ -1869,3 +1891,64 @@ export function setStoredTheme(theme: DofusTheme): void {
     // Ignore storage write error
   }
 }
+
+// ----------------------------------------------------
+// Dofusbook Build Service
+// ----------------------------------------------------
+
+export async function fetchDofusbookAnalysis(
+  urlOrCode: string,
+  options: {
+    excludeDofus?: boolean;
+    excludeTrophies?: boolean;
+    profileId?: number;
+  } = {}
+): Promise<DofusbookBuildAnalysis> {
+  const profileId = options.profileId || getActivePriceProfileId();
+  const excludeDofus = options.excludeDofus !== false;
+  const excludeTrophies = options.excludeTrophies === true;
+
+  const response = await requestJson<DofusbookBuildAnalysis>("/api/dofusbook/analyze", {
+    method: "POST",
+    body: JSON.stringify({
+      url: urlOrCode.trim(),
+      excludeDofus,
+      excludeTrophies,
+      profileId,
+    }),
+  });
+
+  return response;
+}
+
+export function addDofusbookItemsToShoppingList(
+  items: Array<{ item: DofusItem; recipe?: DofusRecipe | null; quantity?: number }>
+): ShoppingListItem[] {
+  const current = getShoppingList();
+  
+  for (const entry of items) {
+    if (!entry.item || entry.item.id <= 0) continue;
+    const qty = entry.quantity || 1;
+    const existingIndex = current.findIndex((i) => i.itemId === entry.item.id);
+    const resolvedRecipe = entry.recipe || getRecipeByResultId(entry.item.id) || undefined;
+
+    if (existingIndex >= 0) {
+      current[existingIndex].targetQuantity += qty;
+      if (!current[existingIndex].recipe && resolvedRecipe) {
+        current[existingIndex].recipe = resolvedRecipe;
+      }
+    } else {
+      current.push({
+        itemId: entry.item.id,
+        item: entry.item,
+        recipe: resolvedRecipe,
+        targetQuantity: Math.max(1, qty),
+        addedAt: Date.now(),
+      });
+    }
+  }
+
+  saveShoppingList(current);
+  return current;
+}
+

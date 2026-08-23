@@ -64,6 +64,13 @@ export function formatKamasNumber(
 }
 
 /**
+ * Formats a number directly into Kamas string format (e.g. "12.345 K")
+ */
+export function formatKamas(amount: number): string {
+  return `${Math.round(amount || 0).toLocaleString('de-DE')} K`;
+}
+
+/**
  * Format standard percentage
  */
 export function formatPercent(value: number, precision = 1): string {

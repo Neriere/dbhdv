@@ -30,6 +30,11 @@ const ShoppingListPlanner = lazy(() =>
     default: m.ShoppingListPlanner,
   }))
 );
+const DofusbookSetCalculator = lazy(() =>
+  import('./components/DofusbookSetCalculator').then((m) => ({
+    default: m.DofusbookSetCalculator,
+  }))
+);
 const PriceManager = lazy(() =>
   import('./components/PriceManager').then((m) => ({
     default: m.PriceManager,
@@ -84,6 +89,14 @@ export default function App() {
             <RecipeCraftingCalculator
               initialSelectedItem={selectedItem}
               onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
+
+          {activeTab === 'dofusbook' && (
+            <DofusbookSetCalculator
+              onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
+              onSelectForCrushing={handleSelectForCrushing}
+              onNavigateToShopping={() => setActiveTab('shopping')}
             />
           )}
 

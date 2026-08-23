@@ -7,6 +7,7 @@ import {
   Database,
   Zap,
   ShoppingCart,
+  Sparkles,
 } from 'lucide-react';
 import {
   getActivePriceProfileId,
@@ -21,6 +22,7 @@ import { DofusTheme } from '../types';
 
 export type ActiveTab =
   | 'recipes'
+  | 'dofusbook'
   | 'rompedora'
   | 'ranking'
   | 'shopping'
@@ -92,6 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const tabs = [
     { id: 'recipes' as ActiveTab, label: 'Recetas', icon: Wrench },
+    { id: 'dofusbook' as ActiveTab, label: 'Set Dofusbook', icon: Sparkles },
     { id: 'rompedora' as ActiveTab, label: 'Rompedora', icon: Zap },
     { id: 'ranking' as ActiveTab, label: 'Ranking', icon: Trophy },
     { id: 'shopping' as ActiveTab, label: 'Compras', icon: ShoppingCart, badge: shoppingCount },
