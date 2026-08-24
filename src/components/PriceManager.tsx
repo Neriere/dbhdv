@@ -23,6 +23,8 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  History,
+  Clock,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -41,12 +43,15 @@ import {
   getItemIconUrl,
   getItemFallbackIconUrl,
   initializeDatabase,
+  formatRelativeTime,
 } from '../services/dofusDbService';
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
 import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
 import { isOmittedItem, isDofusItem } from '../data/dofusJobs';
 import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
+import { GlobalPriceHistoryModal } from './GlobalPriceHistoryModal';
+import { ItemPriceHistoryModal } from './ItemPriceHistoryModal';
 
 type PriceFilterCategory =
   | 'all'
@@ -81,6 +86,8 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const ITEMS_PER_PAGE = 50;
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
+  const [isGlobalHistoryOpen, setIsGlobalHistoryOpen] = useState<boolean>(false);
+  const [itemForHistory, setItemForHistory] = useState<DofusItem | null>(null);
 
   // Reset page whenever search or category changes
   useEffect(() => {
@@ -467,7 +474,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-xs font-black flex items-center gap-1.5">
+            <button
+              onClick={() => setIsGlobalHistoryOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+            >
+              <History className="w-4 h-4" />
+              Historial de Precios
+            </button>
+            <span className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-amber-300 font-mono text-xs font-black flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-amber-400" />
               {categoryCounts.has_price} Precios Guardados
             </span>
@@ -776,6 +790,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                         </span>
                       )}
 
+                      {/* Price History Button */}
+                      <button
+                        onClick={() => setItemForHistory(item)}
+                        className="p-2 rounded-xl bg-slate-950 hover:bg-amber-500/20 border border-slate-800 hover:border-amber-500/40 text-slate-400 hover:text-amber-300 transition-all shrink-0"
+                        title="Ver historial de cambios de este objeto"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+
                       {currentPrice > 0 && !isSaved && (
                         <button
                           onClick={() => handleClearPrice(item.id)}
@@ -787,18 +810,23 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       )}
                     </div>
 
-                    {/* Direct jump to Recipe Calculator */}
-                    {onSelectItemForRecipe && (
-                      <div className="flex justify-end pt-0.5">
+                    {/* Footer Info: Relative Timestamp & Recipe Link */}
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5 text-slate-500" />
+                        {priceUpdatedAt[item.id] ? formatRelativeTime(priceUpdatedAt[item.id]) : 'Sin cambios'}
+                      </span>
+
+                      {onSelectItemForRecipe && (
                         <button
                           onClick={() => onSelectItemForRecipe(item)}
-                          className="text-xs text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 font-bold"
+                          className="text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 font-bold"
                           title="Calcular recetas con este objeto"
                         >
-                          Ver Recetas <ExternalLink className="w-3 h-3" />
+                          Ver Recetas <ExternalLink className="w-2.5 h-2.5" />
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -849,6 +877,40 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         </div>
       )}
 
+      {/* Global Price History Modal */}
+      <GlobalPriceHistoryModal
+        isOpen={isGlobalHistoryOpen}
+        onClose={() => setIsGlobalHistoryOpen(false)}
+        onPriceChanged={() => {
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices(updatedPrices);
+          setPriceUpdatedAt(getStoredPriceUpdatedAt());
+          const newDrafts: Record<number, string> = {};
+          for (const [id, price] of Object.entries(updatedPrices)) {
+            if (Number(price) > 0) newDrafts[Number(id)] = String(price);
+          }
+          setPriceDrafts(newDrafts);
+        }}
+      />
+
+      {/* Individual Item Price History Modal */}
+      <ItemPriceHistoryModal
+        item={itemForHistory}
+        isOpen={!!itemForHistory}
+        onClose={() => setItemForHistory(null)}
+        onPriceChanged={() => {
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices(updatedPrices);
+          setPriceUpdatedAt(getStoredPriceUpdatedAt());
+          if (itemForHistory) {
+            const p = updatedPrices[itemForHistory.id];
+            setPriceDrafts((prev) => ({
+              ...prev,
+              [itemForHistory.id]: p ? String(p) : '',
+            }));
+          }
+        }}
+      />
     </div>
   );
 };

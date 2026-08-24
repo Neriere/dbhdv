@@ -9,6 +9,8 @@ import {
   DofusItem,
   DofusRecipe,
   MarketPriceMap,
+  PriceHistoryEntry,
+  ItemPriceHistorySummary,
   PriceProfile,
   PriceUpdatedAtMap,
   SyncSettings,
@@ -131,6 +133,18 @@ export async function initDB() {
         PRIMARY KEY (profile_id, item_id)
       );
 
+      CREATE TABLE IF NOT EXISTS price_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        price INTEGER NOT NULL,
+        old_price INTEGER NOT NULL DEFAULT 0,
+        difference INTEGER NOT NULL DEFAULT 0,
+        percentage_change REAL NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'manual',
+        timestamp INTEGER NOT NULL
+      );
+
       /* Optimized indexes for lightning-fast lookups */
       CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
       CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
@@ -148,6 +162,9 @@ export async function initDB() {
 
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+
+      CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
     `);
 
     // Clean up obsolete table if present
@@ -1045,17 +1062,71 @@ async function upsertPrice(
   profileId: number,
   itemId: number,
   price: number,
+  source: string = "manual",
 ): Promise<void> {
+  const cleanPrice = Math.max(0, Math.trunc(price));
+  const now = Date.now();
+
+  let oldPrice = 0;
+  try {
+    const existing = await database.execute({
+      sql: "SELECT price FROM profile_prices WHERE profile_id = ? AND item_id = ?",
+      args: [profileId, itemId],
+    });
+    if (existing.rows.length > 0) {
+      oldPrice = Number(existing.rows[0].price) || 0;
+    }
+  } catch {
+    // Ignore
+  }
+
   await database.execute({
     sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
-    args: [profileId, itemId, Math.max(0, Math.trunc(price)), Date.now()],
+    args: [profileId, itemId, cleanPrice, now],
   });
+
+  if (cleanPrice !== oldPrice) {
+    const diff = cleanPrice - oldPrice;
+    const pctChange =
+      oldPrice > 0
+        ? ((cleanPrice - oldPrice) / oldPrice) * 100
+        : cleanPrice > 0
+        ? 100
+        : 0;
+    try {
+      await database.execute({
+        sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          profileId,
+          itemId,
+          cleanPrice,
+          oldPrice,
+          diff,
+          Number(pctChange.toFixed(2)),
+          source,
+          now,
+        ],
+      });
+    } catch (e) {
+      console.warn("Failed to record price history:", e);
+    }
+  }
 }
 
 async function replaceAllPrices(
   profileId: number,
   prices: MarketPriceMap,
+  source: string = "batch",
 ): Promise<void> {
+  const existingRes = await database.execute({
+    sql: "SELECT item_id, price FROM profile_prices WHERE profile_id = ?",
+    args: [profileId],
+  });
+  const oldPricesMap: Record<number, number> = {};
+  for (const row of existingRes.rows) {
+    oldPricesMap[Number(row.item_id)] = Number(row.price) || 0;
+  }
+
   await database.execute({
     sql: "DELETE FROM profile_prices WHERE profile_id = ?",
     args: [profileId],
@@ -1067,6 +1138,38 @@ async function replaceAllPrices(
   }));
   for (let i = 0; i < statements.length; i += 250)
     await database.batch(statements.slice(i, i + 250), "write");
+
+  const historyStatements: Array<{ sql: string; args: any[] }> = [];
+  for (const [itemIdStr, price] of Object.entries(prices)) {
+    const itemId = Number(itemIdStr);
+    const cleanPrice = Math.max(0, Math.trunc(price));
+    const oldPrice = oldPricesMap[itemId] || 0;
+    if (cleanPrice !== oldPrice) {
+      const diff = cleanPrice - oldPrice;
+      const pctChange =
+        oldPrice > 0
+          ? ((cleanPrice - oldPrice) / oldPrice) * 100
+          : cleanPrice > 0
+          ? 100
+          : 0;
+      historyStatements.push({
+        sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          profileId,
+          itemId,
+          cleanPrice,
+          oldPrice,
+          diff,
+          Number(pctChange.toFixed(2)),
+          source,
+          now,
+        ],
+      });
+    }
+  }
+  for (let i = 0; i < historyStatements.length; i += 250) {
+    await database.batch(historyStatements.slice(i, i + 250), "write");
+  }
 }
 
 async function clearAllPrices(profileId: number): Promise<void> {
@@ -1074,6 +1177,235 @@ async function clearAllPrices(profileId: number): Promise<void> {
     sql: "DELETE FROM profile_prices WHERE profile_id = ?",
     args: [profileId],
   });
+}
+
+export async function getPriceHistory(options: {
+  profileId?: number;
+  itemId?: number;
+  limit?: number;
+  offset?: number;
+  search?: string;
+  filter?: "all" | "increased" | "decreased";
+}) {
+  const profileId = options.profileId || (await getActivePriceProfileId());
+  const limit = Math.min(200, Math.max(1, options.limit || 50));
+  const offset = Math.max(0, options.offset || 0);
+
+  const whereClauses: string[] = [`h.profile_id = ${profileId}`];
+  const args: any[] = [];
+
+  if (options.itemId) {
+    whereClauses.push(`h.item_id = ?`);
+    args.push(options.itemId);
+  }
+
+  if (options.filter === "increased") {
+    whereClauses.push(`h.difference > 0`);
+  } else if (options.filter === "decreased") {
+    whereClauses.push(`h.difference < 0`);
+  }
+
+  if (options.search && options.search.trim().length > 0) {
+    const term = `%${options.search.trim()}%`;
+    whereClauses.push(`(i.name_es LIKE ? OR CAST(h.item_id AS TEXT) LIKE ?)`);
+    args.push(term, term);
+  }
+
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
+
+  const totalCountRes = await database.execute({
+    sql: `SELECT COUNT(*) as count FROM price_history h LEFT JOIN items i ON h.item_id = i.id ${whereSql}`,
+    args,
+  });
+  const total = Number(totalCountRes.rows[0]?.count || 0);
+
+  const querySql = `
+    SELECT 
+      h.id,
+      h.profile_id,
+      h.item_id,
+      h.price,
+      h.old_price,
+      h.difference,
+      h.percentage_change,
+      h.source,
+      h.timestamp,
+      i.name_es as item_name,
+      i.icon_id as item_icon_id,
+      i.level as item_level,
+      i.type_id as item_type_id,
+      i.payload_json
+    FROM price_history h
+    LEFT JOIN items i ON h.item_id = i.id
+    ${whereSql}
+    ORDER BY h.timestamp DESC, h.id DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  const rowsRes = await database.execute({
+    sql: querySql,
+    args,
+  });
+
+  const entries: PriceHistoryEntry[] = rowsRes.rows.map((row) => {
+    let typeName = "";
+    if (row.payload_json) {
+      try {
+        const itemObj = JSON.parse(row.payload_json as string);
+        typeName = itemObj.type?.name?.es || itemObj.type?.name?.fr || "";
+      } catch {}
+    }
+
+    return {
+      id: Number(row.id),
+      profileId: Number(row.profile_id),
+      itemId: Number(row.item_id),
+      itemName: String(row.item_name || `Objeto #${row.item_id}`),
+      itemIconId: Number(row.item_icon_id) || Number(row.item_id),
+      itemLevel: Number(row.item_level) || 1,
+      itemTypeId: Number(row.item_type_id) || 0,
+      itemTypeName: typeName,
+      price: Number(row.price),
+      oldPrice: Number(row.old_price),
+      difference: Number(row.difference),
+      percentageChange: Number(row.percentage_change),
+      source: String(row.source || "manual"),
+      timestamp: Number(row.timestamp),
+    };
+  });
+
+  return {
+    total,
+    limit,
+    offset,
+    entries,
+  };
+}
+
+export async function getItemPriceHistory(
+  itemId: number,
+  profileId?: number,
+): Promise<ItemPriceHistorySummary> {
+  const pid = profileId || (await getActivePriceProfileId());
+  const rowsRes = await database.execute({
+    sql: `
+      SELECT 
+        h.id,
+        h.profile_id,
+        h.item_id,
+        h.price,
+        h.old_price,
+        h.difference,
+        h.percentage_change,
+        h.source,
+        h.timestamp,
+        i.name_es as item_name,
+        i.icon_id as item_icon_id,
+        i.level as item_level,
+        i.type_id as item_type_id
+      FROM price_history h
+      LEFT JOIN items i ON h.item_id = i.id
+      WHERE h.profile_id = ? AND h.item_id = ?
+      ORDER BY h.timestamp ASC, h.id ASC
+    `,
+    args: [pid, itemId],
+  });
+
+  const history: PriceHistoryEntry[] = rowsRes.rows.map((row) => ({
+    id: Number(row.id),
+    profileId: Number(row.profile_id),
+    itemId: Number(row.item_id),
+    itemName: String(row.item_name || `Objeto #${row.item_id}`),
+    itemIconId: Number(row.item_icon_id) || Number(row.item_id),
+    itemLevel: Number(row.item_level) || 1,
+    itemTypeId: Number(row.item_type_id) || 0,
+    price: Number(row.price),
+    oldPrice: Number(row.old_price),
+    difference: Number(row.difference),
+    percentageChange: Number(row.percentage_change),
+    source: String(row.source || "manual"),
+    timestamp: Number(row.timestamp),
+  }));
+
+  const currentRes = await database.execute({
+    sql: `SELECT price, updated_at FROM profile_prices WHERE profile_id = ? AND item_id = ?`,
+    args: [pid, itemId],
+  });
+  const currentPrice =
+    currentRes.rows.length > 0 ? Number(currentRes.rows[0].price) || 0 : 0;
+  const lastUpdatedAt =
+    currentRes.rows.length > 0
+      ? Number(currentRes.rows[0].updated_at) || Date.now()
+      : Date.now();
+
+  const pricesList = history.map((h) => h.price).filter((p) => p > 0);
+  if (currentPrice > 0 && !pricesList.includes(currentPrice)) {
+    pricesList.push(currentPrice);
+  }
+
+  const minPrice =
+    pricesList.length > 0 ? Math.min(...pricesList) : currentPrice;
+  const maxPrice =
+    pricesList.length > 0 ? Math.max(...pricesList) : currentPrice;
+  const avgPrice =
+    pricesList.length > 0
+      ? Math.round(pricesList.reduce((a, b) => a + b, 0) / pricesList.length)
+      : currentPrice;
+  const firstRecordedAt =
+    history.length > 0 ? history[0].timestamp : lastUpdatedAt;
+
+  return {
+    itemId,
+    history,
+    minPrice,
+    maxPrice,
+    avgPrice,
+    currentPrice,
+    firstRecordedAt,
+    lastUpdatedAt,
+    totalChanges: history.length,
+  };
+}
+
+export async function revertPriceHistoryEntry(historyId: number) {
+  invalidateServerBootstrapCache();
+  const entryRes = await database.execute({
+    sql: `SELECT profile_id, item_id, old_price, price FROM price_history WHERE id = ?`,
+    args: [historyId],
+  });
+  if (entryRes.rows.length === 0) {
+    throw new Error("Entrada de historial no encontrada.");
+  }
+  const row = entryRes.rows[0];
+  const profileId = Number(row.profile_id);
+  const itemId = Number(row.item_id);
+  const targetPrice = Number(row.old_price);
+
+  await upsertPrice(profileId, itemId, targetPrice, "revert");
+
+  return {
+    success: true,
+    itemId,
+    revertedPrice: targetPrice,
+    prices: await getPricesMap(profileId),
+    priceUpdatedAt: await getPriceUpdatedAtMap(profileId),
+  };
+}
+
+export async function clearPriceHistory(profileId?: number, itemId?: number) {
+  const pid = profileId || (await getActivePriceProfileId());
+  if (itemId) {
+    await database.execute({
+      sql: "DELETE FROM price_history WHERE profile_id = ? AND item_id = ?",
+      args: [pid, itemId],
+    });
+  } else {
+    await database.execute({
+      sql: "DELETE FROM price_history WHERE profile_id = ?",
+      args: [pid],
+    });
+  }
+  return { success: true };
 }
 
 async function getAllItems(): Promise<DofusItem[]> {

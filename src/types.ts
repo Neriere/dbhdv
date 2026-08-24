@@ -137,6 +137,35 @@ export interface SyncSettings {
 
 export type PriceUpdatedAtMap = Record<number, number>;
 
+export interface PriceHistoryEntry {
+  id: number;
+  profileId: number;
+  itemId: number;
+  itemName?: string;
+  itemIconId?: number;
+  itemLevel?: number;
+  itemTypeId?: number;
+  itemTypeName?: string;
+  price: number;
+  oldPrice: number;
+  difference: number;
+  percentageChange: number;
+  source: string; // 'manual' | 'batch' | 'import' | 'revert'
+  timestamp: number;
+}
+
+export interface ItemPriceHistorySummary {
+  itemId: number;
+  history: PriceHistoryEntry[];
+  minPrice: number;
+  maxPrice: number;
+  avgPrice: number;
+  currentPrice: number;
+  firstRecordedAt: number;
+  lastUpdatedAt: number;
+  totalChanges: number;
+}
+
 // Market Price Map (itemId -> price in Kamas)
 export type MarketPriceMap = Record<number, number>;
 

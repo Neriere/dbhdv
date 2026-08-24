@@ -35,6 +35,10 @@ import {
   importChunkRecipes,
   importChunkFinalize,
   analyzeDofusbookBuild,
+  getPriceHistory,
+  getItemPriceHistory,
+  revertPriceHistoryEntry,
+  clearPriceHistory,
 } from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -485,6 +489,74 @@ app.delete("/api/local-db/prices", async (req, res) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to clear prices";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/local-db/price-history", async (req, res) => {
+  try {
+    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const itemId = req.query.itemId ? Number(req.query.itemId) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+    const search = req.query.search ? String(req.query.search) : undefined;
+    const filter = req.query.filter as 'all' | 'increased' | 'decreased' | undefined;
+
+    const result = await getPriceHistory({
+      profileId,
+      itemId,
+      limit,
+      offset,
+      search,
+      filter,
+    });
+    res.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch price history";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/local-db/price-history/item/:id", async (req, res) => {
+  try {
+    const itemId = Number(req.params.id);
+    if (!itemId) return res.status(400).json({ error: "Invalid item ID" });
+    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+
+    const result = await getItemPriceHistory(itemId, profileId);
+    res.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch item price history";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/price-history/revert", async (req, res) => {
+  try {
+    const historyId = Number(req.body?.historyId);
+    if (!historyId) {
+      return res.status(400).json({ error: "historyId is required" });
+    }
+    const result = await revertPriceHistoryEntry(historyId);
+    res.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to revert price";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/api/local-db/price-history", async (req, res) => {
+  try {
+    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const itemId = req.body?.itemId ? Number(req.body?.itemId) : undefined;
+    const result = await clearPriceHistory(profileId, itemId);
+    res.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to clear price history";
     res.status(500).json({ error: message });
   }
 });

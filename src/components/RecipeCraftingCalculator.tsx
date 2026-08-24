@@ -33,7 +33,9 @@ import {
   ArrowLeft,
   Tag,
   ShoppingCart,
+  History,
 } from "lucide-react";
+import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
 
 import {
   DofusItem,
@@ -156,6 +158,7 @@ export const RecipeCraftingCalculator: React.FC<{
 
   const [recipeTree, setRecipeTree] = useState<RecipeTreeNode | null>(null);
   const [loadingTree, setLoadingTree] = useState<boolean>(false);
+  const [itemForHistory, setItemForHistory] = useState<DofusItem | null>(null);
 
   const [activeSalePrice, setActiveSalePrice] = useState<number | "">("");
   const [salePriceDraft, setSalePriceDraft] = useState<string>("");
@@ -314,7 +317,7 @@ export const RecipeCraftingCalculator: React.FC<{
     };
   }, [activePresetItem?.id]);
 
-  const ITEMS_PER_PAGE = 25;
+  const [itemsPerPage, setItemsPerPage] = useState<number>(24);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   useEffect(() => {
@@ -328,6 +331,7 @@ export const RecipeCraftingCalculator: React.FC<{
     onlyProfitable,
     minProfitKamas,
     minRoiPercent,
+    itemsPerPage,
   ]);
 
   const [resolvedNamesTrigger, setResolvedNamesTrigger] = useState<number>(0);
@@ -433,13 +437,13 @@ export const RecipeCraftingCalculator: React.FC<{
     marketPrices,
   ]);
 
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE) || 1;
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage) || 1;
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
 
   const paginatedItems = React.useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
-    return filteredItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [filteredItems, safeCurrentPage]);
+    const startIndex = (safeCurrentPage - 1) * itemsPerPage;
+    return filteredItems.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredItems, safeCurrentPage, itemsPerPage]);
 
   const paginatedIdsString = React.useMemo(() => {
     return paginatedItems.map((item) => item.id).join(",");
@@ -581,6 +585,14 @@ export const RecipeCraftingCalculator: React.FC<{
                 Precio Venta HDV
               </label>
               <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setItemForHistory(activePresetItem)}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-500/40 text-slate-400 hover:text-amber-300 transition-all shrink-0"
+                  title="Ver historial de precios de este objeto"
+                >
+                  <History className="w-3.5 h-3.5" />
+                </button>
                 <div className="relative">
                   <input
                     type="number"
@@ -736,6 +748,7 @@ export const RecipeCraftingCalculator: React.FC<{
                     marketPrices={marketPrices}
                     priceUpdatedAt={priceUpdatedAt}
                     onPriceChange={handlePriceChange}
+                    onOpenHistory={(item) => setItemForHistory(item)}
                   />
                 ))}
               </div>
@@ -746,6 +759,21 @@ export const RecipeCraftingCalculator: React.FC<{
             )}
           </div>
         </div>
+
+        {/* Item Price History Modal */}
+        <ItemPriceHistoryModal
+          item={itemForHistory}
+          isOpen={!!itemForHistory}
+          onClose={() => setItemForHistory(null)}
+          onPriceChanged={() => {
+            const updatedPrices = getStoredMarketPrices();
+            setMarketPrices({
+              ...DEFAULT_INGREDIENT_PRICES,
+              ...updatedPrices,
+            });
+            setPriceUpdatedAt(getStoredPriceUpdatedAt());
+          }}
+        />
       </div>
     );
   }
@@ -1050,22 +1078,40 @@ export const RecipeCraftingCalculator: React.FC<{
         {/* Catalog Pagination Controls */}
         {filteredItems.length > 0 && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md">
-            <span className="text-slate-400 font-mono">
-              Mostrando{" "}
-              <strong className="text-white">
-                {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}
-              </strong>{" "}
-              a{" "}
-              <strong className="text-white">
-                {Math.min(
-                  safeCurrentPage * ITEMS_PER_PAGE,
-                  filteredItems.length,
-                )}
-              </strong>{" "}
-              de{" "}
-              <strong className="text-amber-400">{filteredItems.length}</strong>{" "}
-              Objetos
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-slate-400 font-mono">
+                Mostrando{" "}
+                <strong className="text-white">
+                  {(safeCurrentPage - 1) * itemsPerPage + 1}
+                </strong>{" "}
+                a{" "}
+                <strong className="text-white">
+                  {Math.min(
+                    safeCurrentPage * itemsPerPage,
+                    filteredItems.length,
+                  )}
+                </strong>{" "}
+                de{" "}
+                <strong className="text-amber-400">{filteredItems.length}</strong>{" "}
+                Objetos
+              </span>
+
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+                <span className="text-slate-500 text-[11px] font-medium hidden sm:inline">
+                  Por página:
+                </span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                  aria-label="Objetos por página"
+                  className="bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold font-mono outline-none cursor-pointer"
+                >
+                  <option value={24}>24</option>
+                  <option value={48}>48</option>
+                  <option value={96}>96</option>
+                </select>
+              </div>
+            </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -1097,6 +1143,21 @@ export const RecipeCraftingCalculator: React.FC<{
           </div>
         )}
       </div>
+
+      {/* Item Price History Modal */}
+      <ItemPriceHistoryModal
+        item={itemForHistory}
+        isOpen={!!itemForHistory}
+        onClose={() => setItemForHistory(null)}
+        onPriceChanged={() => {
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices({
+            ...DEFAULT_INGREDIENT_PRICES,
+            ...updatedPrices,
+          });
+          setPriceUpdatedAt(getStoredPriceUpdatedAt());
+        }}
+      />
     </div>
   );
 };
@@ -1109,6 +1170,7 @@ interface HorizontalIngredientCardProps {
   marketPrices: MarketPriceMap;
   priceUpdatedAt: Record<number, number>;
   onPriceChange: (itemId: number, newPrice: number) => void;
+  onOpenHistory?: (item: DofusItem) => void;
 }
 
 const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
@@ -1116,6 +1178,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
   marketPrices,
   priceUpdatedAt,
   onPriceChange,
+  onOpenHistory,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[node.itemId] || node.marketPrice || 0;
@@ -1201,7 +1264,19 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
         {/* Real-time Interactive Unit Price Editor */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-1.5">
           <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-            <span>Precio Unitario:</span>
+            <div className="flex items-center gap-1.5">
+              <span>Precio Unitario:</span>
+              {onOpenHistory && (
+                <button
+                  type="button"
+                  onClick={() => onOpenHistory(node.item)}
+                  className="p-1 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors"
+                  title="Ver historial de precios"
+                >
+                  <History className="w-3 h-3" />
+                </button>
+              )}
+            </div>
             <span className="font-mono font-bold text-amber-400">Kamas</span>
           </div>
           <input
@@ -1322,6 +1397,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                     sub={sub}
                     marketPrices={marketPrices}
                     onPriceChange={onPriceChange}
+                    onOpenHistory={onOpenHistory}
                   />
                 ))}
               </div>
@@ -1340,12 +1416,14 @@ interface SubIngredientRowProps {
   sub: RecipeTreeNode;
   marketPrices: MarketPriceMap;
   onPriceChange: (itemId: number, newPrice: number) => void;
+  onOpenHistory?: (item: DofusItem) => void;
 }
 
 const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
   sub,
   marketPrices,
   onPriceChange,
+  onOpenHistory,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[sub.itemId] || sub.marketPrice || 0;
@@ -1400,7 +1478,19 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
       </div>
 
       <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 flex items-center justify-between gap-2 text-xs font-mono">
-        <span className="text-slate-400 text-[11px] font-bold">Precio U.:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-slate-400 text-[11px] font-bold">Precio U.:</span>
+          {onOpenHistory && (
+            <button
+              type="button"
+              onClick={() => onOpenHistory(sub.item)}
+              className="p-0.5 rounded bg-slate-900 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors"
+              title="Ver historial de precios"
+            >
+              <History className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <input
             type="number"
@@ -1483,6 +1573,7 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
                   sub={childSub}
                   marketPrices={marketPrices}
                   onPriceChange={onPriceChange}
+                  onOpenHistory={onOpenHistory}
                 />
               ))}
             </div>

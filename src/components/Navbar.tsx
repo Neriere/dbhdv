@@ -122,11 +122,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <select
               value={currentTheme}
               onChange={(e) => handleThemeSelect(e.target.value as DofusTheme)}
-              className="bg-slate-950 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg px-2 py-1 text-xs font-bold outline-none cursor-pointer transition-colors shadow-inner"
+              aria-label="Seleccionar tema visual"
+              className="bg-slate-950 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold outline-none cursor-pointer transition-colors shadow-inner"
             >
-              <option value="bonta" className="bg-slate-900 text-sky-300">Bonta</option>
-              <option value="brakmar" className="bg-slate-900 text-rose-300">Brakmar</option>
-              <option value="pandala" className="bg-slate-900 text-lime-300">Pandala</option>
+              <option value="bonta" className="bg-slate-900 text-sky-300">
+                🧊 Bonta (Gris / Azul Claro)
+              </option>
+              <option value="brakmar" className="bg-slate-900 text-rose-300">
+                ⚔️ Brakmar (Rojo / Negro / Gris)
+              </option>
+              <option value="pandala" className="bg-slate-900 text-emerald-300">
+                🌲 Bosque (Verde / Salvia)
+              </option>
             </select>
           </div>
 

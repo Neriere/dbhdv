@@ -2,51 +2,63 @@
 
 /* ----------------------------------------------------
  * Theme Variables & Color Palettes for Dofus HDV
- * Designed for visual comfort and high readability
+ * Designed for visual comfort, clarity, and reduced eye strain
  * ---------------------------------------------------- */
 
 :root,
 [data-theme="bonta"] {
-  --bg-main: #070d18;
-  --bg-surface: #0e1726;
-  --bg-card: #152238;
-  --bg-input: #080f1c;
-  --border-subtle: #1a2942;
-  --border-normal: #293d5e;
+  --bg-main: #101927;
+  --bg-surface: #182337;
+  --bg-card: #213049;
+  --bg-card-hover: #293d5d;
+  --bg-input: #131e30;
+  --border-subtle: #2d4060;
+  --border-normal: #3e5884;
   --border-focus: #38bdf8;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
   --accent: #38bdf8;
   --accent-hover: #7dd3fc;
-  --accent-glow: rgba(56, 189, 248, 0.18);
+  --accent-glow: rgba(56, 189, 248, 0.22);
 }
 
 [data-theme="brakmar"] {
-  --bg-main: #0e070b;
-  --bg-surface: #170d13;
-  --bg-card: #23141e;
-  --bg-input: #0c060a;
-  --border-subtle: #2b1725;
-  --border-normal: #422238;
+  --bg-main: #161619;
+  --bg-surface: #202126;
+  --bg-card: #2b2c34;
+  --bg-card-hover: #363742;
+  --bg-input: #1a1a1f;
+  --border-subtle: #383944;
+  --border-normal: #4c4e5c;
   --border-focus: #f43f5e;
+  --text-primary: #ffffff;
+  --text-secondary: #e4e4e7;
+  --text-muted: #a1a1aa;
   --accent: #f43f5e;
   --accent-hover: #fb7185;
-  --accent-glow: rgba(244, 63, 94, 0.18);
+  --accent-glow: rgba(244, 63, 94, 0.22);
 }
 
 [data-theme="pandala"] {
-  --bg-main: #090e09;
-  --bg-surface: #111a11;
-  --bg-card: #1b261b;
-  --bg-input: #0a0f0a;
-  --border-subtle: #233323;
-  --border-normal: #344c34;
-  --border-focus: #a3e635;
-  --accent: #a3e635;
-  --accent-hover: #bef264;
-  --accent-glow: rgba(163, 230, 53, 0.18);
+  --bg-main: #101c15;
+  --bg-surface: #182a20;
+  --bg-card: #223a2d;
+  --bg-card-hover: #2c4b3a;
+  --bg-input: #13221a;
+  --border-subtle: #2f4f3c;
+  --border-normal: #3f6b52;
+  --border-focus: #10b981;
+  --text-primary: #f0fdf4;
+  --text-secondary: #dcfce7;
+  --text-muted: #86efac;
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-glow: rgba(16, 185, 129, 0.22);
 }
 
 /* ----------------------------------------------------
- * Bonta (Azure / Steel Knight)
+ * Bonta (Blanco / Gris / Azul Claro - Ice Slate)
  * ---------------------------------------------------- */
 html[data-theme="bonta"],
 [data-theme="bonta"] body,
@@ -57,26 +69,53 @@ html[data-theme="bonta"],
 [data-theme="bonta"] .bg-slate-900,
 [data-theme="bonta"] .bg-slate-900\/60,
 [data-theme="bonta"] .bg-slate-900\/80,
-[data-theme="bonta"] .bg-slate-900\/90 {
+[data-theme="bonta"] .bg-slate-900\/90,
+[data-theme="bonta"] .bg-slate-900\/95 {
   background-color: var(--bg-surface) !important;
 }
 
 [data-theme="bonta"] .bg-slate-800,
 [data-theme="bonta"] .bg-slate-800\/80,
+[data-theme="bonta"] .bg-slate-800\/60,
 [data-theme="bonta"] .bg-slate-800\/50,
-[data-theme="bonta"] .bg-slate-800\/40 {
+[data-theme="bonta"] .bg-slate-800\/40,
+[data-theme="bonta"] .bg-slate-800\/30 {
   background-color: var(--bg-card) !important;
+}
+
+[data-theme="bonta"] .hover\:bg-slate-800:hover,
+[data-theme="bonta"] .hover\:bg-slate-800\/70:hover,
+[data-theme="bonta"] .hover\:bg-slate-800\/50:hover,
+[data-theme="bonta"] .hover\:bg-slate-700\/50:hover,
+[data-theme="bonta"] .hover\:bg-slate-700\/40:hover {
+  background-color: var(--bg-card-hover) !important;
 }
 
 [data-theme="bonta"] .border-slate-800,
 [data-theme="bonta"] .border-slate-800\/80,
 [data-theme="bonta"] .border-slate-800\/60,
-[data-theme="bonta"] .border-slate-800\/50 {
+[data-theme="bonta"] .border-slate-800\/50,
+[data-theme="bonta"] .border-slate-800\/40 {
   border-color: var(--border-subtle) !important;
 }
 
-[data-theme="bonta"] .border-slate-700 {
+[data-theme="bonta"] .border-slate-700,
+[data-theme="bonta"] .border-slate-700\/80,
+[data-theme="bonta"] .border-slate-700\/60,
+[data-theme="bonta"] .border-slate-700\/50 {
   border-color: var(--border-normal) !important;
+}
+
+[data-theme="bonta"] .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+[data-theme="bonta"] .text-slate-300 {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="bonta"] .text-slate-200 {
+  color: #e2e8f0 !important;
 }
 
 [data-theme="bonta"] .text-amber-400,
@@ -89,20 +128,25 @@ html[data-theme="bonta"],
   color: #ffffff !important;
 }
 
+[data-theme="bonta"] .hover\:bg-amber-600:hover,
+[data-theme="bonta"] .hover\:bg-amber-500:hover {
+  background-color: #0369a1 !important;
+}
+
 [data-theme="bonta"] .bg-amber-500\/20,
 [data-theme="bonta"] .bg-amber-500\/10,
 [data-theme="bonta"] .bg-amber-500\/15 {
-  background-color: rgba(56, 189, 248, 0.15) !important;
+  background-color: rgba(56, 189, 248, 0.16) !important;
 }
 
 [data-theme="bonta"] .border-amber-500\/40,
 [data-theme="bonta"] .border-amber-500\/30,
 [data-theme="bonta"] .border-amber-500\/20 {
-  border-color: rgba(56, 189, 248, 0.35) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
 }
 
 /* ----------------------------------------------------
- * Brakmar (Crimson / Scarlet Knight)
+ * Brakmar (Rojo / Negro / Gris - Obsidian & Steel)
  * ---------------------------------------------------- */
 html[data-theme="brakmar"],
 [data-theme="brakmar"] body,
@@ -113,26 +157,53 @@ html[data-theme="brakmar"],
 [data-theme="brakmar"] .bg-slate-900,
 [data-theme="brakmar"] .bg-slate-900\/60,
 [data-theme="brakmar"] .bg-slate-900\/80,
-[data-theme="brakmar"] .bg-slate-900\/90 {
+[data-theme="brakmar"] .bg-slate-900\/90,
+[data-theme="brakmar"] .bg-slate-900\/95 {
   background-color: var(--bg-surface) !important;
 }
 
 [data-theme="brakmar"] .bg-slate-800,
 [data-theme="brakmar"] .bg-slate-800\/80,
+[data-theme="brakmar"] .bg-slate-800\/60,
 [data-theme="brakmar"] .bg-slate-800\/50,
-[data-theme="brakmar"] .bg-slate-800\/40 {
+[data-theme="brakmar"] .bg-slate-800\/40,
+[data-theme="brakmar"] .bg-slate-800\/30 {
   background-color: var(--bg-card) !important;
+}
+
+[data-theme="brakmar"] .hover\:bg-slate-800:hover,
+[data-theme="brakmar"] .hover\:bg-slate-800\/70:hover,
+[data-theme="brakmar"] .hover\:bg-slate-800\/50:hover,
+[data-theme="brakmar"] .hover\:bg-slate-700\/50:hover,
+[data-theme="brakmar"] .hover\:bg-slate-700\/40:hover {
+  background-color: var(--bg-card-hover) !important;
 }
 
 [data-theme="brakmar"] .border-slate-800,
 [data-theme="brakmar"] .border-slate-800\/80,
 [data-theme="brakmar"] .border-slate-800\/60,
-[data-theme="brakmar"] .border-slate-800\/50 {
+[data-theme="brakmar"] .border-slate-800\/50,
+[data-theme="brakmar"] .border-slate-800\/40 {
   border-color: var(--border-subtle) !important;
 }
 
-[data-theme="brakmar"] .border-slate-700 {
+[data-theme="brakmar"] .border-slate-700,
+[data-theme="brakmar"] .border-slate-700\/80,
+[data-theme="brakmar"] .border-slate-700\/60,
+[data-theme="brakmar"] .border-slate-700\/50 {
   border-color: var(--border-normal) !important;
+}
+
+[data-theme="brakmar"] .text-slate-400 {
+  color: #a1a1aa !important;
+}
+
+[data-theme="brakmar"] .text-slate-300 {
+  color: #d4d4d8 !important;
+}
+
+[data-theme="brakmar"] .text-slate-200 {
+  color: #e4e4e7 !important;
 }
 
 [data-theme="brakmar"] .text-amber-400,
@@ -145,20 +216,25 @@ html[data-theme="brakmar"],
   color: #ffffff !important;
 }
 
+[data-theme="brakmar"] .hover\:bg-amber-600:hover,
+[data-theme="brakmar"] .hover\:bg-amber-500:hover {
+  background-color: #be123c !important;
+}
+
 [data-theme="brakmar"] .bg-amber-500\/20,
 [data-theme="brakmar"] .bg-amber-500\/10,
 [data-theme="brakmar"] .bg-amber-500\/15 {
-  background-color: rgba(244, 63, 94, 0.15) !important;
+  background-color: rgba(244, 63, 94, 0.16) !important;
 }
 
 [data-theme="brakmar"] .border-amber-500\/40,
 [data-theme="brakmar"] .border-amber-500\/30,
 [data-theme="brakmar"] .border-amber-500\/20 {
-  border-color: rgba(244, 63, 94, 0.35) !important;
+  border-color: rgba(244, 63, 94, 0.4) !important;
 }
 
 /* ----------------------------------------------------
- * Pandala (Bamboo / Warm Earth Pandawa)
+ * Pandala (Bosque / Forest - Jade & Sage)
  * ---------------------------------------------------- */
 html[data-theme="pandala"],
 [data-theme="pandala"] body,
@@ -169,46 +245,100 @@ html[data-theme="pandala"],
 [data-theme="pandala"] .bg-slate-900,
 [data-theme="pandala"] .bg-slate-900\/60,
 [data-theme="pandala"] .bg-slate-900\/80,
-[data-theme="pandala"] .bg-slate-900\/90 {
+[data-theme="pandala"] .bg-slate-900\/90,
+[data-theme="pandala"] .bg-slate-900\/95 {
   background-color: var(--bg-surface) !important;
 }
 
 [data-theme="pandala"] .bg-slate-800,
 [data-theme="pandala"] .bg-slate-800\/80,
+[data-theme="pandala"] .bg-slate-800\/60,
 [data-theme="pandala"] .bg-slate-800\/50,
-[data-theme="pandala"] .bg-slate-800\/40 {
+[data-theme="pandala"] .bg-slate-800\/40,
+[data-theme="pandala"] .bg-slate-800\/30 {
   background-color: var(--bg-card) !important;
+}
+
+[data-theme="pandala"] .hover\:bg-slate-800:hover,
+[data-theme="pandala"] .hover\:bg-slate-800\/70:hover,
+[data-theme="pandala"] .hover\:bg-slate-800\/50:hover,
+[data-theme="pandala"] .hover\:bg-slate-700\/50:hover,
+[data-theme="pandala"] .hover\:bg-slate-700\/40:hover {
+  background-color: var(--bg-card-hover) !important;
 }
 
 [data-theme="pandala"] .border-slate-800,
 [data-theme="pandala"] .border-slate-800\/80,
 [data-theme="pandala"] .border-slate-800\/60,
-[data-theme="pandala"] .border-slate-800\/50 {
+[data-theme="pandala"] .border-slate-800\/50,
+[data-theme="pandala"] .border-slate-800\/40 {
   border-color: var(--border-subtle) !important;
 }
 
-[data-theme="pandala"] .border-slate-700 {
+[data-theme="pandala"] .border-slate-700,
+[data-theme="pandala"] .border-slate-700\/80,
+[data-theme="pandala"] .border-slate-700\/60,
+[data-theme="pandala"] .border-slate-700\/50 {
   border-color: var(--border-normal) !important;
+}
+
+[data-theme="pandala"] .text-slate-400 {
+  color: #86efac !important;
+}
+
+[data-theme="pandala"] .text-slate-300 {
+  color: #bbf7d0 !important;
+}
+
+[data-theme="pandala"] .text-slate-200 {
+  color: #dcfce7 !important;
 }
 
 [data-theme="pandala"] .text-amber-400,
 [data-theme="pandala"] .text-amber-300 {
-  color: #bef264 !important;
+  color: #34d399 !important;
 }
 
 [data-theme="pandala"] .bg-amber-500 {
-  background-color: #65a30d !important;
+  background-color: #059669 !important;
   color: #ffffff !important;
+}
+
+[data-theme="pandala"] .hover\:bg-amber-600:hover,
+[data-theme="pandala"] .hover\:bg-amber-500:hover {
+  background-color: #047857 !important;
 }
 
 [data-theme="pandala"] .bg-amber-500\/20,
 [data-theme="pandala"] .bg-amber-500\/10,
 [data-theme="pandala"] .bg-amber-500\/15 {
-  background-color: rgba(163, 230, 53, 0.15) !important;
+  background-color: rgba(16, 185, 129, 0.16) !important;
 }
 
 [data-theme="pandala"] .border-amber-500\/40,
 [data-theme="pandala"] .border-amber-500\/30,
 [data-theme="pandala"] .border-amber-500\/20 {
-  border-color: rgba(163, 230, 53, 0.35) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
 }
+
+/* ----------------------------------------------------
+ * High-Readability Scrollbars & Input Focus Helpers
+ * ---------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-normal);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
