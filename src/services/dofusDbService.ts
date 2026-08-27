@@ -1,4 +1,5 @@
 import {
+  BankInventoryItem,
   ConsolidatedIngredient,
   DofusbookBuildAnalysis,
   DofusEffect,
@@ -11,6 +12,8 @@ import {
   PriceProfile,
   PriceUpdatedAtMap,
   RecipeTreeNode,
+  ReverseCraftAnalysis,
+  ReverseCraftIngredientStatus,
   ShoppingListItem,
   SyncSettings,
   SyncStatus,
@@ -554,6 +557,122 @@ export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
       name: { es: "Runa", fr: "Rune", en: "Rune" },
     },
   },
+  18001: {
+    id: 18001,
+    name: { es: "Esquíritu inferior", fr: "Éklâme inférieure", en: "Lesser Soul Shard" },
+    iconId: 18001,
+    level: 50,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  18003: {
+    id: 18003,
+    name: { es: "Esquíritu común", fr: "Éklâme commune", en: "Common Soul Shard" },
+    iconId: 18003,
+    level: 100,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  18005: {
+    id: 18005,
+    name: { es: "Esquíritu superior", fr: "Éklâme supérieure", en: "Greater Soul Shard" },
+    iconId: 18005,
+    level: 150,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  18007: {
+    id: 18007,
+    name: { es: "Esquíritu majestuoso", fr: "Éklâme majestueuse", en: "Majestic Soul Shard" },
+    iconId: 18007,
+    level: 190,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  18009: {
+    id: 18009,
+    name: { es: "Esquíritu supremo", fr: "Éklâme suprême", en: "Supreme Soul Shard" },
+    iconId: 18009,
+    level: 200,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  12739: {
+    id: 12739,
+    name: { es: "Guijarro carmesí", fr: "Galet cramoisi", en: "Crimson Pebble" },
+    iconId: 12739,
+    level: 100,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Guijarro", fr: "Galet", en: "Pebble" } },
+  },
+  757: {
+    id: 757,
+    name: { es: "Poción mineral", fr: "Potion minérale", en: "Mineral Potion" },
+    iconId: 757,
+    level: 20,
+    typeId: 12,
+    type: { id: 12, superCategoryId: 0, name: { es: "Poción", fr: "Potion", en: "Potion" } },
+  },
+  7035: {
+    id: 7035,
+    name: { es: "Fragmento de piedra pulida", fr: "Fragment de pierre polie", en: "Polished Stone Fragment" },
+    iconId: 7035,
+    level: 50,
+    typeId: 51,
+    type: { id: 51, superCategoryId: 0, name: { es: "Piedra bruta", fr: "Pierre brute", en: "Raw Stone" } },
+  },
+  14659: {
+    id: 14659,
+    name: { es: "Poción de alteración", fr: "Potion d'altération", en: "Alteration Potion" },
+    iconId: 14659,
+    level: 150,
+    typeId: 12,
+    type: { id: 12, superCategoryId: 0, name: { es: "Poción", fr: "Potion", en: "Potion" } },
+  },
+  14660: {
+    id: 14660,
+    name: { es: "Poción de metal precioso líquido", fr: "Potion de métal précieux liquide", en: "Liquid Precious Metal Potion" },
+    iconId: 14660,
+    level: 180,
+    typeId: 12,
+    type: { id: 12, superCategoryId: 0, name: { es: "Poción", fr: "Potion", en: "Potion" } },
+  },
+  // Map fragments lookup
+  ...(() => {
+    const mapsData = [
+      { baseId: 15264, name: "Vil Sombra", fr: "d'Ombre", en: "Shadow", lvl: 200 },
+      { baseId: 15273, name: "Gein", fr: "de Gein", en: "Gein", lvl: 200 },
+      { baseId: 15282, name: "Kanígrula", fr: "de Canigroula", en: "Canigroula", lvl: 160 },
+      { baseId: 15291, name: "Brumen Tinctorias", fr: "de Brumen Tinctorias", en: "Brumen Tinctorias", lvl: 70 },
+      { baseId: 15300, name: "Dremoan", fr: "de Dremoan", en: "Dremoan", lvl: 120 },
+      { baseId: 15309, name: "Ali Grofa", fr: "d'Ali Grofa", en: "Ali Grofa", lvl: 140 },
+      { baseId: 15318, name: "Panterrosa", fr: "de Panterrose", en: "Panterrose", lvl: 100 },
+      { baseId: 15327, name: "Hiperescampo", fr: "de l'Hyperscampe", en: "Hyperscampe", lvl: 130 },
+      { baseId: 15336, name: "Musha el Maldito", fr: "de Musha le Maudit", en: "Musha the Cursed", lvl: 160 },
+      { baseId: 15345, name: "Marranárgico", fr: "de Porsalu", en: "Porsalu", lvl: 110 },
+      { baseId: 15354, name: "Rok Gintok", fr: "de Rok Gintok", en: "Rok Gintok", lvl: 180 },
+      { baseId: 15363, name: "Zatoïshwan", fr: "de Zatoïshwan", en: "Zatoïshwan", lvl: 150 },
+    ];
+    const res: Record<number, DofusItem> = {};
+    for (const m of mapsData) {
+      for (let i = 0; i < 8; i++) {
+        const fragId = m.baseId + i;
+        res[fragId] = {
+          id: fragId,
+          name: {
+            es: `Fragmento de mapa de ${m.name} [${i + 1}/8]`,
+            fr: `Fragment de carte ${m.fr} [${i + 1}/8]`,
+            en: `${m.en} Map Fragment [${i + 1}/8]`,
+          },
+          iconId: 77042,
+          level: m.lvl,
+          typeId: 175,
+          type: { id: 175, superCategoryId: 0, name: { es: "Fragmento de mapa", fr: "Fragment de carte", en: "Map fragment" } },
+        };
+      }
+    }
+    return res;
+  })(),
 };
 
 export function getItemName(item: unknown): string {
@@ -637,6 +756,46 @@ export function getItemTypeName(item: unknown): string {
 }
 
 export function getItemIconUrl(item: unknown): string {
+  if (typeof item === "number") {
+    if (KNOWN_SPECIAL_INGREDIENTS[item]?.iconId) {
+      const known = KNOWN_SPECIAL_INGREDIENTS[item]!;
+      const name = (typeof known.name === "string" ? known.name : known.name?.es || "").toLowerCase();
+      if (
+        name.includes("fragmento de mapa") ||
+        name.includes("fragment de carte") ||
+        name.includes("map fragment") ||
+        known.typeId === 175
+      ) {
+        return "https://api.dofusdb.fr/img/items/77042.png";
+      }
+      if (name.startsWith("mapa de") || name.startsWith("mapa del") || known.typeId === 174) {
+        return "https://api.dofusdb.fr/img/items/77041.png";
+      }
+      return `https://api.dofusdb.fr/img/items/${known.iconId}.png`;
+    }
+
+    const found = itemsMemoryCache.find((i) => i.id === item);
+    if (found) {
+      const name = (typeof found.name === "string" ? found.name : found.name?.es || "").toLowerCase();
+      const typeId = found.typeId || found.type?.id;
+      if (
+        name.includes("fragmento de mapa") ||
+        name.includes("fragment de carte") ||
+        name.includes("map fragment") ||
+        typeId === 175
+      ) {
+        return "https://api.dofusdb.fr/img/items/77042.png";
+      }
+      if (name.startsWith("mapa de") || name.startsWith("mapa del") || name.startsWith("tabla de") || name.startsWith("tarjeta de") || typeId === 174) {
+        return "https://api.dofusdb.fr/img/items/77041.png";
+      }
+      const iconId = found.iconId || (found as any).icon_id || item;
+      return `https://api.dofusdb.fr/img/items/${iconId}.png`;
+    }
+
+    return `https://api.dofusdb.fr/img/items/${item}.png`;
+  }
+
   if (!item || typeof item !== "object") {
     return "https://api.dofusdb.fr/img/items/0.png";
   }
@@ -645,8 +804,36 @@ export function getItemIconUrl(item: unknown): string {
     iconId?: number;
     icon_id?: number;
     id?: number;
+    typeId?: number;
+    type?: { id?: number };
+    name?: string | { es?: string; fr?: string; en?: string };
     img?: string;
   };
+
+  const nameStr = (
+    typeof typed.name === "string" ? typed.name : typed.name?.es || ""
+  ).toLowerCase();
+  const itemTypeId = typed.typeId || typed.type?.id;
+
+  if (
+    nameStr.includes("fragmento de mapa") ||
+    nameStr.includes("fragment de carte") ||
+    nameStr.includes("map fragment") ||
+    itemTypeId === 175
+  ) {
+    return "https://api.dofusdb.fr/img/items/77042.png";
+  }
+  if (
+    nameStr.startsWith("mapa de") ||
+    nameStr.startsWith("mapa del") ||
+    nameStr.startsWith("tabla de") ||
+    nameStr.startsWith("tarjeta de") ||
+    nameStr.startsWith("carte du") ||
+    nameStr.startsWith("carte d'") ||
+    itemTypeId === 174
+  ) {
+    return "https://api.dofusdb.fr/img/items/77041.png";
+  }
 
   if (typeof typed.img === "string" && typed.img.startsWith("http")) {
     return typed.img;
@@ -676,7 +863,24 @@ export function getItemFallbackIconUrl(item: unknown): string {
     return "https://api.dofusdb.fr/img/items/0.png";
   }
 
-  const typed = item as { id?: number; iconId?: number; icon_id?: number };
+  const typed = item as {
+    id?: number;
+    iconId?: number;
+    icon_id?: number;
+    name?: string | { es?: string; fr?: string; en?: string };
+  };
+  const nameStr =
+    typeof typed.name === "string" ? typed.name : typed.name?.es || "";
+  if (nameStr.toLowerCase().startsWith("fragmento de mapa")) {
+    return `https://api.dofusdb.fr/img/items/15309.png`;
+  }
+  if (
+    nameStr.toLowerCase().startsWith("mapa de ") ||
+    nameStr.toLowerCase().startsWith("mapa del ")
+  ) {
+    return `https://api.dofusdb.fr/img/items/15308.png`;
+  }
+
   let iconId = typed.iconId || typed.icon_id;
   if (!iconId && typed.id && KNOWN_SPECIAL_INGREDIENTS[typed.id]?.iconId) {
     iconId = KNOWN_SPECIAL_INGREDIENTS[typed.id]!.iconId;
@@ -1847,6 +2051,81 @@ export function addToShoppingList(
   return current;
 }
 
+export function addToShoppingListById(
+  itemId: number,
+  quantity = 1,
+  parentResultId?: number
+): ShoppingListItem[] {
+  const existing = getItemById(itemId);
+  const resolvedItem: DofusItem = existing || {
+    id: itemId,
+    name: { es: `Objeto #${itemId}` },
+    level: 1,
+    typeId: 0,
+    iconId: itemId,
+    type: { id: 0, superCategoryId: 0, name: { es: "Recurso" } },
+  };
+  const parentRecipe = parentResultId ? getRecipeByResultId(parentResultId) : undefined;
+  return addToShoppingList(resolvedItem, quantity, parentRecipe);
+}
+
+export function searchAllItems(query: string, limit = 20): DofusItem[] {
+  if (!query || !query.trim()) return [];
+  const normalizedQuery = query.toLowerCase().trim();
+  const numericId = parseInt(normalizedQuery, 10);
+  const results: DofusItem[] = [];
+  const seenIds = new Set<number>();
+
+  // 1. Exact ID match if numeric
+  if (!isNaN(numericId) && numericId > 0) {
+    const itemById = getItemById(numericId);
+    if (itemById) {
+      results.push(itemById);
+      seenIds.add(itemById.id);
+    }
+  }
+
+  // 2. Search in PRESET_CRAFTABLE_ITEMS
+  for (const item of ALL_PRESET_ITEMS) {
+    if (results.length >= limit) break;
+    if (seenIds.has(item.id)) continue;
+    const name = getItemName(item).toLowerCase();
+    if (name.includes(normalizedQuery)) {
+      results.push(item);
+      seenIds.add(item.id);
+    }
+  }
+
+  // 3. Search in KNOWN_SPECIAL_INGREDIENTS
+  for (const [idStr, raw] of Object.entries(KNOWN_SPECIAL_INGREDIENTS)) {
+    if (results.length >= limit) break;
+    const id = Number(idStr);
+    if (seenIds.has(id)) continue;
+    const name = (typeof raw.name === "object" ? raw.name?.es || "" : (raw.name as string) || "").toLowerCase();
+    if (name.includes(normalizedQuery)) {
+      const resolved = getItemById(id);
+      if (resolved) {
+        results.push(resolved);
+        seenIds.add(id);
+      }
+    }
+  }
+
+  // 4. Search in itemsMemoryCache
+  for (const item of itemsMemoryCache) {
+    if (results.length >= limit) break;
+    if (seenIds.has(item.id)) continue;
+    const name = getItemName(item).toLowerCase();
+    if (name.includes(normalizedQuery)) {
+      results.push(item);
+      seenIds.add(item.id);
+    }
+  }
+
+  return results;
+}
+
+
 export function updateShoppingListItemQuantity(
   itemId: number,
   quantity: number
@@ -2134,5 +2413,254 @@ export function formatRelativeTime(timestamp?: number | null): string {
     month: "short",
   });
 }
+
+export type { BankInventoryItem };
+
+
+const BANK_INVENTORY_STORAGE_KEY = "dofus_bank_inventory_v1";
+
+export function getStoredBankInventory(): BankInventoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(BANK_INVENTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((entry) => {
+      const id = Number(entry.itemId);
+      return {
+        itemId: id,
+        quantity: Math.max(1, Number(entry.quantity) || 1),
+        item: getItemById(id) || entry.item,
+        addedAt: Number(entry.addedAt) || Date.now(),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function saveBankInventory(items: BankInventoryItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(BANK_INVENTORY_STORAGE_KEY, JSON.stringify(items));
+    window.dispatchEvent(new CustomEvent("dofus_bank_inventory_updated"));
+  } catch (err) {
+    console.warn("Error guardando inventario de banco en localStorage:", err);
+  }
+}
+
+export function addOrUpdateBankItem(itemId: number, quantity: number): BankInventoryItem[] {
+  const current = getStoredBankInventory();
+  const index = current.findIndex((i) => i.itemId === itemId);
+  const resolvedItem = getItemById(itemId) || undefined;
+
+  if (index >= 0) {
+    current[index].quantity += quantity;
+    if (!current[index].item && resolvedItem) {
+      current[index].item = resolvedItem;
+    }
+  } else {
+    current.push({
+      itemId,
+      quantity: Math.max(1, quantity),
+      item: resolvedItem,
+      addedAt: Date.now(),
+    });
+  }
+
+  saveBankInventory(current);
+  return current;
+}
+
+export function setBankItemQuantity(itemId: number, quantity: number): BankInventoryItem[] {
+  let current = getStoredBankInventory();
+  if (quantity <= 0) {
+    current = current.filter((i) => i.itemId !== itemId);
+  } else {
+    const index = current.findIndex((i) => i.itemId === itemId);
+    if (index >= 0) {
+      current[index].quantity = Math.floor(quantity);
+    } else {
+      const resolvedItem = getItemById(itemId) || undefined;
+      current.push({
+        itemId,
+        quantity: Math.floor(quantity),
+        item: resolvedItem,
+        addedAt: Date.now(),
+      });
+    }
+  }
+
+  saveBankInventory(current);
+  return current;
+}
+
+export function removeBankItem(itemId: number): BankInventoryItem[] {
+  const current = getStoredBankInventory().filter((i) => i.itemId !== itemId);
+  saveBankInventory(current);
+  return current;
+}
+
+export function clearBankInventory(): void {
+  saveBankInventory([]);
+}
+
+export function calculateReverseCraftsFromBank(
+  bankInventory: BankInventoryItem[],
+  marketPrices: MarketPriceMap = {},
+  options: {
+    minLevel?: number;
+    maxLevel?: number;
+    jobId?: number | "all";
+    onlyFullyCraftable?: boolean;
+    searchTerm?: string;
+  } = {}
+): ReverseCraftAnalysis[] {
+  // If bank is empty, return empty results immediately
+  if (!bankInventory || bankInventory.length === 0) {
+    return [];
+  }
+
+  // 1. Build lookup map of itemId -> available bank quantity
+  const bankMap = new Map<number, number>();
+  for (const b of bankInventory) {
+    if (b.quantity > 0) {
+      bankMap.set(b.itemId, (bankMap.get(b.itemId) || 0) + b.quantity);
+    }
+  }
+
+  if (bankMap.size === 0) {
+    return [];
+  }
+
+  // 2. Fetch all known craftable items
+  const allRecipesSnapshot = getCraftableItemsSnapshot();
+  const results: ReverseCraftAnalysis[] = [];
+
+  const minLvl = typeof options.minLevel === "number" ? options.minLevel : 1;
+  const maxLvl = typeof options.maxLevel === "number" ? options.maxLevel : 200;
+  const filterJob = options.jobId && options.jobId !== "all" ? options.jobId : null;
+  const searchFilter = (options.searchTerm || "").toLowerCase().trim();
+
+  for (const item of allRecipesSnapshot) {
+    if (item.level < minLvl || item.level > maxLvl) continue;
+    if (filterJob && item.jobId !== filterJob) continue;
+
+    const recipe = item.recipeData || getRecipeByResultId(item.id);
+    if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) continue;
+
+    // Fast check: Skip recipes that don't use ANY of the bank ingredients
+    let hasMatchingBankIngredient = false;
+    for (let i = 0; i < recipe.ingredientIds.length; i++) {
+      if (bankMap.has(recipe.ingredientIds[i])) {
+        hasMatchingBankIngredient = true;
+        break;
+      }
+    }
+    if (!hasMatchingBankIngredient) {
+      continue;
+    }
+
+    if (searchFilter) {
+      const name = getItemName(item).toLowerCase();
+      if (!name.includes(searchFilter)) continue;
+    }
+
+    let hasAtLeastOneBankIngredient = false;
+    let availableIngredientsCount = 0;
+    const totalIngredientsCount = recipe.ingredientIds.length;
+    let bankMaterialsValue = 0;
+    let missingMaterialsCost = 0;
+    let totalCraftCost = 0;
+    let isFullyCraftable = true;
+    let possibleCraftBatches = Infinity;
+
+    const ingredientsStatus: ReverseCraftIngredientStatus[] = [];
+
+    for (let i = 0; i < recipe.ingredientIds.length; i++) {
+      const ingId = recipe.ingredientIds[i];
+      const required = recipe.quantities[i] || 1;
+      const inBank = bankMap.get(ingId) || 0;
+      const unitPrice = marketPrices[ingId] || getStoredItemPrice(ingId) || 0;
+      const ingItem = getItemById(ingId);
+      const ingName = getItemName(ingItem || { id: ingId });
+      const ingIcon = ingItem?.iconId || ingId;
+
+      const missing = Math.max(0, required - inBank);
+      const isFullyAvailable = inBank >= required;
+      const ingMissingCost = missing * unitPrice;
+      const ingBankCost = Math.min(required, inBank) * unitPrice;
+
+      if (inBank > 0) {
+        hasAtLeastOneBankIngredient = true;
+        availableIngredientsCount++;
+      }
+      if (!isFullyAvailable) {
+        isFullyCraftable = false;
+      }
+
+      const batchesWithThisIng = Math.floor(inBank / required);
+      if (batchesWithThisIng < possibleCraftBatches) {
+        possibleCraftBatches = batchesWithThisIng;
+      }
+
+      bankMaterialsValue += ingBankCost;
+      missingMaterialsCost += ingMissingCost;
+      totalCraftCost += required * unitPrice;
+
+      ingredientsStatus.push({
+        itemId: ingId,
+        itemName: ingName,
+        itemIconId: ingIcon,
+        required,
+        inBank,
+        missing,
+        unitPrice,
+        missingCost: ingMissingCost,
+        isFullyAvailable,
+      });
+    }
+
+    if (options.onlyFullyCraftable && !isFullyCraftable) {
+      continue;
+    }
+
+    if (!hasAtLeastOneBankIngredient) {
+      continue;
+    }
+
+    const maxCraftableWithBank = isFullyCraftable && isFinite(possibleCraftBatches) ? possibleCraftBatches : 0;
+    const materialsCoveragePercent = totalIngredientsCount > 0
+      ? Math.round((availableIngredientsCount / totalIngredientsCount) * 100)
+      : 0;
+
+    const marketSalePrice = marketPrices[item.id] || getStoredItemPrice(item.id) || item.defaultMarketSalePrice || (totalCraftCost * 1.3);
+    const netProfit = marketSalePrice - totalCraftCost;
+    const roi = totalCraftCost > 0 ? ((netProfit / totalCraftCost) * 100) : 0;
+
+    results.push({
+      item,
+      recipe,
+      jobId: item.jobId,
+      jobNameEs: item.jobNameEs,
+      totalCraftCost,
+      marketSalePrice,
+      netProfit,
+      roi,
+      maxCraftableWithBank,
+      materialsCoveragePercent,
+      availableIngredientsCount,
+      totalIngredientsCount,
+      bankMaterialsValue,
+      missingMaterialsCost,
+      ingredientsStatus,
+      isFullyCraftable,
+    });
+  }
+
+  return results;
+}
+
 
 

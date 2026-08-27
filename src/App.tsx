@@ -40,6 +40,16 @@ const PriceManager = lazy(() =>
     default: m.PriceManager,
   }))
 );
+const BankCraftingView = lazy(() =>
+  import('./components/BankCraftingView').then((m) => ({
+    default: m.BankCraftingView,
+  }))
+);
+const TreasureHuntCalculator = lazy(() =>
+  import('./components/TreasureHuntCalculator').then((m) => ({
+    default: m.TreasureHuntCalculator,
+  }))
+);
 const DofusImporter = lazy(() =>
   import('./components/DofusImporter').then((m) => ({
     default: m.DofusImporter,
@@ -89,6 +99,21 @@ export default function App() {
             <RecipeCraftingCalculator
               initialSelectedItem={selectedItem}
               onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
+
+          {activeTab === 'bank' && (
+            <BankCraftingView
+              onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
+              onSelectForCrushing={handleSelectForCrushing}
+              onNavigateToShopping={() => setActiveTab('shopping')}
+            />
+          )}
+
+          {activeTab === 'treasure_maps' && (
+            <TreasureHuntCalculator
+              onNavigateToShopping={() => setActiveTab('shopping')}
+              onNavigateToBank={() => setActiveTab('bank')}
             />
           )}
 

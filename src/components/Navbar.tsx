@@ -8,6 +8,8 @@ import {
   Zap,
   ShoppingCart,
   Sparkles,
+  Vault,
+  Map as MapIcon,
 } from 'lucide-react';
 import {
   getActivePriceProfileId,
@@ -15,6 +17,7 @@ import {
   initializeDatabase,
   setActiveLocalPriceProfile,
   getShoppingList,
+  getStoredBankInventory,
   getStoredTheme,
   setStoredTheme,
 } from '../services/dofusDbService';
@@ -22,6 +25,8 @@ import { DofusTheme } from '../types';
 
 export type ActiveTab =
   | 'recipes'
+  | 'bank'
+  | 'treasure_maps'
   | 'dofusbook'
   | 'rompedora'
   | 'ranking'
@@ -41,6 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [profiles, setProfiles] = useState(getPriceProfiles());
   const [activeProfileId, setActiveProfileId] = useState(getActivePriceProfileId());
   const [shoppingCount, setShoppingCount] = useState(getShoppingList().length);
+  const [bankCount, setBankCount] = useState(getStoredBankInventory().length);
   const [currentTheme, setCurrentTheme] = useState<DofusTheme>(getStoredTheme());
 
   useEffect(() => {
@@ -48,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       setProfiles(getPriceProfiles());
       setActiveProfileId(getActivePriceProfileId());
       setShoppingCount(getShoppingList().length);
+      setBankCount(getStoredBankInventory().length);
     };
 
     const handleThemeChange = (e: any) => {
@@ -69,11 +76,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
     window.addEventListener('dofus_database_updated', hydrate);
     window.addEventListener('dofus_shopping_list_updated', hydrate);
+    window.addEventListener('dofus_bank_inventory_updated', hydrate);
     window.addEventListener('dofus_theme_updated', handleThemeChange);
 
     return () => {
       window.removeEventListener('dofus_database_updated', hydrate);
       window.removeEventListener('dofus_shopping_list_updated', hydrate);
+      window.removeEventListener('dofus_bank_inventory_updated', hydrate);
       window.removeEventListener('dofus_theme_updated', handleThemeChange);
     };
   }, [currentTheme]);
@@ -94,6 +103,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const tabs = [
     { id: 'recipes' as ActiveTab, label: 'Recetas', icon: Wrench },
+    { id: 'bank' as ActiveTab, label: 'Mi Banco', icon: Vault, badge: bankCount },
+    { id: 'treasure_maps' as ActiveTab, label: 'Mapas & ByC', icon: MapIcon },
     { id: 'dofusbook' as ActiveTab, label: 'Set Dofusbook', icon: Sparkles },
     { id: 'rompedora' as ActiveTab, label: 'Rompedora', icon: Zap },
     { id: 'ranking' as ActiveTab, label: 'Ranking', icon: Trophy },

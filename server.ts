@@ -4,8 +4,8 @@ import { createServer as createViteServer } from "vite";
 import app from "./api/index.js";
 
 async function startServer() {
-  const PORT = Number(process.env.PORT || process.env.APP_PORT || 3000);
-  const HOST = process.env.APP_HOST || "0.0.0.0";
+  const PORT = 3000;
+  const HOST = "0.0.0.0";
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -9,8 +9,28 @@ export interface PresetCraftableItem extends DofusItem {
 
 export const DEFAULT_INGREDIENT_PRICES: Record<number, number> = {
   14659: 35000,
+  14660: 45000,
   7035: 450,
   757: 250,
+  12739: 3500,
+  18001: 450,
+  18003: 850,
+  18005: 2200,
+  18007: 5500,
+  18009: 14000,
+  // Map fragments default estimated prices
+  15264: 120000, 15265: 115000, 15266: 125000, 15267: 110000, 15268: 130000, 15269: 115000, 15270: 140000, 15271: 120000,
+  15273: 180000, 15274: 175000, 15275: 190000, 15276: 170000, 15277: 200000, 15278: 185000, 15279: 210000, 15280: 195000,
+  15282: 60000, 15283: 65000, 15284: 60000, 15285: 70000, 15286: 62000, 15287: 65000, 15288: 68000, 15289: 60000,
+  15291: 18000, 15292: 20000, 15293: 18000, 15294: 22000, 15295: 19000, 15296: 18000, 15297: 20000, 15298: 19000,
+  15300: 35000, 15301: 38000, 15302: 35000, 15303: 40000, 15304: 36000, 15305: 35000, 15306: 37000, 15307: 35000,
+  15309: 50000, 15310: 52000, 15311: 48000, 15312: 55000, 15313: 50000, 15314: 49000, 15315: 53000, 15316: 50000,
+  15318: 28000, 15319: 30000, 15320: 27000, 15321: 32000, 15322: 29000, 15323: 28000, 15324: 31000, 15325: 28000,
+  15327: 42000, 15328: 45000, 15329: 40000, 15330: 48000, 15331: 43000, 15332: 42000, 15333: 44000, 15334: 41000,
+  15336: 75000, 15337: 80000, 15338: 72000, 15339: 85000, 15340: 76000, 15341: 74000, 15342: 78000, 15343: 75000,
+  15345: 32000, 15346: 34000, 15347: 30000, 15348: 36000, 15349: 33000, 15350: 31000, 15351: 35000, 15352: 32000,
+  15354: 95000, 15355: 100000, 15356: 90000, 15357: 105000, 15358: 98000, 15359: 95000, 15360: 102000, 15361: 96000,
+  15363: 55000, 15364: 58000, 15365: 52000, 15366: 60000, 15367: 56000, 15368: 54000, 15369: 57000, 15370: 55000,
   368: 180,
   369: 190,
   2436: 1200,
@@ -25,7 +45,6 @@ export const DEFAULT_INGREDIENT_PRICES: Record<number, number> = {
   8401: 18000,
   8404: 22000,
   14921: 45000,
-  15271: 65000,
   16123: 15000,
   8486: 18000,
   8485: 19000,
@@ -16114,6 +16133,601 @@ export const PRESET_CRAFTABLE_ITEMS: PresetCraftableItem[] = [
         2
       ],
       "jobId": 60
+    }
+  },
+  {
+    "id": 7010,
+    "name": {
+      "es": "Piedra de alma pequeña",
+      "fr": "Petite pierre d'âme",
+      "en": "Small Soul Stone"
+    },
+    "description": {
+      "es": "Permite capturar sistemáticamente el alma de las criaturas en combate de nivel 50 o inferior.",
+      "fr": "Permet de capturer l'âme de monstres de niveau 50 maximum.",
+      "en": "Allows capturing the soul of monsters level 50 or below."
+    },
+    "level": 50,
+    "typeId": 83,
+    "type": {
+      "id": 83,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Piedra de alma",
+        "fr": "Pierre d'âme",
+        "en": "Soul stone"
+      }
+    },
+    "iconId": 7010,
+    "jobId": 24,
+    "jobNameEs": "Minero",
+    "defaultMarketSalePrice": 15000,
+    "recipeData": {
+      "id": 7010,
+      "resultId": 7010,
+      "ingredientIds": [18001, 757, 12739],
+      "quantities": [10, 1, 1],
+      "jobId": 24
+    }
+  },
+  {
+    "id": 7012,
+    "name": {
+      "es": "Piedra de alma mediana",
+      "fr": "Moyenne pierre d'âme",
+      "en": "Medium Soul Stone"
+    },
+    "description": {
+      "es": "Permite capturar sistemáticamente el alma de las criaturas en combate de nivel 100 o inferior.",
+      "fr": "Permet de capturer l'âme de monstres de niveau 100 maximum.",
+      "en": "Allows capturing the soul of monsters level 100 or below."
+    },
+    "level": 100,
+    "typeId": 83,
+    "type": {
+      "id": 83,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Piedra de alma",
+        "fr": "Pierre d'âme",
+        "en": "Soul stone"
+      }
+    },
+    "iconId": 7012,
+    "jobId": 24,
+    "jobNameEs": "Minero",
+    "defaultMarketSalePrice": 35000,
+    "recipeData": {
+      "id": 7012,
+      "resultId": 7012,
+      "ingredientIds": [18003, 757, 12739],
+      "quantities": [10, 1, 2],
+      "jobId": 24
+    }
+  },
+  {
+    "id": 7014,
+    "name": {
+      "es": "Piedra de alma grande",
+      "fr": "Grande pierre d'âme",
+      "en": "Large Soul Stone"
+    },
+    "description": {
+      "es": "Permite capturar sistemáticamente el alma de las criaturas en combate de nivel 150 o inferior.",
+      "fr": "Permet de capturer l'âme de monstres de niveau 150 maximum.",
+      "en": "Allows capturing the soul of monsters level 150 or below."
+    },
+    "level": 150,
+    "typeId": 83,
+    "type": {
+      "id": 83,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Piedra de alma",
+        "fr": "Pierre d'âme",
+        "en": "Soul stone"
+      }
+    },
+    "iconId": 7014,
+    "jobId": 24,
+    "jobNameEs": "Minero",
+    "defaultMarketSalePrice": 75000,
+    "recipeData": {
+      "id": 7014,
+      "resultId": 7014,
+      "ingredientIds": [18005, 757, 7035, 12739],
+      "quantities": [10, 1, 1, 3],
+      "jobId": 24
+    }
+  },
+  {
+    "id": 7016,
+    "name": {
+      "es": "Piedra de alma enorme",
+      "fr": "Énorme pierre d'âme",
+      "en": "Huge Soul Stone"
+    },
+    "description": {
+      "es": "Permite capturar sistemáticamente el alma de las criaturas en combate de nivel 200 o inferior.",
+      "fr": "Permet de capturer l'âme de monstres de niveau 200 maximum.",
+      "en": "Allows capturing the soul of monsters level 200 or below."
+    },
+    "level": 200,
+    "typeId": 83,
+    "type": {
+      "id": 83,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Piedra de alma",
+        "fr": "Pierre d'âme",
+        "en": "Soul stone"
+      }
+    },
+    "iconId": 7016,
+    "jobId": 24,
+    "jobNameEs": "Minero",
+    "defaultMarketSalePrice": 180000,
+    "recipeData": {
+      "id": 7016,
+      "resultId": 7016,
+      "ingredientIds": [18007, 14659, 757, 12739],
+      "quantities": [10, 2, 1, 4],
+      "jobId": 24
+    }
+  },
+  {
+    "id": 7018,
+    "name": {
+      "es": "Piedra de alma gigantesca",
+      "fr": "Gigantesque pierre d'âme",
+      "en": "Gigantic Soul Stone"
+    },
+    "description": {
+      "es": "Permite capturar sistemáticamente el alma de cualquier criatura en combate (incluido Kralamar Gigante y archimonstruos).",
+      "fr": "Permet de capturer l'âme de n'importe quelle créature en combat.",
+      "en": "Allows capturing the soul of any creature in combat."
+    },
+    "level": 200,
+    "typeId": 83,
+    "type": {
+      "id": 83,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Piedra de alma",
+        "fr": "Pierre d'âme",
+        "en": "Soul stone"
+      }
+    },
+    "iconId": 7018,
+    "jobId": 24,
+    "jobNameEs": "Minero",
+    "defaultMarketSalePrice": 380000,
+    "recipeData": {
+      "id": 7018,
+      "resultId": 7018,
+      "ingredientIds": [18009, 14659, 14660, 12739],
+      "quantities": [10, 2, 1, 5],
+      "jobId": 24
+    }
+  },
+  {
+    "id": 15263,
+    "name": {
+      "es": "Mapa de Vil Sombra",
+      "fr": "Carte d'Ombre",
+      "en": "Shadow Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Vil Sombra en la Arca del Tesoro.",
+      "fr": "Permet de lancer la chasse légendaire d'Ombre.",
+      "en": "Allows launching the legendary treasure hunt of Shadow."
+    },
+    "level": 200,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15263,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 1250000,
+    "recipeData": {
+      "id": 15263,
+      "resultId": 15263,
+      "ingredientIds": [15264, 15265, 15266, 15267, 15268, 15269, 15270, 15271],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15272,
+    "name": {
+      "es": "Mapa de Gein",
+      "fr": "Carte de Gein",
+      "en": "Gein Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Gein en la Arca del Tesoro.",
+      "fr": "Permet de lancer la chasse légendaire de Gein.",
+      "en": "Allows launching the legendary treasure hunt of Gein."
+    },
+    "level": 200,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15272,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 1850000,
+    "recipeData": {
+      "id": 15272,
+      "resultId": 15272,
+      "ingredientIds": [15273, 15274, 15275, 15276, 15277, 15278, 15279, 15280],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15281,
+    "name": {
+      "es": "Mapa de Kanígrula",
+      "fr": "Carte de Canigroula",
+      "en": "Canigroula Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Kanígrula en la Arca del Tesoro.",
+      "fr": "Permet de lancer la chasse légendaire de Canigroula.",
+      "en": "Allows launching the legendary treasure hunt of Canigroula."
+    },
+    "level": 160,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15281,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 650000,
+    "recipeData": {
+      "id": 15281,
+      "resultId": 15281,
+      "ingredientIds": [15282, 15283, 15284, 15285, 15286, 15287, 15288, 15289],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15290,
+    "name": {
+      "es": "Mapa de Brumen Tinctorias",
+      "fr": "Carte de Brumen Tinctorias",
+      "en": "Brumen Tinctorias Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Brumen Tinctorias.",
+      "fr": "Permet de lancer la chasse légendaire de Brumen Tinctorias.",
+      "en": "Allows launching the legendary treasure hunt of Brumen Tinctorias."
+    },
+    "level": 70,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15290,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 190000,
+    "recipeData": {
+      "id": 15290,
+      "resultId": 15290,
+      "ingredientIds": [15291, 15292, 15293, 15294, 15295, 15296, 15297, 15298],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15299,
+    "name": {
+      "es": "Mapa de Dremoan",
+      "fr": "Carte de Dremoan",
+      "en": "Dremoan Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Dremoan.",
+      "fr": "Permet de lancer la chasse légendaire de Dremoan.",
+      "en": "Allows launching the legendary treasure hunt of Dremoan."
+    },
+    "level": 120,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15299,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 360000,
+    "recipeData": {
+      "id": 15299,
+      "resultId": 15299,
+      "ingredientIds": [15300, 15301, 15302, 15303, 15304, 15305, 15306, 15307],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15308,
+    "name": {
+      "es": "Mapa de Ali Grofa",
+      "fr": "Carte d'Ali Grofa",
+      "en": "Ali Grofa Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Ali Grofa.",
+      "fr": "Permet de lancer la chasse légendaire d'Ali Grofa.",
+      "en": "Allows launching the legendary treasure hunt of Ali Grofa."
+    },
+    "level": 140,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15308,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 490000,
+    "recipeData": {
+      "id": 15308,
+      "resultId": 15308,
+      "ingredientIds": [15309, 15310, 15311, 15312, 15313, 15314, 15315, 15316],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15317,
+    "name": {
+      "es": "Mapa de Panterrosa",
+      "fr": "Carte de Panterrose",
+      "en": "Panterrose Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Panterrosa.",
+      "fr": "Permet de lancer la chasse légendaire de Panterrose.",
+      "en": "Allows launching the legendary treasure hunt of Panterrose."
+    },
+    "level": 100,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15317,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 290000,
+    "recipeData": {
+      "id": 15317,
+      "resultId": 15317,
+      "ingredientIds": [15318, 15319, 15320, 15321, 15322, 15323, 15324, 15325],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15326,
+    "name": {
+      "es": "Mapa del Hiperescampo",
+      "fr": "Carte de l'Hyperscampe",
+      "en": "Hyperscampe Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria del Hiperescampo.",
+      "fr": "Permet de lancer la chasse légendaire de l'Hyperscampe.",
+      "en": "Allows launching the legendary treasure hunt of Hyperscampe."
+    },
+    "level": 130,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15326,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 430000,
+    "recipeData": {
+      "id": 15326,
+      "resultId": 15326,
+      "ingredientIds": [15327, 15328, 15329, 15330, 15331, 15332, 15333, 15334],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15335,
+    "name": {
+      "es": "Mapa de Musha el Maldito",
+      "fr": "Carte de Musha le Maudit",
+      "en": "Musha the Cursed Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Musha el Maldito.",
+      "fr": "Permet de lancer la chasse légendaire de Musha le Maudit.",
+      "en": "Allows launching the legendary treasure hunt of Musha the Cursed."
+    },
+    "level": 160,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15335,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 760000,
+    "recipeData": {
+      "id": 15335,
+      "resultId": 15335,
+      "ingredientIds": [15336, 15337, 15338, 15339, 15340, 15341, 15342, 15343],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15344,
+    "name": {
+      "es": "Mapa de Marranárgico",
+      "fr": "Carte de Porsalu",
+      "en": "Porsalu Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Marranárgico.",
+      "fr": "Permet de lancer la chasse légendaire de Porsalu.",
+      "en": "Allows launching the legendary treasure hunt of Porsalu."
+    },
+    "level": 110,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15344,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 330000,
+    "recipeData": {
+      "id": 15344,
+      "resultId": 15344,
+      "ingredientIds": [15345, 15346, 15347, 15348, 15349, 15350, 15351, 15352],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15353,
+    "name": {
+      "es": "Mapa de Rok Gintok",
+      "fr": "Carte de Rok Gintok",
+      "en": "Rok Gintok Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Rok Gintok.",
+      "fr": "Permet de lancer la chasse légendaire de Rok Gintok.",
+      "en": "Allows launching the legendary treasure hunt of Rok Gintok."
+    },
+    "level": 180,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15353,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 980000,
+    "recipeData": {
+      "id": 15353,
+      "resultId": 15353,
+      "ingredientIds": [15354, 15355, 15356, 15357, 15358, 15359, 15360, 15361],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
+    }
+  },
+  {
+    "id": 15362,
+    "name": {
+      "es": "Mapa de Zatoïshwan",
+      "fr": "Carte de Zatoïshwan",
+      "en": "Zatoïshwan Map"
+    },
+    "description": {
+      "es": "Permite iniciar la búsqueda legendaria de Zatoïshwan.",
+      "fr": "Permet de lancer la chasse légendaire de Zatoïshwan.",
+      "en": "Allows launching the legendary treasure hunt of Zatoïshwan."
+    },
+    "level": 150,
+    "typeId": 173,
+    "type": {
+      "id": 173,
+      "superCategoryId": 0,
+      "name": {
+        "es": "Mapa del tesoro",
+        "fr": "Carte au trésor",
+        "en": "Treasure map"
+      }
+    },
+    "iconId": 15362,
+    "jobId": 90,
+    "jobNameEs": "Mapas del Tesoro",
+    "defaultMarketSalePrice": 560000,
+    "recipeData": {
+      "id": 15362,
+      "resultId": 15362,
+      "ingredientIds": [15363, 15364, 15365, 15366, 15367, 15368, 15369, 15370],
+      "quantities": [1, 1, 1, 1, 1, 1, 1, 1],
+      "jobId": 90
     }
   }
 ];

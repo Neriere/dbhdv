@@ -1,6 +1,6 @@
 {
   "name": "DofusDB API & Crushing Explorer",
-  "description": "Calculadora de sets de Dofusbook, comparador de crafteo vs compra en HDV, gestor de precios multiserver, simulador de machacado (brisage) y sincronización con DofusDB y SQLite/Turso.",
+  "description": "Calculadora de recetas y sets de Dofusbook, gestor de inventario 'Mi Banco' con crafteo inverso y optimizador de ROI, mapas y fragmentos de búsqueda del tesoro, comparador HDV, simulador de machacado de runas y sincronización con DofusDB y SQLite/Turso.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

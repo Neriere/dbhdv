@@ -150,11 +150,11 @@ export function isOmittedItem(item: {
     return true;
   }
 
-  // 5. Objetos de misión no crafteables ni comerciables, fichas temporales y piedras de alma de misión
+  // 5. Objetos de misión no crafteables ni comerciables, fichas temporales
   if (
     [
-      24, 80, 83, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146,
-      147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 307, 308, 312,
+      24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146,
+      147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 312,
     ].includes(typeId)
   ) {
     return true;

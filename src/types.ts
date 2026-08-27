@@ -291,3 +291,43 @@ export interface ArbitrageOpportunity {
   bestProfit: number;
   bestRoi: number;
 }
+
+// "Mi Banco" Inventory & Reverse Crafting Types
+export interface BankInventoryItem {
+  itemId: number;
+  quantity: number;
+  item?: DofusItem;
+  addedAt?: number;
+}
+
+export interface ReverseCraftIngredientStatus {
+  itemId: number;
+  itemName: string;
+  itemIconId: number;
+  required: number;
+  inBank: number;
+  missing: number;
+  unitPrice: number;
+  missingCost: number;
+  isFullyAvailable: boolean;
+}
+
+export interface ReverseCraftAnalysis {
+  item: DofusItem;
+  recipe: DofusRecipe;
+  jobId?: number;
+  jobNameEs?: string;
+  totalCraftCost: number;
+  marketSalePrice: number;
+  netProfit: number;
+  roi: number;
+  maxCraftableWithBank: number; // e.g. Max items craftable strictly from bank without buying
+  materialsCoveragePercent: number; // e.g. 75% of materials
+  availableIngredientsCount: number;
+  totalIngredientsCount: number;
+  bankMaterialsValue: number; // Estimated savings from bank materials
+  missingMaterialsCost: number; // Kamas needed in HDV to finish the craft
+  ingredientsStatus: ReverseCraftIngredientStatus[];
+  isFullyCraftable: boolean;
+}
+

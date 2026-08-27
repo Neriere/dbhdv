@@ -34,6 +34,8 @@ import {
   Tag,
   ShoppingCart,
   History,
+  Map as MapIcon,
+  Vault,
 } from "lucide-react";
 import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
 
@@ -64,6 +66,7 @@ import {
   getItemFallbackIconUrl,
   resolveMissingItemNamesInBatch,
   addToShoppingList,
+  addOrUpdateBankItem,
 } from "../services/dofusDbService";
 import { matchesSearchQuery } from "../utils/searchUtils";
 
@@ -84,10 +87,13 @@ const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Fish,
   Heart,
   Sparkles,
+  Map: MapIcon,
 };
 
 const getJobBadgeStyle = (jobName: string) => {
   const name = (jobName || "").toLowerCase();
+  if (name.includes("mapa") || name.includes("tesoro"))
+    return "bg-amber-500/20 border-amber-500/40 text-amber-200";
   if (name.includes("alquimista"))
     return "bg-emerald-500/20 border-emerald-500/40 text-emerald-300";
   if (name.includes("campesino"))
@@ -1305,9 +1311,23 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
       <div className="space-y-2.5 pt-2 border-t border-slate-800">
         {/* Total Cost for required quantity */}
         <div className="flex items-center justify-between font-mono">
-          <span className="text-xs font-bold text-slate-400">
-            Subtotal ({node.quantity}x):
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400">
+              Subtotal ({node.quantity}x):
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                addOrUpdateBankItem(node.item.id, node.quantity);
+                window.dispatchEvent(new CustomEvent("dofus_bank_inventory_updated"));
+              }}
+              className="px-1.5 py-0.5 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors text-[10px] font-sans flex items-center gap-1"
+              title="Guardar esta cantidad en Mi Banco"
+            >
+              <Vault className="w-3 h-3 text-amber-400" />
+              +Banco
+            </button>
+          </div>
           <span className="text-emerald-400 font-black text-base">
             {totalPriceForQuantity.toLocaleString()} K
           </span>

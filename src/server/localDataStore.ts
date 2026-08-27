@@ -189,7 +189,7 @@ export async function initDB() {
       await database.execute(`
         DELETE FROM items WHERE 
           super_category_id IN (4, 5, 14, 15, 23) OR 
-          type_id IN (24, 80, 83, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 307, 308, 312) OR
+          type_id IN (24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 312) OR
           name_es LIKE '[!]%' OR
           name_es LIKE '%insignias de expedición%' OR
           name_es LIKE '%insignia de expedición%' OR
