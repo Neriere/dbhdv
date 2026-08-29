@@ -24,8 +24,14 @@ import {
   DollarSign,
   Plus,
   ExternalLink,
+  Hammer,
 } from "lucide-react";
 import { LEGENDARY_HUNTS, LegendaryHuntInfo } from "../data/legendaryHuntsData";
+import {
+  getRelatedEquipmentForHunt,
+  BycRelatedEquipment,
+} from "../data/bycEquipmentData";
+import { BycRecipeIngredient } from "../data/bycDatabase";
 import {
   getStoredMarketPrices,
   saveMarketPrice,
@@ -40,7 +46,51 @@ interface TreasureHuntCalculatorProps {
   onNavigateToBank?: () => void;
 }
 
+export interface CalculatedBycEquipment {
+  id: number;
+  name: string;
+  level: number;
+  type: string;
+  iconId: number;
+  salePriceGross: number;
+  salePriceNet: number;
+  resourceQtyNeeded: number;
+  otherIngredientsCost: number;
+  // If making through Hunt Loop (Buy fragments/map, do hunt, craft equipment):
+  totalInvestmentHunt: number;
+  totalRevenueHunt: number;
+  netProfitHunt: number;
+  roiHunt: number;
+  // If making through Direct HDV Resource purchase:
+  totalInvestmentHdv: number;
+  netProfitHdv: number;
+  roiHdv: number;
+  // Best Craft Strategy:
+  optimalMethod: "hunt" | "hdv";
+  optimalInvestment: number;
+  optimalNetProfit: number;
+  optimalRoi: number;
+  // Added value vs raw resource sale:
+  addedValueVsRawSale: number;
+  recipeIngredients: BycRecipeIngredient[];
+}
+
 const SEBUSCALIN_STORAGE_KEY = "dofus_sebuscalin_unit_price_v1";
+
+// Helper to format values in kk/mk or standard K
+const formatKamas = (amount: number): string => {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? "-" : "";
+  if (abs >= 1000000) {
+    const val = (abs / 1000000).toFixed(1).replace(/\.0$/, "");
+    return `${sign}${val}mk`;
+  }
+  if (abs >= 1000) {
+    const val = (abs / 1000).toFixed(1).replace(/\.0$/, "");
+    return `${sign}${val}kk`;
+  }
+  return `${sign}${abs.toLocaleString()} K`;
+};
 
 export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
   onNavigateToShopping,
@@ -63,11 +113,14 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
   const [zoneFilter, setZoneFilter] = useState<string>("all");
   const [onlyProfitable, setOnlyProfitable] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<
-    "profit_desc" | "roi_desc" | "hunt_vs_buy" | "sebuscalines_desc" | "cost_asc" | "level_desc"
+    "profit_desc" | "craft_profit_desc" | "roi_desc" | "hunt_vs_buy" | "sebuscalines_desc" | "cost_asc" | "level_desc"
   >("profit_desc");
 
   // Selected Hunt Modal for deep fragment management
   const [selectedHuntForDetail, setSelectedHuntForDetail] = useState<LegendaryHuntInfo | null>(null);
+
+  // Active equipment tab per hunt
+  const [selectedEquipmentTab, setSelectedEquipmentTab] = useState<Record<number, number>>({});
 
   // Direct Inline Price Drafts
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
@@ -178,6 +231,80 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
       // If positive, hunt saves you kamas and grants bonus doplons
       const huntVsBuyBenefit = resourcePrice - bestEntryCost;
 
+      // Calculate Related Craftable Equipment
+      const relatedEquipments = getRelatedEquipmentForHunt(
+        hunt.id,
+        hunt.monsterName,
+        hunt.monsterLevel,
+        hunt.resource.id,
+        hunt.resource.name
+      );
+
+      const calculatedEquipments: CalculatedBycEquipment[] = relatedEquipments.map((eq) => {
+        const salePriceGross = getPrice(eq.id, eq.defaultSalePrice);
+        const salePriceNet = Math.round(salePriceGross * (1 - 0.03)); // 3% HDV Tax
+        const resourceQtyNeeded = eq.resourceQuantityNeeded || 1;
+
+        let otherIngredientsCost = 0;
+        for (const ing of eq.recipeIngredients) {
+          if (ing.id === hunt.resource.id) continue;
+          const ingPrice = getPrice(ing.id, ing.defaultPrice);
+          otherIngredientsCost += ingPrice * ing.quantity;
+        }
+
+        // Path A: Crafting via Hunt Loop (buy map/fragments, do hunt, get Sebuscalines, craft equipment)
+        const huntEntryCostForRecipe = bestEntryCost * resourceQtyNeeded;
+        const totalInvestmentHunt = huntEntryCostForRecipe + otherIngredientsCost;
+        const sebuscalinesBonus = hunt.sebuscalines * sebuscalinPrice * resourceQtyNeeded;
+        const totalRevenueHunt = salePriceNet + sebuscalinesBonus;
+        const netProfitHunt = totalRevenueHunt - totalInvestmentHunt;
+        const roiHunt = totalInvestmentHunt > 0 ? (netProfitHunt / totalInvestmentHunt) * 100 : 0;
+
+        // Path B: Crafting via Direct HDV Resource purchase
+        const hdvResourceCostForRecipe = resourcePrice * resourceQtyNeeded;
+        const totalInvestmentHdv = hdvResourceCostForRecipe + otherIngredientsCost;
+        const netProfitHdv = salePriceNet - totalInvestmentHdv;
+        const roiHdv = totalInvestmentHdv > 0 ? (netProfitHdv / totalInvestmentHdv) * 100 : 0;
+
+        const optimalMethod: "hunt" | "hdv" = netProfitHunt >= netProfitHdv ? "hunt" : "hdv";
+        const optimalNetProfit = Math.max(netProfitHunt, netProfitHdv);
+        const optimalInvestment = optimalMethod === "hunt" ? totalInvestmentHunt : totalInvestmentHdv;
+        const optimalRoi = optimalInvestment > 0 ? (optimalNetProfit / optimalInvestment) * 100 : 0;
+
+        // Value added vs raw resource sale in HDV (-3% tax)
+        const resourceNetIncome = Math.round(resourcePrice * (1 - 0.03));
+        const addedValueVsRawSale = salePriceNet - otherIngredientsCost - (resourceNetIncome * resourceQtyNeeded);
+
+        return {
+          id: eq.id,
+          name: eq.name,
+          level: eq.level,
+          type: eq.type,
+          iconId: eq.iconId,
+          salePriceGross,
+          salePriceNet,
+          resourceQtyNeeded,
+          otherIngredientsCost,
+          totalInvestmentHunt,
+          totalRevenueHunt,
+          netProfitHunt,
+          roiHunt,
+          totalInvestmentHdv,
+          netProfitHdv,
+          roiHdv,
+          optimalMethod,
+          optimalInvestment,
+          optimalNetProfit,
+          optimalRoi,
+          addedValueVsRawSale,
+          recipeIngredients: eq.recipeIngredients,
+        };
+      });
+
+      const bestCraftEquipment = calculatedEquipments.length > 0
+        ? [...calculatedEquipments].sort((a, b) => b.optimalNetProfit - a.optimalNetProfit)[0]
+        : null;
+
       return {
         ...hunt,
         wholeMapPrice,
@@ -193,6 +320,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         huntVsBuyBenefit,
         bankFragmentsCount,
         hasMapInBank: getBankQty(hunt.mapItem.id) > 0,
+        calculatedEquipments,
+        bestCraftEquipment,
       };
     });
   }, [marketPrices, bankInventory, sebuscalinPrice]);
@@ -207,7 +336,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
           const matchName = h.monsterName.toLowerCase().includes(q);
           const matchResource = h.resource.name.toLowerCase().includes(q);
           const matchZone = h.zone.toLowerCase().includes(q) || (h.subArea && h.subArea.toLowerCase().includes(q));
-          if (!matchName && !matchResource && !matchZone) return false;
+          const matchEquipment = h.calculatedEquipments.some((eq) => eq.name.toLowerCase().includes(q));
+          if (!matchName && !matchResource && !matchZone && !matchEquipment) return false;
         }
 
         // Level filter
@@ -225,13 +355,18 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         if (zoneFilter === "dimensiones" && !["anutropía", "sramvil", "zurcalia", "dimensiones"].some(d => h.zone.toLowerCase().includes(d))) return false;
         if (zoneFilter === "justicieros" && !h.zone.toLowerCase().includes("justiciero")) return false;
 
-        // Profitable only
-        if (onlyProfitable && h.netProfit <= 0) return false;
+        // Profitable only (Check if pure hunt is profitable OR craft is profitable)
+        if (onlyProfitable && h.netProfit <= 0 && (!h.bestCraftEquipment || h.bestCraftEquipment.optimalNetProfit <= 0)) return false;
 
         return true;
       })
       .sort((a, b) => {
         if (sortBy === "profit_desc") return b.netProfit - a.netProfit;
+        if (sortBy === "craft_profit_desc") {
+          const aProfit = a.bestCraftEquipment ? a.bestCraftEquipment.optimalNetProfit : -Infinity;
+          const bProfit = b.bestCraftEquipment ? b.bestCraftEquipment.optimalNetProfit : -Infinity;
+          return bProfit - aProfit;
+        }
         if (sortBy === "roi_desc") return b.roiPercent - a.roiPercent;
         if (sortBy === "hunt_vs_buy") return b.huntVsBuyBenefit - a.huntVsBuyBenefit;
         if (sortBy === "sebuscalines_desc") return b.sebuscalines - a.sebuscalines;
@@ -243,7 +378,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
   // High-level metrics
   const totalHuntsCount = calculatedHunts.length;
-  const profitableHuntsCount = calculatedHunts.filter((h) => h.netProfit > 0).length;
+  const profitableHuntsCount = calculatedHunts.filter((h) => h.netProfit > 0 || (h.bestCraftEquipment && h.bestCraftEquipment.optimalNetProfit > 0)).length;
   const highestProfitHunt = useMemo(() => {
     return [...calculatedHunts].sort((a, b) => b.netProfit - a.netProfit)[0];
   }, [calculatedHunts]);
@@ -260,6 +395,15 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
   const handleAddWholeMapToShopping = (hunt: LegendaryHuntInfo) => {
     addToShoppingListById(hunt.mapItem.id, 1);
     showToast(`Se ha añadido el ${hunt.mapItem.name} a la Lista de Compras`);
+  };
+
+  const handleAddEquipmentRecipeToShopping = (eq: CalculatedBycEquipment) => {
+    let count = 0;
+    for (const ing of eq.recipeIngredients) {
+      addToShoppingListById(ing.id, ing.quantity, eq.id);
+      count++;
+    }
+    showToast(`Se han añadido los ingredientes de ${eq.name} a la Lista de Compras`);
   };
 
   if (selectedHuntForDetail) {
@@ -427,9 +571,10 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
               onChange={(e) => setSortBy(e.target.value as any)}
               className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:outline-none focus:border-amber-500 cursor-pointer"
             >
-              <option value="profit_desc">Mayor Ganancia Neta (Kamas)</option>
+              <option value="profit_desc">Mayor Ganancia Cacería (Kamas)</option>
+              <option value="craft_profit_desc">Mayor Ganancia con Crafteo</option>
               <option value="roi_desc">Mayor Retorno (ROI %)</option>
-              <option value="hunt_vs_buy">Mayor Ahorro vs Comprar Recurso HDV</option>
+              <option value="hunt_vs_buy">Mayor Ahorro vs Comprar en Mercadillo</option>
               <option value="sebuscalines_desc">Mayor Cantidad de Sebuscalines</option>
               <option value="cost_asc">Coste Más Barato de Búsqueda</option>
               <option value="level_desc">Nivel de ByC (Mayor a menor)</option>
@@ -499,58 +644,90 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                   isProfitable ? "border-slate-800 hover:border-emerald-500/40" : "border-slate-800/80 opacity-90"
                 }`}
               >
-                {/* Top Row: Monster Header, Level, Zone */}
-                <div className="flex items-start justify-between gap-3">
+                {/* Top Row: Monster Header, Level, Zone & Dual Profit Summary */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                   <div 
-                    className="flex items-start gap-3 cursor-pointer group/header"
+                    className="flex items-center gap-3 cursor-pointer group/header min-w-0"
                     onClick={() => setSelectedHuntForDetail(hunt)}
                   >
-                    <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 p-1.5 flex items-center justify-center shrink-0 shadow-inner relative group-hover/header:border-amber-500/50 transition-colors">
+                    <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 shadow-inner relative group-hover/header:border-amber-500/50 transition-colors">
                       <img
                         src={getItemIconUrl({ iconId: hunt.resource.iconId || hunt.id, id: hunt.id })}
                         alt={hunt.monsterName}
-                        className="w-10 h-10 object-contain group-hover/header:scale-105 transition-transform"
+                        className="w-9 h-9 object-contain group-hover/header:scale-105 transition-transform"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = "none";
                         }}
                       />
-                      <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black leading-none shadow">
+                      <span className="absolute -bottom-1 -right-1 px-1 py-0.2 rounded bg-amber-500 text-slate-950 text-[9px] font-black leading-none shadow">
                         {hunt.monsterLevel}
                       </span>
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-lg font-black text-slate-100 group-hover/header:text-amber-300 transition-colors">{hunt.monsterName}</h3>
-                        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[11px] font-medium">
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-base font-black text-slate-100 group-hover/header:text-amber-300 transition-colors truncate">{hunt.monsterName}</h3>
+                        <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[10px] font-medium">
                           {hunt.levelRequirement}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <MapPin className="w-3.5 h-3.5 text-amber-500/70" />
-                        <span>{hunt.zone}</span>
-                        {hunt.subArea && <span className="text-slate-500">({hunt.subArea})</span>}
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+                        <MapPin className="w-3 h-3 text-amber-500/70 shrink-0" />
+                        <span className="truncate">{hunt.zone}</span>
+                        {hunt.subArea && <span className="text-slate-500 truncate">({hunt.subArea})</span>}
                       </div>
                     </div>
                   </div>
 
-                  {/* Profit & ROI Tag */}
-                  <div className="text-right shrink-0">
-                    <span className="text-[11px] text-slate-500 block font-medium">Ganancia Neta</span>
-                    <span
-                      className={`text-lg font-black font-mono ${
-                        isProfitable ? "text-emerald-400" : "text-rose-400"
-                      }`}
-                    >
-                      {hunt.netProfit >= 0 ? `+${hunt.netProfit.toLocaleString()}` : hunt.netProfit.toLocaleString()} K
-                    </span>
-                    <span
-                      className={`text-xs block font-bold font-mono ${
-                        isProfitable ? "text-emerald-500" : "text-rose-500"
-                      }`}
-                    >
-                      {Math.round(hunt.roiPercent)}% ROI
-                    </span>
+                  {/* Dual Profit & ROI Summaries (Compact Grid) */}
+                  <div className="flex items-center justify-end gap-3 shrink-0 pt-1 sm:pt-0">
+                    {/* Cacería Pura */}
+                    <div className="text-right px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800/80">
+                      <span className="text-[9px] text-slate-500 block font-semibold uppercase tracking-wider">Cacería Pura</span>
+                      <div className="flex items-baseline justify-end gap-1">
+                        <span
+                          className={`text-sm font-black font-mono leading-none ${
+                            isProfitable ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {hunt.netProfit >= 0 ? `+${hunt.netProfit.toLocaleString()}` : hunt.netProfit.toLocaleString()} K
+                        </span>
+                        <span className="text-[11px] font-semibold text-slate-400">({formatKamas(hunt.netProfit)})</span>
+                      </div>
+                      <span
+                        className={`text-[10px] block font-semibold font-mono ${
+                          isProfitable ? "text-emerald-500" : "text-rose-500"
+                        }`}
+                      >
+                        {Math.round(hunt.roiPercent)}% ROI
+                      </span>
+                    </div>
+
+                    {/* Crafteo Óptimo */}
+                    {hunt.bestCraftEquipment && (
+                      <div className="text-right px-2.5 py-1 rounded-lg bg-purple-950/20 border border-purple-500/30">
+                        <span className="text-[9px] text-purple-300 block font-semibold uppercase tracking-wider truncate max-w-[130px]" title={hunt.bestCraftEquipment.name}>
+                          Crafteo ({hunt.bestCraftEquipment.name})
+                        </span>
+                        <div className="flex items-baseline justify-end gap-1">
+                          <span
+                            className={`text-sm font-black font-mono leading-none ${
+                              hunt.bestCraftEquipment.optimalNetProfit >= 0 ? "text-emerald-400" : "text-rose-400"
+                            }`}
+                          >
+                            {hunt.bestCraftEquipment.optimalNetProfit >= 0 ? `+${hunt.bestCraftEquipment.optimalNetProfit.toLocaleString()}` : hunt.bestCraftEquipment.optimalNetProfit.toLocaleString()} K
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-400">({formatKamas(hunt.bestCraftEquipment.optimalNetProfit)})</span>
+                        </div>
+                        <span
+                          className={`text-[10px] block font-semibold font-mono ${
+                            hunt.bestCraftEquipment.optimalNetProfit >= 0 ? "text-emerald-500" : "text-rose-500"
+                          }`}
+                        >
+                          {hunt.bestCraftEquipment.optimalRoi.toFixed(0)}% ROI
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -626,7 +803,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                       <div className="text-[11px] text-slate-400 flex items-center justify-between px-1">
                         <span>Ahorro entre opciones:</span>
                         <span className="text-emerald-400 font-mono font-semibold">
-                          +{hunt.entryMethodSavings.toLocaleString()} K
+                          +{hunt.entryMethodSavings.toLocaleString()} K ({formatKamas(hunt.entryMethodSavings)})
                         </span>
                       </div>
                     </div>
@@ -680,18 +857,18 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                   </div>
                 </div>
 
-                {/* Direct Comparison: Hunt vs Buy Resource in HDV */}
+                {/* Direct Comparison: Hunt vs Buy Resource in Mercadillo */}
                 <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <Flame className={`w-3.5 h-3.5 shrink-0 ${hunt.huntVsBuyBenefit >= 0 ? "text-amber-400" : "text-slate-500"}`} />
                     <span className="text-slate-300">
                       {hunt.huntVsBuyBenefit >= 0 ? (
                         <span>
-                          Ahorras <strong className="text-emerald-400 font-bold">{hunt.huntVsBuyBenefit.toLocaleString()} K</strong> haciendo la cacería vs comprar en HDV <span className="text-amber-300/90 font-medium">(+{hunt.sebuscalines} sebuscalines)</span>.
+                          Ahorras <strong className="text-emerald-400 font-bold">{hunt.huntVsBuyBenefit.toLocaleString()} K ({formatKamas(hunt.huntVsBuyBenefit)})</strong> haciendo la cacería vs comprar en mercadillo <span className="text-amber-300/90 font-medium">(+{hunt.sebuscalines} sebuscalines)</span>.
                         </span>
                       ) : (
                         <span>
-                          Comprar en HDV es <strong className="text-amber-400 font-bold">{Math.abs(hunt.huntVsBuyBenefit).toLocaleString()} K</strong> más barato que montar el mapa.
+                          Comprar en mercadillo es <strong className="text-amber-400 font-bold">{Math.abs(hunt.huntVsBuyBenefit).toLocaleString()} K ({formatKamas(Math.abs(hunt.huntVsBuyBenefit))})</strong> más barato que montar el mapa.
                         </span>
                       )}
                     </span>
@@ -706,16 +883,220 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                   )}
                 </div>
 
+                {/* Craftable Equipment Summary Section */}
+                {hunt.calculatedEquipments.length > 0 && (() => {
+                  const activeEqId = selectedEquipmentTab[hunt.id] || hunt.bestCraftEquipment?.id || hunt.calculatedEquipments[0].id;
+                  const activeEq = hunt.calculatedEquipments.find((e) => e.id === activeEqId) || hunt.calculatedEquipments[0];
+
+                  return (
+                    <div className="p-3.5 rounded-xl bg-slate-950/80 border border-purple-500/30 space-y-3">
+                      {/* Equipment Section Header & Switcher */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400">
+                            <Hammer className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-xs font-bold text-purple-200">
+                            Venta y Crafteo de Equipable Asociado
+                          </span>
+                        </div>
+
+                        {/* Equipment Tabs if multiple */}
+                        {hunt.calculatedEquipments.length > 1 && (
+                          <div className="flex items-center gap-1 overflow-x-auto">
+                            {hunt.calculatedEquipments.map((eq) => {
+                              const isSelected = eq.id === activeEq.id;
+                              return (
+                                <button
+                                  key={eq.id}
+                                  type="button"
+                                  onClick={() => setSelectedEquipmentTab((prev) => ({ ...prev, [hunt.id]: eq.id }))}
+                                  className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap flex items-center gap-1 border ${
+                                    isSelected
+                                      ? "bg-purple-500/20 border-purple-500/50 text-purple-200 shadow-sm"
+                                      : "bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200"
+                                  }`}
+                                >
+                                  <span>{eq.name}</span>
+                                  <span
+                                    className={`text-[10px] font-mono font-bold ${
+                                      eq.optimalNetProfit >= 0 ? "text-emerald-400" : "text-rose-400"
+                                    }`}
+                                  >
+                                    ({eq.optimalNetProfit >= 0 ? "+" : ""}{formatKamas(eq.optimalNetProfit)})
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Active Equipment Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                        {/* Equipment Identity & Sale Price Input */}
+                        <div className="flex items-center gap-2.5 sm:col-span-1 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center shrink-0 shadow-inner">
+                            <img
+                              src={getItemIconUrl({ iconId: activeEq.iconId, id: activeEq.id })}
+                              alt={activeEq.name}
+                              className="w-8 h-8 object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-slate-100 truncate block">{activeEq.name}</span>
+                              <span className="px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30 text-[9px] font-semibold">
+                                Nv {activeEq.level}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">{activeEq.type}</span>
+                          </div>
+                        </div>
+
+                        {/* Price Input & Net Sale */}
+                        <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                          <div className="space-y-0.5 min-w-0">
+                            <span className="text-[10px] text-slate-400 block">Venta en Mercadillo:</span>
+                            <span className="text-[10px] text-slate-500 block font-mono">
+                              Neto (-3%): {activeEq.salePriceNet.toLocaleString()} K
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-0.5 focus-within:border-purple-400 shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={priceDrafts[activeEq.id] !== undefined ? priceDrafts[activeEq.id] : (activeEq.salePriceGross > 0 ? activeEq.salePriceGross : "")}
+                              onChange={(e) => handlePriceDraftChange(activeEq.id, e.target.value)}
+                              onBlur={(e) => handlePriceCommit(activeEq.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handlePriceCommit(activeEq.id, (e.target as HTMLInputElement).value);
+                              }}
+                              placeholder="0"
+                              className="w-20 bg-transparent text-right font-mono font-bold text-purple-300 text-xs focus:outline-none"
+                            />
+                            <span className="text-[10px] text-slate-400 font-mono">K</span>
+                          </div>
+                        </div>
+
+                        {/* Method Breakdown & Net Profit */}
+                        <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">Vía Mercadillo directo:</span>
+                            <span className={`font-mono font-bold text-[11px] ${activeEq.netProfitHdv >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                              {activeEq.netProfitHdv >= 0 ? `+${activeEq.netProfitHdv.toLocaleString()}` : activeEq.netProfitHdv.toLocaleString()} K
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">Vía Cacería completa:</span>
+                            <span className={`font-mono font-bold text-[11px] ${activeEq.netProfitHunt >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                              {activeEq.netProfitHunt >= 0 ? `+${activeEq.netProfitHunt.toLocaleString()}` : activeEq.netProfitHunt.toLocaleString()} K
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Final Strategy Conclusion Box */}
+                      <div className="pt-2 border-t border-slate-800/90 flex items-start gap-2 text-xs">
+                        <div className="p-1 rounded bg-slate-900 border border-slate-700 text-slate-300 shrink-0 mt-0.5">
+                          <TrendingUp className="w-3 h-3 text-amber-400" />
+                        </div>
+                        <div className="text-[11px] leading-relaxed text-slate-300 flex-1">
+                          <strong className="text-slate-100 font-semibold">Conclusión Estratégica: </strong>
+                          {(() => {
+                            const isHuntProfitable = hunt.netProfit > 0;
+                            const isCraftHdvProfitable = activeEq.netProfitHdv > 0;
+                            const isCraftHuntProfitable = activeEq.netProfitHunt > 0;
+
+                            // Case 1: Best to buy resource from mercadillo and craft
+                            if (activeEq.optimalMethod === "hdv" && isCraftHdvProfitable && (!isHuntProfitable || activeEq.netProfitHdv > hunt.netProfit)) {
+                              return (
+                                <span>
+                                  Conviene comprar el recurso <strong className="text-amber-300">{hunt.resource.name}</strong> directamente en el mercadillo ({hunt.resourcePrice.toLocaleString()} K) y craftear <strong className="text-purple-300">{activeEq.name}</strong> para obtener una ganancia neta de <strong className="text-emerald-400">+{activeEq.netProfitHdv.toLocaleString()} K ({formatKamas(activeEq.netProfitHdv)})</strong> ({activeEq.roiHdv.toFixed(0)}% ROI), evitando el coste del mapa.
+                                </span>
+                              );
+                            }
+
+                            // Case 2: Best to do the hunt and then craft the equipment
+                            if (isCraftHuntProfitable && activeEq.optimalMethod === "hunt" && activeEq.netProfitHunt >= hunt.netProfit) {
+                              return (
+                                <span>
+                                  Conviene realizar la cacería con <strong className="text-amber-300">{hunt.isFragmentsCheaper ? "fragmentos" : "mapa"}</strong> y craftear <strong className="text-purple-300">{activeEq.name}</strong>. Obtendrás el equipable más los {hunt.sebuscalines} sebuscalines con una ganancia neta total de <strong className="text-emerald-400">+{activeEq.netProfitHunt.toLocaleString()} K ({formatKamas(activeEq.netProfitHunt)})</strong>.
+                                </span>
+                              );
+                            }
+
+                            // Case 3: Pure hunt is profitable, but crafting adds loss or is inferior
+                            if (isHuntProfitable && hunt.netProfit > activeEq.optimalNetProfit) {
+                              return (
+                                <span>
+                                  Conviene realizar la cacería y vender el botín en bruto ({hunt.resource.name} + sebuscalines) para ganar <strong className="text-emerald-400">+{hunt.netProfit.toLocaleString()} K ({formatKamas(hunt.netProfit)})</strong>. No se recomienda craftear el equipable.
+                                </span>
+                              );
+                            }
+
+                            // Case 4: Neither option is profitable
+                            return (
+                              <span className="text-slate-400">
+                                Ninguna ruta resulta rentable con los precios actuales (Cacería pura: <span className="text-rose-400">{formatKamas(hunt.netProfit)}</span>, Crafteo en mercadillo: <span className="text-rose-400">{formatKamas(activeEq.netProfitHdv)}</span>).
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Bottom Action Buttons */}
-                <div className="flex items-center justify-end pt-2 border-t border-slate-800/80">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleAddFragmentsToShopping(hunt)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-amber-300 border border-slate-800 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                      title="Añadir fragmentos a lista de compras"
+                    >
+                      <ShoppingCart className="w-3 h-3 text-amber-400" />
+                      <span>{hunt.fragments.count}x Fragmentos</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddWholeMapToShopping(hunt)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-amber-300 border border-slate-800 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                      title="Añadir mapa entero a lista de compras"
+                    >
+                      <ShoppingCart className="w-3 h-3 text-amber-400" />
+                      <span>Mapa Entero</span>
+                    </button>
+                    {hunt.calculatedEquipments.length > 0 && (() => {
+                      const activeEqId = selectedEquipmentTab[hunt.id] || hunt.bestCraftEquipment?.id || hunt.calculatedEquipments[0].id;
+                      const activeEq = hunt.calculatedEquipments.find((e) => e.id === activeEqId) || hunt.calculatedEquipments[0];
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => handleAddEquipmentRecipeToShopping(activeEq)}
+                          className="px-2.5 py-1.5 rounded-lg bg-purple-950/40 hover:bg-purple-900/50 text-purple-300 hover:text-purple-100 border border-purple-500/40 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                          title={`Añadir ingredientes de ${activeEq.name} a la lista de compras`}
+                        >
+                          <ShoppingCart className="w-3 h-3 text-purple-400" />
+                          <span>Mats {activeEq.name}</span>
+                        </button>
+                      );
+                    })()}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => setSelectedHuntForDetail(hunt)}
-                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/10 hover:from-amber-500/30 hover:to-amber-600/20 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm group"
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/10 hover:from-amber-500/30 hover:to-amber-600/20 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm group shrink-0"
                   >
-                    <Layers className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                    <span>Ver Análisis & Crafteos</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                    <Layers className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                    <span>Ver Análisis Detallado</span>
+                    <ArrowRight className="w-3 h-3 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>
               </div>

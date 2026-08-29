@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { Layers, Save, Check, AlertCircle, TrendingUp } from 'lucide-react';
+import { Layers, Save, Check, AlertCircle, TrendingUp, Sparkles, Map as MapIcon, Award } from 'lucide-react';
 import { SafeImage } from '../SafeImage';
 import { getItemIconUrl, getItemFallbackIconUrl } from '../../services/dofusDbService';
 import { KamaDisplay } from '../common/KamaDisplay';
+import { BycResourceCostAnalysis } from '../../services/bycCostService';
 
 export interface RecipeIngredientDetail {
   id: number;
@@ -15,6 +16,10 @@ export interface RecipeIngredientDetail {
   isCraftable: boolean;
   isCraftCheaper: boolean;
   totalCost: number;
+  // ByC Legendary Hunt Acquisition Info
+  isByc?: boolean;
+  bycAnalysis?: BycResourceCostAnalysis;
+  selectedBycMethod?: 'direct' | 'fragments' | 'map';
 }
 
 interface RecipeSidebarProps {
@@ -24,6 +29,7 @@ interface RecipeSidebarProps {
   savedIngFeedback: number | null;
   onDraftChange: (ingredientId: number, value: string) => void;
   onSavePrice: (ingredientId: number, value: string) => void;
+  onSelectBycMethod?: (ingredientId: number, method: 'direct' | 'fragments' | 'map') => void;
 }
 
 export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
@@ -33,6 +39,7 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
   savedIngFeedback,
   onDraftChange,
   onSavePrice,
+  onSelectBycMethod,
 }) => {
   // Find the bottleneck ingredient (the one that represents the highest percentage of total cost)
   const { bottleneckId, highestShare } = useMemo(() => {
@@ -173,6 +180,82 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* ByC Legendary Hunt Acquisition Method Selector */}
+                {ing.isByc && ing.bycAnalysis && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-amber-400 font-bold flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        Obtención ByC ({ing.bycAnalysis.hunt.monsterName}):
+                      </span>
+                      {ing.bycAnalysis.savingsVsDirect > 0 && ing.selectedBycMethod !== 'direct' && (
+                        <span className="text-emerald-400 font-bold font-mono text-[10px]">
+                          -{(ing.bycAnalysis.savingsVsDirect * ing.quantity).toLocaleString('de-DE')} K
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1 text-[10px]">
+                      {/* Option 1: Direct HDV */}
+                      <button
+                        type="button"
+                        onClick={() => onSelectBycMethod && onSelectBycMethod(ing.id, 'direct')}
+                        className={`p-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                          (ing.selectedBycMethod || 'direct') === 'direct'
+                            ? 'bg-amber-500/20 border-amber-500/60 text-amber-200 font-bold'
+                            : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <Award className="w-2.5 h-2.5" />
+                          <span>HDV Recurso</span>
+                        </div>
+                        <span className="font-mono text-[9px] mt-0.5 font-bold">
+                          {ing.bycAnalysis.directPrice > 0 ? `${ing.bycAnalysis.directPrice.toLocaleString('de-DE')} K` : '—'}
+                        </span>
+                      </button>
+
+                      {/* Option 2: Fragments */}
+                      <button
+                        type="button"
+                        onClick={() => onSelectBycMethod && onSelectBycMethod(ing.id, 'fragments')}
+                        className={`p-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                          ing.selectedBycMethod === 'fragments'
+                            ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold'
+                            : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        } ${ing.bycAnalysis.bestMethod === 'fragments' ? 'ring-1 ring-emerald-400/40' : ''}`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <Layers className="w-2.5 h-2.5 text-indigo-400" />
+                          <span>Fragmentos</span>
+                        </div>
+                        <span className="font-mono text-[9px] mt-0.5 font-bold">
+                          {ing.bycAnalysis.fragmentsPrice > 0 ? `${ing.bycAnalysis.fragmentsPrice.toLocaleString('de-DE')} K` : '—'}
+                        </span>
+                      </button>
+
+                      {/* Option 3: Whole Map */}
+                      <button
+                        type="button"
+                        onClick={() => onSelectBycMethod && onSelectBycMethod(ing.id, 'map')}
+                        className={`p-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                          ing.selectedBycMethod === 'map'
+                            ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold'
+                            : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        } ${ing.bycAnalysis.bestMethod === 'map' ? 'ring-1 ring-emerald-400/40' : ''}`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <MapIcon className="w-2.5 h-2.5 text-amber-400" />
+                          <span>Mapa Entero</span>
+                        </div>
+                        <span className="font-mono text-[9px] mt-0.5 font-bold">
+                          {ing.bycAnalysis.mapPrice > 0 ? `${ing.bycAnalysis.mapPrice.toLocaleString('de-DE')} K` : '—'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Sub-craft cheaper indicator */}
                 {ing.isCraftable && ing.isCraftCheaper && (

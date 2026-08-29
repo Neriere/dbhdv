@@ -88,6 +88,7 @@ import { RecipeSidebar, RecipeIngredientDetail } from './crushing/RecipeSidebar'
 import { CrushingRunesTable } from './crushing/CrushingRunesTable';
 import { CrushingStrategyHero } from './crushing/CrushingStrategyHero';
 import { matchesSearchQuery } from '../utils/searchUtils';
+import { isBycResource, analyzeBycResourceCost, getOptimizedIngredientCost } from '../services/bycCostService';
 
 interface CrushingCalculatorProps {
   initialSelectedItem?: DofusItem | null;
@@ -400,7 +401,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     }
   }, [selectedItem?.id]);
 
-  // Compute craft cost for an item using lowest detected ingredient prices
+  // Track custom selected ByC method per ingredient (e.g., 'direct', 'fragments', 'map')
+  const [selectedBycMethods, setSelectedBycMethods] = useState<Record<number, 'direct' | 'fragments' | 'map'>>({});
+
+  // Compute craft cost for an item using lowest detected ingredient prices & ByC optimal costs
   const getItemCraftCost = (item: CraftableItem): number => {
     if (!item.recipeData || !item.recipeData.ingredientIds || item.recipeData.ingredientIds.length === 0) {
       return marketPrices[item.id] || item.defaultMarketSalePrice || 0;
@@ -411,8 +415,15 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     for (let i = 0; i < ingredientIds.length; i += 1) {
       const ingId = ingredientIds[i];
       const qty = quantities?.[i] || 1;
-      const ingPrice = getLowestDetectedPrice(ingId, marketPrices, recipesMap);
-      total += ingPrice * qty;
+      
+      if (isBycResource(ingId)) {
+        const preferredMethod = selectedBycMethods[ingId];
+        const bycCostInfo = getOptimizedIngredientCost(ingId, marketPrices, preferredMethod);
+        total += bycCostInfo.cost * qty;
+      } else {
+        const ingPrice = getLowestDetectedPrice(ingId, marketPrices, recipesMap);
+        total += ingPrice * qty;
+      }
     }
     return total;
   };
@@ -454,6 +465,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           ingItem = (await fetchItemDetailsById(ingId)) || undefined;
         }
 
+        const isByc = isBycResource(ingId);
+        const bycAnalysis = isByc ? analyzeBycResourceCost(ingId, marketPrices) || undefined : undefined;
+        const selectedBycMethod = selectedBycMethods[ingId] || (bycAnalysis?.bestMethod ?? 'direct');
+
         const directBuyPrice = marketPrices[ingId] || 0;
         const subCraftCost = calculateSubCraftCost(ingId, marketPrices, recipesMap);
         const isCraftable = subCraftCost > 0;
@@ -461,7 +476,15 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
         let unitPrice = directBuyPrice;
         let isCraftCheaper = false;
 
-        if (isCraftable && directBuyPrice > 0) {
+        if (isByc && bycAnalysis) {
+          if (selectedBycMethod === 'fragments') {
+            unitPrice = bycAnalysis.fragmentsPrice;
+          } else if (selectedBycMethod === 'map') {
+            unitPrice = bycAnalysis.mapPrice;
+          } else {
+            unitPrice = bycAnalysis.directPrice;
+          }
+        } else if (isCraftable && directBuyPrice > 0) {
           if (subCraftCost < directBuyPrice) {
             unitPrice = subCraftCost;
             isCraftCheaper = true;
@@ -486,6 +509,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           isCraftable,
           isCraftCheaper,
           totalCost: unitPrice * qty,
+          isByc,
+          bycAnalysis,
+          selectedBycMethod,
         });
       }
 
@@ -494,7 +520,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     };
 
     void loadIngredients();
-  }, [selectedItem?.id, marketPrices]);
+  }, [selectedItem?.id, marketPrices, selectedBycMethods]);
 
   // Run calculation for current selected item in Detail view
   const crushingSimulation = useMemo<CrushingResult | null>(() => {
@@ -1953,6 +1979,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                 savedIngFeedback={savedIngFeedback}
                 onDraftChange={handleIngredientPriceDraftChange}
                 onSavePrice={handleUpdateIngredientPrice}
+                onSelectBycMethod={(ingId, method) => {
+                  setSelectedBycMethods((prev) => ({
+                    ...prev,
+                    [ingId]: method,
+                  }));
+                }}
               />
             </div>
 

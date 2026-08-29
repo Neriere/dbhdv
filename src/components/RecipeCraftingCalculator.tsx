@@ -45,6 +45,12 @@ import {
   analyzeSalesVolume,
   ItemSalesVolume,
 } from "../services/salesVolumeService";
+import {
+  isBycResource,
+  analyzeBycResourceCost,
+  getOptimizedIngredientCost,
+  BycResourceCostAnalysis,
+} from "../services/bycCostService";
 
 import {
   DofusItem,
@@ -1373,7 +1379,22 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const totalPriceForQuantity = currentPrice * node.quantity;
+  const isByc = isBycResource(node.itemId);
+  const bycAnalysis = isByc ? analyzeBycResourceCost(node.itemId, marketPrices) : null;
+  const [selectedBycMethod, setSelectedBycMethod] = useState<"direct" | "fragments" | "map">(
+    bycAnalysis?.bestMethod || "direct"
+  );
+
+  const effectiveBycUnitPrice = bycAnalysis
+    ? selectedBycMethod === "fragments"
+      ? bycAnalysis.fragmentsPrice
+      : selectedBycMethod === "map"
+        ? bycAnalysis.mapPrice
+        : bycAnalysis.directPrice
+    : currentPrice;
+
+  const effectiveUnitPrice = isByc && bycAnalysis ? effectiveBycUnitPrice : currentPrice;
+  const totalPriceForQuantity = effectiveUnitPrice * node.quantity;
   const hasSubCraft =
     node.isCraftable && node.subIngredients && node.subIngredients.length > 0;
 
@@ -1404,6 +1425,17 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
           : Number(draftPrice);
     onPriceChange(node.itemId, nextValue);
     setDraftPrice(null);
+  };
+
+  const handleApplyBycMethod = (method: "direct" | "fragments" | "map") => {
+    setSelectedBycMethod(method);
+    if (!bycAnalysis) return;
+    let priceToApply = bycAnalysis.directPrice;
+    if (method === "fragments") priceToApply = bycAnalysis.fragmentsPrice;
+    if (method === "map") priceToApply = bycAnalysis.mapPrice;
+    if (priceToApply > 0) {
+      onPriceChange(node.itemId, priceToApply);
+    }
   };
 
   return (
@@ -1514,6 +1546,79 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
             {totalPriceForQuantity.toLocaleString()} K
           </span>
         </div>
+
+        {/* ByC Legendary Hunt Acquisition Selector */}
+        {isByc && bycAnalysis && (
+          <div className="pt-2 border-t border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Obtención ByC ({bycAnalysis.hunt.monsterName})
+              </span>
+              {bycAnalysis.savingsVsDirect > 0 && selectedBycMethod !== "direct" && (
+                <span className="text-emerald-400 font-bold font-mono text-[11px] bg-emerald-500/15 px-2 py-0.5 rounded border border-emerald-500/30">
+                  Ahorro: -{(bycAnalysis.savingsVsDirect * node.quantity).toLocaleString()} K
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
+              {/* Option 1: Direct Resource */}
+              <button
+                type="button"
+                onClick={() => handleApplyBycMethod("direct")}
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                  selectedBycMethod === "direct"
+                    ? "bg-amber-500/20 border-amber-500/60 text-amber-200 font-bold shadow-sm"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                }`}
+              >
+                <span className="text-[10px] font-sans">HDV Recurso</span>
+                <span className="font-mono text-xs mt-0.5 font-bold">
+                  {bycAnalysis.directPrice > 0 ? `${bycAnalysis.directPrice.toLocaleString()} K` : "—"}
+                </span>
+              </button>
+
+              {/* Option 2: Fragments */}
+              <button
+                type="button"
+                onClick={() => handleApplyBycMethod("fragments")}
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                  selectedBycMethod === "fragments"
+                    ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold shadow-sm"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                } ${bycAnalysis.bestMethod === "fragments" ? "ring-1 ring-emerald-400/40" : ""}`}
+              >
+                <span className="text-[10px] font-sans flex items-center gap-1">
+                  <Layers className="w-2.5 h-2.5 text-indigo-400" />
+                  Fragmentos
+                </span>
+                <span className="font-mono text-xs mt-0.5 font-bold">
+                  {bycAnalysis.fragmentsPrice > 0 ? `${bycAnalysis.fragmentsPrice.toLocaleString()} K` : "—"}
+                </span>
+              </button>
+
+              {/* Option 3: Whole Map */}
+              <button
+                type="button"
+                onClick={() => handleApplyBycMethod("map")}
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                  selectedBycMethod === "map"
+                    ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold shadow-sm"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                } ${bycAnalysis.bestMethod === "map" ? "ring-1 ring-emerald-400/40" : ""}`}
+              >
+                <span className="text-[10px] font-sans flex items-center gap-1">
+                  <MapIcon className="w-2.5 h-2.5 text-amber-400" />
+                  Mapa Entero
+                </span>
+                <span className="font-mono text-xs mt-0.5 font-bold">
+                  {bycAnalysis.mapPrice > 0 ? `${bycAnalysis.mapPrice.toLocaleString()} K` : "—"}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Sub-crafting comparison & Toggle */}
         {hasSubCraft && (

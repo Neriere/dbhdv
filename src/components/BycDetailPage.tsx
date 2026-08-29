@@ -569,7 +569,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Award className="w-4 h-4 text-cyan-400" />
-                    <span className="text-xs sm:text-sm font-bold text-slate-200">3. Comprar {hunt.resource.name} en HDV</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-200">3. Comprar {hunt.resource.name} en mercadillo</span>
                   </div>
                   <span className="text-[11px] text-slate-400">
                     Compra directa sin cacería (0 Sebuscalines)
@@ -581,7 +581,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     {formatKamas(resourcePriceGross)} K
                   </div>
                   <span className="text-xs font-mono text-slate-400">
-                    Precio compra HDV
+                    Precio compra mercadillo
                   </span>
                 </div>
               </div>
