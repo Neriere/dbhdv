@@ -36,8 +36,15 @@ import {
   History,
   Map as MapIcon,
   Vault,
+  BarChart2,
 } from "lucide-react";
 import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
+import {
+  getStoredSalesVolumeMap,
+  saveItemSalesVolume,
+  analyzeSalesVolume,
+  ItemSalesVolume,
+} from "../services/salesVolumeService";
 
 import {
   DofusItem,
@@ -171,6 +178,32 @@ export const RecipeCraftingCalculator: React.FC<{
   const [salePriceSavedFeedback, setSalePriceSavedFeedback] = useState<boolean>(false);
   const [addedToListNotice, setAddedToListNotice] = useState<boolean>(false);
   const saleDebounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Sales Volume Map (24h, 7d, 30d records)
+  const [salesVolumeMap, setSalesVolumeMap] = useState<Record<number, ItemSalesVolume>>(() => {
+    return getStoredSalesVolumeMap();
+  });
+  const [isDetailVolumeDrawerOpen, setIsDetailVolumeDrawerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleVolumeUpdated = () => {
+      setSalesVolumeMap(getStoredSalesVolumeMap());
+    };
+    window.addEventListener("dofus_sales_volume_updated", handleVolumeUpdated);
+    return () => {
+      window.removeEventListener("dofus_sales_volume_updated", handleVolumeUpdated);
+    };
+  }, []);
+
+  const handleUpdateVolume = (
+    itemId: number,
+    field: "sales24h" | "sales7d" | "sales30d",
+    value: string
+  ) => {
+    const num = value === "" ? undefined : Math.max(0, parseInt(value, 10) || 0);
+    const updated = saveItemSalesVolume(itemId, { [field]: num });
+    setSalesVolumeMap({ ...updated });
+  };
 
   // FAST REACTIVE PRICE UPDATE:
   // Optimistically updates local React state immediately (0ms) so calculations update live on keystroke/blur
@@ -493,6 +526,9 @@ export const RecipeCraftingCalculator: React.FC<{
   const profitMarginPercent =
     autoOptimalCost > 0 ? (netProfit / autoOptimalCost) * 100 : 0;
 
+  const activeSalesVolume = activePresetItem ? salesVolumeMap[activePresetItem.id] : undefined;
+  const activeSalesAnalysis = analyzeSalesVolume(effectiveSalePrice, activeSalesVolume);
+
   const handleSelectItemForDetail = (item: PresetCraftableItem) => {
     setActivePresetItem(item);
     setIsDetailView(true);
@@ -550,6 +586,19 @@ export const RecipeCraftingCalculator: React.FC<{
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-bold font-mono">
                     Niv. {activePresetItem.level}
                   </span>
+                  {activeSalesAnalysis.hasData && activeSalesAnalysis.turnoverRating && (
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-xs font-bold border flex items-center gap-1 ${
+                        activeSalesAnalysis.turnoverRating === "alta"
+                          ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40"
+                          : activeSalesAnalysis.turnoverRating === "media"
+                          ? "bg-amber-950/60 text-amber-300 border-amber-500/40"
+                          : "bg-slate-800 text-slate-300 border-slate-700"
+                      }`}
+                    >
+                      <span>{activeSalesAnalysis.turnoverLabel}</span>
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 pt-0.5 flex-wrap text-xs">
                   <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 font-bold text-amber-400">
@@ -593,6 +642,18 @@ export const RecipeCraftingCalculator: React.FC<{
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsDetailVolumeDrawerOpen((prev) => !prev)}
+                  className={`p-1.5 rounded-xl border transition-all shrink-0 ${
+                    isDetailVolumeDrawerOpen || activeSalesAnalysis.hasData
+                      ? "bg-indigo-950/60 border-indigo-500/60 text-indigo-300"
+                      : "bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                  }`}
+                  title="Registrar o ver volumen de ventas (24h, 7d, 30d)"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setItemForHistory(activePresetItem)}
                   className="p-1.5 rounded-xl bg-slate-900 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-500/40 text-slate-400 hover:text-amber-300 transition-all shrink-0"
                   title="Ver historial de precios de este objeto"
@@ -626,6 +687,109 @@ export const RecipeCraftingCalculator: React.FC<{
               </div>
             </div>
           </div>
+
+          {/* Sales Volume Drawer (24h / 7d / 30d) for Recipe Crafting item */}
+          {isDetailVolumeDrawerOpen && (
+            <div className="bg-slate-950/90 border border-indigo-500/30 rounded-xl p-3.5 sm:p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-indigo-400" />
+                  <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+                    Registro de Ventas en Mercadillo (HDV)
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400">
+                  Ingresa las ventas registradas para estimar velocidad y precio
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* Input: Últimas 24 horas */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-300">Últimas 24h</span>
+                    <span className="text-[11px] text-slate-500">Unidades vendidas</span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={activeSalesVolume?.sales24h !== undefined ? activeSalesVolume.sales24h : ""}
+                    onChange={(e) => handleUpdateVolume(activePresetItem.id, "sales24h", e.target.value)}
+                    placeholder="—"
+                    className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono font-bold text-indigo-300 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+
+                {/* Input: Últimos 7 días */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-300">Últimos 7 días</span>
+                    <span className="text-[11px] text-slate-500">Total semana</span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={activeSalesVolume?.sales7d !== undefined ? activeSalesVolume.sales7d : ""}
+                    onChange={(e) => handleUpdateVolume(activePresetItem.id, "sales7d", e.target.value)}
+                    placeholder="—"
+                    className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono font-bold text-indigo-300 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+
+                {/* Input: Últimos 30 días */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-300">Últimos 30 días</span>
+                    <span className="text-[11px] text-slate-500">Total mes</span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={activeSalesVolume?.sales30d !== undefined ? activeSalesVolume.sales30d : ""}
+                    onChange={(e) => handleUpdateVolume(activePresetItem.id, "sales30d", e.target.value)}
+                    placeholder="—"
+                    className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-right font-mono font-bold text-indigo-300 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+              </div>
+
+              {/* Estimates Output (Only when data exists) */}
+              {activeSalesAnalysis.hasData ? (
+                <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-slate-400">Ritmo diario estimado:</span>
+                    <span className="text-slate-200 font-bold font-mono text-sm mt-0.5">
+                      ~{activeSalesAnalysis.avgDailySales} u/día
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col">
+                    <span className="text-slate-400">Tiempo de venta estimado:</span>
+                    <span className="text-slate-200 font-bold font-mono text-sm mt-0.5">
+                      {activeSalesAnalysis.daysToSell !== null
+                        ? activeSalesAnalysis.daysToSell < 1
+                          ? `< 24 horas`
+                          : `~${Math.round(activeSalesAnalysis.daysToSell)} días`
+                        : "—"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col">
+                    <span className="text-slate-400">Precio sugerido de venta:</span>
+                    <span className="text-amber-300 font-bold font-mono text-sm mt-0.5">
+                      {activeSalesAnalysis.suggestedPrice !== null
+                        ? `${activeSalesAnalysis.suggestedPrice.toLocaleString()} K`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic pt-1">
+                  Sin datos de ventas ingresados aún. Los cálculos se actualizarán automáticamente al ingresar valores.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Metrics Dashboard */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
@@ -1011,12 +1175,30 @@ export const RecipeCraftingCalculator: React.FC<{
                         Nv. {item.level}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 pt-0.5">
+                    <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                       <span
                         className={`text-xs font-bold px-2.5 py-0.5 rounded-md border ${jobBadgeClass}`}
                       >
                         {item.jobNameEs}
                       </span>
+                      {(() => {
+                        const itemVol = salesVolumeMap[item.id];
+                        const itemAnalysis = analyzeSalesVolume(metrics.salePrice, itemVol);
+                        if (!itemAnalysis.hasData || !itemAnalysis.turnoverRating) return null;
+                        return (
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              itemAnalysis.turnoverRating === "alta"
+                                ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40"
+                                : itemAnalysis.turnoverRating === "media"
+                                ? "bg-amber-950/60 text-amber-300 border-amber-500/40"
+                                : "bg-slate-800 text-slate-300 border-slate-700"
+                            }`}
+                          >
+                            {itemAnalysis.turnoverLabel}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
