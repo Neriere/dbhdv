@@ -335,9 +335,9 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
       {/* UNIFIED SECTION 1: MAP FRAGMENTS & HUNT PROFITABILITY */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         {/* Header with Title and Global Price Inputs */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3.5 border-b border-slate-800">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner mt-0.5 sm:mt-0">
               <img
                 src={getItemIconUrl(hunt.resource.id)}
                 alt={hunt.resource.name}
@@ -348,11 +348,15 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                 }}
               />
             </div>
-            <div>
+            <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-bold text-white">
-                  1. Rentabilidad de la Cacería & {hunt.resource.name}
+                  1. Rentabilidad de la Cacería
                 </h2>
+                <span className="text-slate-400 text-sm hidden sm:inline">|</span>
+                <span className="text-sm sm:text-base font-semibold text-amber-300">
+                  {hunt.resource.name}
+                </span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
                   {hunt.fragments.count} fragmentos
                 </span>
@@ -362,18 +366,18 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+              <p className="text-xs sm:text-sm text-slate-400">
                 Cofre otorga <strong className="text-amber-300 font-mono">+{chestSebuscalines} Sebuscalines</strong> ({formatKamas(sebuscalinesValue)} K) + 1x {hunt.resource.name} (Retorno neto venta -3% tasa mercadillo: <strong className="text-emerald-400 font-mono">{formatKamas(totalHuntNetReturn)} K</strong>).
               </p>
             </div>
           </div>
 
           {/* Quick Input Controls */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap shrink-0">
             {/* Whole Map Price */}
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
               <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Mapa en mercadillo:</span>
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 focus-within:border-amber-400">
+              <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 focus-within:border-amber-400">
                 <input
                   type="number"
                   min="0"
@@ -392,8 +396,10 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
 
             {/* Boss Resource Price */}
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
-              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Recurso en mercadillo:</span>
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 focus-within:border-amber-400">
+              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap max-w-[150px] sm:max-w-[200px] truncate" title={`${hunt.resource.name} en mercadillo`}>
+                {hunt.resource.name}:
+              </span>
+              <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 focus-within:border-amber-400">
                 <input
                   type="number"
                   min="0"
