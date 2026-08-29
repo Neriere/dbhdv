@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, X, Wrench, Zap, ShoppingCart, Coins, ArrowRight, Sparkles, Filter } from 'lucide-react';
+import { Search, X, Wrench, Zap, ShoppingCart, Coins, ArrowRight, Sparkles, Filter, Check } from 'lucide-react';
 import { DofusItem, DofusRecipe } from '../types';
 import {
   getAllLocalItems,
@@ -132,13 +132,14 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
             </span>
             <button
               onClick={() => setFilterCraftableOnly(!filterCraftableOnly)}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 ${
                 filterCraftableOnly
                   ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20'
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              {filterCraftableOnly ? '✓ Solo Crafteables' : 'Solo Crafteables'}
+              {filterCraftableOnly && <Check className="w-3.5 h-3.5" />}
+              <span>Solo Crafteables</span>
             </button>
 
             <select

@@ -74,7 +74,7 @@ export const RecipeSidebar: React.FC<RecipeSidebarProps> = ({
           </h3>
           {unpricedCount > 0 && (
             <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-              ⚠️ {unpricedCount} sin precio
+              {unpricedCount} sin precio
             </span>
           )}
         </div>

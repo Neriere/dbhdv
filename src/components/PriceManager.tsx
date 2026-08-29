@@ -25,6 +25,7 @@ import {
   ChevronRight,
   History,
   Clock,
+  X,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -503,9 +504,10 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3.5 top-2.5 text-xs text-slate-500 hover:text-slate-300 font-bold bg-slate-850 px-1.5 py-0.5 rounded"
+                className="absolute right-3.5 top-2.5 text-slate-500 hover:text-slate-300 p-0.5 rounded"
+                title="Limpiar búsqueda"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -748,7 +750,8 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                         </span>
                         {isUsedInCrafting && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1">
-                            🧪 Ingrediente
+                            <FlaskConical className="w-3 h-3" />
+                            Ingrediente
                           </span>
                         )}
                       </div>

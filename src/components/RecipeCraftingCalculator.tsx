@@ -900,7 +900,7 @@ export const RecipeCraftingCalculator: React.FC<{
                 </h2>
                 {recipeTree?.subIngredients && recipeTree.subIngredients.filter((s) => (marketPrices[s.itemId] || 0) <= 0).length > 0 && (
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    ⚠️ {recipeTree.subIngredients.filter((s) => (marketPrices[s.itemId] || 0) <= 0).length} sin precio
+                    {recipeTree.subIngredients.filter((s) => (marketPrices[s.itemId] || 0) <= 0).length} sin precio
                   </span>
                 )}
               </div>
@@ -1684,7 +1684,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-white text-xs font-bold flex items-center justify-between transition-colors"
             >
               <span className="flex items-center gap-1.5">
-                <span className="text-amber-400">⚙️</span>
+                <Wrench className="w-3.5 h-3.5 text-amber-400" />
                 <span>
                   Desglose de Sub-receta ({node.subIngredients?.length})
                 </span>

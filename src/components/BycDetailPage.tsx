@@ -363,16 +363,16 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                 )}
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                Cofre otorga <strong className="text-amber-300 font-mono">+{chestSebuscalines} Sebuscalines</strong> ({formatKamas(sebuscalinesValue)} K) + 1x {hunt.resource.name} (Retorno neto venta -3% tasa HDV: <strong className="text-emerald-400 font-mono">{formatKamas(totalHuntNetReturn)} K</strong>).
+                Cofre otorga <strong className="text-amber-300 font-mono">+{chestSebuscalines} Sebuscalines</strong> ({formatKamas(sebuscalinesValue)} K) + 1x {hunt.resource.name} (Retorno neto venta -3% tasa mercadillo: <strong className="text-emerald-400 font-mono">{formatKamas(totalHuntNetReturn)} K</strong>).
               </p>
             </div>
           </div>
 
-          {/* Quick HDV Input Controls */}
+          {/* Quick Input Controls */}
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Whole Map HDV Price */}
+            {/* Whole Map Price */}
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
-              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Mapa en HDV:</span>
+              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Mapa en mercadillo:</span>
               <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 focus-within:border-amber-400">
                 <input
                   type="number"
@@ -390,9 +390,9 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
               </div>
             </div>
 
-            {/* Boss Resource HDV Price */}
+            {/* Boss Resource Price */}
             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
-              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Recurso en HDV:</span>
+              <span className="text-xs sm:text-sm text-slate-300 font-medium whitespace-nowrap">Recurso en mercadillo:</span>
               <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 focus-within:border-amber-400">
                 <input
                   type="number"
@@ -468,7 +468,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     </div>
 
                     <div className="mt-1 pt-1.5 border-t border-slate-700/60 flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold">HDV</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold">Mercadillo</span>
                       <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-md px-1.5 py-0.5 focus-within:border-amber-400">
                         <input
                           type="number"
@@ -605,11 +605,11 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                 <p className="text-[11px] text-slate-400">
                   {effectiveCostViaFrags < 0 ? (
                     <span className="text-cyan-300">
-                      ⭐ Nota: Los {chestSebuscalines} Sebuscalines superan el coste de los fragmentos, dejándote <strong>+{formatKamas(Math.abs(effectiveCostViaFrags))} K limpios</strong> de ganancia extra antes de usar/vender el recurso.
+                      Nota: Los {chestSebuscalines} Sebuscalines superan el coste de los fragmentos, dejándote <strong>+{formatKamas(Math.abs(effectiveCostViaFrags))} K limpios</strong> de ganancia extra antes de usar/vender el recurso.
                     </span>
                   ) : (
                     <span>
-                      Coste efectivo neto de la materia prima al cazar: <strong className="text-amber-300 font-mono">{formatKamas(bestHuntEffectiveUnitCost)} K</strong> (Ahorras {formatKamas(resourcePriceGross - bestHuntEffectiveUnitCost)} K vs HDV).
+                      Coste efectivo neto de la materia prima al cazar: <strong className="text-amber-300 font-mono">{formatKamas(bestHuntEffectiveUnitCost)} K</strong> (Ahorras {formatKamas(resourcePriceGross - bestHuntEffectiveUnitCost)} K vs mercadillo).
                     </span>
                   )}
                 </p>
@@ -630,7 +630,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
               </h2>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Calcula si vale la pena transformar {hunt.resource.name} crafteando el equipable vs solo vender el recurso crudo en HDV. Incluye impuesto del 3% en ventas HDV.
+              Calcula si vale la pena transformar {hunt.resource.name} crafteando el equipable vs solo vender el recurso crudo en mercadillo. Incluye impuesto del 3% en ventas de mercadillo.
             </p>
           </div>
 
@@ -801,7 +801,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     <div className="bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 flex items-center gap-2.5 shadow-sm">
                       <div className="flex flex-col">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                          Venta HDV:
+                          Venta Mercadillo:
                         </span>
                         <span className="text-xs text-emerald-400 font-mono font-bold">
                           Neto (-3%): {formatKamas(saleIncomeNet)} K
@@ -1004,7 +1004,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>🧩 Fragmentos</span>
+                          <span>Fragmentos</span>
                           {optimalAcquisitionMethod === "fragments" && (
                             <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold border border-amber-500/30">
                               Óptimo
@@ -1033,7 +1033,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>🗺️ Mapa Entero</span>
+                          <span>Mapa Entero</span>
                           {optimalAcquisitionMethod === "map" && (
                             <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold border border-amber-500/30">
                               Óptimo
@@ -1050,7 +1050,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                       </div>
                     </button>
 
-                    {/* Method 3: Compra HDV */}
+                    {/* Method 3: Compra Mercadillo */}
                     <button
                       type="button"
                       onClick={() => setSelectedEquipmentMethod((prev) => ({ ...prev, [eq.id]: "hdv" }))}
@@ -1062,7 +1062,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>🛒 Compra en HDV</span>
+                          <span>Compra en mercadillo</span>
                           {optimalAcquisitionMethod === "hdv" && (
                             <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold border border-amber-500/30">
                               Óptimo
@@ -1088,7 +1088,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                     <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 sm:p-4 space-y-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                          <span>📊 Resumen Financiero del Ciclo ({currentMethodLabel})</span>
+                          <span>Resumen Financiero del Ciclo ({currentMethodLabel})</span>
                         </span>
                         <span className="text-xs text-slate-400">
                           {activeMethod === "hdv"
@@ -1124,7 +1124,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                           </div>
                           <div className="text-xs text-slate-400 space-y-0.5 pt-1 border-t border-slate-800">
                             <div className="flex justify-between">
-                              <span>Venta Equipo (HDV -3%):</span>
+                              <span>Venta Equipo (Mercadillo -3%):</span>
                               <span className="font-mono text-slate-300">{formatKamas(saleIncomeNet)} K</span>
                             </div>
                             <div className="flex justify-between">

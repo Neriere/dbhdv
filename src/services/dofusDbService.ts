@@ -2222,7 +2222,7 @@ export function getStoredTheme(): DofusTheme {
   if (typeof window === "undefined") return "bonta";
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as DofusTheme;
-    if (saved === "brakmar" || saved === "pandala" || saved === "bonta") {
+    if (saved === "brakmar" || saved === "pandala" || saved === "bonta" || saved === "calm") {
       return saved;
     }
     if (saved === "amakna" as any) {

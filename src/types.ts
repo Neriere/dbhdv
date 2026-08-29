@@ -220,7 +220,7 @@ export interface ConsolidatedIngredient {
   isChecked?: boolean;
 }
 
-export type DofusTheme = 'bonta' | 'brakmar' | 'pandala';
+export type DofusTheme = 'bonta' | 'brakmar' | 'pandala' | 'calm';
 
 // Dofusbook Set Calculator Types
 export interface DofusbookIngredientBreakdown {
@@ -326,7 +326,7 @@ export interface ReverseCraftAnalysis {
   availableIngredientsCount: number;
   totalIngredientsCount: number;
   bankMaterialsValue: number; // Estimated savings from bank materials
-  missingMaterialsCost: number; // Kamas needed in HDV to finish the craft
+  missingMaterialsCost: number; // Kamas needed in market to finish the craft
   ingredientsStatus: ReverseCraftIngredientStatus[];
   isFullyCraftable: boolean;
 }

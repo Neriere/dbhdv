@@ -47,7 +47,7 @@ export function getBycHuntForResource(itemId: number): BycHuntData | undefined {
 
 /**
  * Analiza las 3 formas de obtener un recurso ByC:
- * 1. Compra directa en HDV
+ * 1. Compra directa en mercadillo
  * 2. Compra de todos los fragmentos y cacería
  * 3. Compra del mapa entero y cacería
  */
@@ -59,7 +59,7 @@ export function analyzeBycResourceCost(
   const hunt = resourceToHuntMap.get(resourceId);
   if (!hunt) return null;
 
-  // 1. Direct HDV Resource Price
+  // 1. Direct Resource Price
   const directPrice = marketPrices[resourceId] ?? getStoredItemPrice(resourceId) ?? hunt.resource.defaultPrice ?? 0;
 
   // 2. Fragments Cost
@@ -125,8 +125,8 @@ export function analyzeBycResourceCost(
 
 /**
  * Devuelve el precio de adquisición más económico para cualquier ítem:
- * Si es un recurso ByC, compara HDV vs Fragmentos vs Mapa.
- * Si es un ingrediente normal, devuelve el precio HDV o subcrafteo.
+ * Si es un recurso ByC, compara compra directa vs Fragmentos vs Mapa.
+ * Si es un ingrediente normal, devuelve el precio de mercadillo o subcrafteo.
  */
 export function getOptimizedIngredientCost(
   itemId: number,

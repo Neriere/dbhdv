@@ -831,7 +831,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 flex flex-col justify-center">
-                <span className="text-xs text-slate-400 font-medium">100% Crafteables (Sin HDV)</span>
+                <span className="text-xs text-slate-400 font-medium">100% Crafteables (Sin compras)</span>
                 <span className="text-lg font-bold text-amber-300">{opportunitiesSummary.fullyCraftableCount}</span>
               </div>
 
@@ -962,13 +962,13 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
                   }}
                   className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-xl text-xs font-bold text-amber-300 focus:outline-none focus:border-amber-400"
                 >
-                  <option value="profit_roi">🔥 Mayor Ganancia en Kamas (Kamas &gt; ROI)</option>
-                  <option value="smart_score">⭐ Score de Rentabilidad (Equilibrio Kamas &amp; ROI)</option>
-                  <option value="roi_profit">📈 Mayor ROI % (ROI &gt; Kamas)</option>
-                  <option value="fully_craftable">✅ 100% Crafteables primero (Sin comprar)</option>
-                  <option value="coverage">📦 Mayor % de Materiales en Banco</option>
-                  <option value="missingCost">💰 Menor Kamas a comprar en HDV</option>
-                  <option value="level">👑 Mayor Nivel</option>
+                  <option value="profit_roi">Mayor Ganancia en Kamas (Kamas &gt; ROI)</option>
+                  <option value="smart_score">Score de Rentabilidad (Equilibrio Kamas &amp; ROI)</option>
+                  <option value="roi_profit">Mayor ROI % (ROI &gt; Kamas)</option>
+                  <option value="fully_craftable">100% Crafteables primero (Sin comprar)</option>
+                  <option value="coverage">Mayor % de Materiales en Banco</option>
+                  <option value="missingCost">Menor gasto a comprar en mercadillo</option>
+                  <option value="level">Mayor Nivel</option>
                 </select>
               </div>
             </div>
@@ -1160,7 +1160,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
                         <div className="flex items-center gap-4 sm:gap-6 flex-wrap lg:flex-nowrap justify-between w-full lg:w-auto">
                           {/* Cost breakdown */}
                           <div className="text-right">
-                            <div className="text-xs text-slate-400">Coste Compra HDV</div>
+                            <div className="text-xs text-slate-400">Coste Compra Mercadillo</div>
                             <div
                               className={`text-sm font-mono font-bold ${
                                 craft.missingMaterialsCost === 0 ? "text-emerald-400" : "text-slate-200"
@@ -1177,7 +1177,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
 
                           {/* Market Sale Price */}
                           <div className="text-right">
-                            <div className="text-xs text-slate-400">Venta HDV Estimada</div>
+                            <div className="text-xs text-slate-400">Venta Estimada Mercadillo</div>
                             <div className="text-sm font-mono font-bold text-amber-300">
                               {craft.marketSalePrice.toLocaleString()} K
                             </div>

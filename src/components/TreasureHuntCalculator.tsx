@@ -25,6 +25,7 @@ import {
   Plus,
   ExternalLink,
   Hammer,
+  X,
 } from "lucide-react";
 import { LEGENDARY_HUNTS, LegendaryHuntInfo } from "../data/legendaryHuntsData";
 import {
@@ -1117,9 +1118,10 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
               <button
                 type="button"
                 onClick={() => setIsRatesModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold"
+                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition"
+                title="Cerrar modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

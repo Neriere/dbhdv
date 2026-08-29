@@ -126,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <h1 className="text-base sm:text-lg font-black text-white tracking-tight shrink-0 mr-1">
-              Dofus <span className="text-amber-400">HDV</span>
+              Dofus <span className="text-amber-400">Craft</span>
             </h1>
 
             {/* Theme Selector */}
@@ -137,13 +137,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="bg-slate-950 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold outline-none cursor-pointer transition-colors shadow-inner"
             >
               <option value="bonta" className="bg-slate-900 text-sky-300">
-                🧊 Bonta (Gris / Azul Claro)
+                Bonta (Gris / Azul Claro)
               </option>
               <option value="brakmar" className="bg-slate-900 text-rose-300">
-                ⚔️ Brakmar (Rojo / Negro / Gris)
+                Brakmar (Rojo / Negro / Gris)
               </option>
               <option value="pandala" className="bg-slate-900 text-emerald-300">
-                🌲 Bosque (Verde / Salvia)
+                Bosque (Verde / Salvia)
+              </option>
+              <option value="calm" className="bg-slate-900 text-amber-300">
+                Modo Calmo (Cálido / Anti-Fatiga)
               </option>
             </select>
           </div>

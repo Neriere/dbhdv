@@ -318,7 +318,7 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
                 <ShoppingCart className="w-3.5 h-3.5 text-amber-400" /> Ingredientes ({consolidatedIngredients.length})
               </h3>
               <span className="text-[11px] text-slate-500">
-                Clic en ✓ para marcar comprado
+                Marcar elementos comprados
               </span>
             </div>
 
@@ -327,7 +327,7 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-950/80 text-slate-400 font-mono border-b border-slate-800 text-[10px] uppercase tracking-wider">
                     <tr>
-                      <th className="py-2.5 px-3 w-8 text-center">✓</th>
+                      <th className="py-2.5 px-3 w-8 text-center">Estado</th>
                       <th className="py-2.5 px-3">Ingrediente</th>
                       <th className="py-2.5 px-3 text-center">Cantidad</th>
                       <th className="py-2.5 px-3 text-right">Precio Unitario</th>

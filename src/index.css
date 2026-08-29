@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ----------------------------------------------------
- * Theme Variables & Color Palettes for Dofus HDV
+ * Theme Variables & Color Palettes for Dofus Craft
  * Designed for visual comfort, clarity, and reduced eye strain
  * ---------------------------------------------------- */
 
@@ -55,6 +55,23 @@
   --accent: #10b981;
   --accent-hover: #34d399;
   --accent-glow: rgba(16, 185, 129, 0.22);
+}
+
+[data-theme="calm"] {
+  --bg-main: #181715;
+  --bg-surface: #22201d;
+  --bg-card: #2c2925;
+  --bg-card-hover: #37332e;
+  --bg-input: #1a1916;
+  --border-subtle: #3a3630;
+  --border-normal: #4e4941;
+  --border-focus: #f59e0b;
+  --text-primary: #f3efe6;
+  --text-secondary: #d8cfc0;
+  --text-muted: #9e9585;
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --accent-glow: rgba(245, 158, 11, 0.18);
 }
 
 /* ----------------------------------------------------
@@ -319,6 +336,94 @@ html[data-theme="pandala"],
 [data-theme="pandala"] .border-amber-500\/30,
 [data-theme="pandala"] .border-amber-500\/20 {
   border-color: rgba(16, 185, 129, 0.4) !important;
+}
+
+/* ----------------------------------------------------
+ * Modo Calmo (Cálido / Sepia / Anti-Fatiga Visual)
+ * ---------------------------------------------------- */
+html[data-theme="calm"],
+[data-theme="calm"] body,
+[data-theme="calm"] .bg-slate-950 {
+  background-color: var(--bg-main) !important;
+}
+
+[data-theme="calm"] .bg-slate-900,
+[data-theme="calm"] .bg-slate-900\/60,
+[data-theme="calm"] .bg-slate-900\/80,
+[data-theme="calm"] .bg-slate-900\/90,
+[data-theme="calm"] .bg-slate-900\/95 {
+  background-color: var(--bg-surface) !important;
+}
+
+[data-theme="calm"] .bg-slate-800,
+[data-theme="calm"] .bg-slate-800\/80,
+[data-theme="calm"] .bg-slate-800\/60,
+[data-theme="calm"] .bg-slate-800\/50,
+[data-theme="calm"] .bg-slate-800\/40,
+[data-theme="calm"] .bg-slate-800\/30 {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme="calm"] .hover\:bg-slate-800:hover,
+[data-theme="calm"] .hover\:bg-slate-800\/70:hover,
+[data-theme="calm"] .hover\:bg-slate-800\/50:hover,
+[data-theme="calm"] .hover\:bg-slate-700\/50:hover,
+[data-theme="calm"] .hover\:bg-slate-700\/40:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+
+[data-theme="calm"] .border-slate-800,
+[data-theme="calm"] .border-slate-800\/80,
+[data-theme="calm"] .border-slate-800\/60,
+[data-theme="calm"] .border-slate-800\/50,
+[data-theme="calm"] .border-slate-800\/40 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="calm"] .border-slate-700,
+[data-theme="calm"] .border-slate-700\/80,
+[data-theme="calm"] .border-slate-700\/60,
+[data-theme="calm"] .border-slate-700\/50 {
+  border-color: var(--border-normal) !important;
+}
+
+[data-theme="calm"] .text-slate-400 {
+  color: #9e9585 !important;
+}
+
+[data-theme="calm"] .text-slate-300 {
+  color: #d8cfc0 !important;
+}
+
+[data-theme="calm"] .text-slate-200 {
+  color: #ede7dc !important;
+}
+
+[data-theme="calm"] .text-amber-400,
+[data-theme="calm"] .text-amber-300 {
+  color: #f59e0b !important;
+}
+
+[data-theme="calm"] .bg-amber-500 {
+  background-color: #d97706 !important;
+  color: #1a1916 !important;
+}
+
+[data-theme="calm"] .hover\:bg-amber-600:hover,
+[data-theme="calm"] .hover\:bg-amber-500:hover {
+  background-color: #b45309 !important;
+}
+
+[data-theme="calm"] .bg-amber-500\/20,
+[data-theme="calm"] .bg-amber-500\/10,
+[data-theme="calm"] .bg-amber-500\/15 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+[data-theme="calm"] .border-amber-500\/40,
+[data-theme="calm"] .border-amber-500\/30,
+[data-theme="calm"] .border-amber-500\/20 {
+  border-color: rgba(245, 158, 11, 0.35) !important;
 }
 
 /* ----------------------------------------------------

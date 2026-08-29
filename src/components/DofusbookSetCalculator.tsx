@@ -24,6 +24,7 @@ import {
   EyeOff,
   Eye,
   SlidersHorizontal,
+  Package,
 } from 'lucide-react';
 import {
   DofusbookBuildAnalysis,
@@ -775,7 +776,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                                       className="w-8 h-8 object-contain"
                                     />
                                   ) : (
-                                    <span className="text-xs">🛡️</span>
+                                    <Shield className="w-4 h-4 text-slate-500" />
                                   )}
                                 </div>
 
@@ -1114,7 +1115,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                                 className="w-7 h-7 object-contain"
                               />
                             ) : (
-                              <span className="text-xs">📦</span>
+                              <Package className="w-3.5 h-3.5 text-slate-500" />
                             )}
                           </div>
                           <div className="min-w-0">
