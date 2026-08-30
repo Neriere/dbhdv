@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sparkles,
   Link as LinkIcon,
@@ -25,11 +25,18 @@ import {
   Eye,
   SlidersHorizontal,
   Package,
+  Trash2,
+  RotateCcw,
+  PackageCheck,
+  CheckCheck,
+  X,
+  FilePlus,
 } from 'lucide-react';
 import {
   DofusbookBuildAnalysis,
   DofusbookEquipmentItem,
   DofusItem,
+  ConsolidatedIngredient,
 } from '../types';
 import {
   fetchDofusbookAnalysis,
@@ -38,6 +45,7 @@ import {
   addDofusbookItemsToShoppingList,
   getItemIconUrl,
   getItemFallbackIconUrl,
+  getItemById,
 } from '../services/dofusDbService';
 import { SafeImage } from './SafeImage';
 import { formatKamas } from '../utils/kamaFormatters';
@@ -48,25 +56,103 @@ interface DofusbookSetCalculatorProps {
   onNavigateToShopping?: () => void;
 }
 
+const DOFUSBOOK_SESSION_STORAGE_KEY = 'dofus_dofusbook_cached_session_v1';
+
+interface DofusbookSavedSession {
+  urlInput: string;
+  excludeDofus: boolean;
+  excludeTrophies: boolean;
+  analysis: DofusbookBuildAnalysis | null;
+  ownedItemKeys: Record<string, boolean>;
+  removedItemKeys: Record<string, boolean>;
+  activeTabSection: 'comparison' | 'materials';
+  showOnlyCraftable: boolean;
+  filterStatus: 'all' | 'needed' | 'owned' | 'removed';
+}
+
+function loadSavedDofusbookSession(): DofusbookSavedSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DOFUSBOOK_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Error loading cached Dofusbook session:', e);
+    return null;
+  }
+}
+
 export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
   onSelectRecipeForCalculator,
   onSelectForCrushing,
   onNavigateToShopping,
 }) => {
-  const [urlInput, setUrlInput] = useState('');
-  const [excludeDofus, setExcludeDofus] = useState(true);
-  const [excludeTrophies, setExcludeTrophies] = useState(false);
+  const savedSession = useMemo(() => loadSavedDofusbookSession(), []);
+
+  const [urlInput, setUrlInput] = useState(() => savedSession?.urlInput || '');
+  const [excludeDofus, setExcludeDofus] = useState(() => savedSession?.excludeDofus ?? true);
+  const [excludeTrophies, setExcludeTrophies] = useState(() => savedSession?.excludeTrophies ?? false);
   const [activeProfileId, setActiveProfileId] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<DofusbookBuildAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<DofusbookBuildAnalysis | null>(() => savedSession?.analysis ?? null);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [shoppingAddedToast, setShoppingAddedToast] = useState(false);
-  const [activeTabSection, setActiveTabSection] = useState<'comparison' | 'materials'>('comparison');
-  const [showOnlyCraftable, setShowOnlyCraftable] = useState(false);
+  const [activeTabSection, setActiveTabSection] = useState<'comparison' | 'materials'>(
+    () => savedSession?.activeTabSection ?? 'comparison'
+  );
+  const [showOnlyCraftable, setShowOnlyCraftable] = useState(
+    () => savedSession?.showOnlyCraftable ?? false
+  );
+  const [filterStatus, setFilterStatus] = useState<'all' | 'needed' | 'owned' | 'removed'>(
+    () => savedSession?.filterStatus ?? 'all'
+  );
   const [editingPriceItemId, setEditingPriceItemId] = useState<number | null>(null);
   const [tempPriceInput, setTempPriceInput] = useState<string>('');
+
+  // Item ownership and exclusion state: itemKey -> boolean
+  const [ownedItemKeys, setOwnedItemKeys] = useState<Record<string, boolean>>(
+    () => savedSession?.ownedItemKeys ?? {}
+  );
+  const [removedItemKeys, setRemovedItemKeys] = useState<Record<string, boolean>>(
+    () => savedSession?.removedItemKeys ?? {}
+  );
+
+  // Sync to localStorage on any state change
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (analysis || urlInput) {
+        const stateToSave: DofusbookSavedSession = {
+          urlInput,
+          excludeDofus,
+          excludeTrophies,
+          analysis,
+          ownedItemKeys,
+          removedItemKeys,
+          activeTabSection,
+          showOnlyCraftable,
+          filterStatus,
+        };
+        localStorage.setItem(DOFUSBOOK_SESSION_STORAGE_KEY, JSON.stringify(stateToSave));
+      } else {
+        localStorage.removeItem(DOFUSBOOK_SESSION_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Error saving Dofusbook session to localStorage:', e);
+    }
+  }, [
+    urlInput,
+    excludeDofus,
+    excludeTrophies,
+    analysis,
+    ownedItemKeys,
+    removedItemKeys,
+    activeTabSection,
+    showOnlyCraftable,
+    filterStatus,
+  ]);
 
   useEffect(() => {
     const handleDatabaseUpdated = () => {
@@ -114,6 +200,9 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
         profileId: activeProfileId,
       });
       setAnalysis(data);
+      // Reset item custom statuses on new build
+      setOwnedItemKeys({});
+      setRemovedItemKeys({});
       if (overrideUrl) {
         setUrlInput(overrideUrl);
       }
@@ -172,6 +261,91 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  // Ownership & Removal actions
+  const toggleItemOwned = (key: string) => {
+    setOwnedItemKeys((prev) => {
+      const isCurrentlyOwned = !!prev[key];
+      const next = { ...prev };
+      if (isCurrentlyOwned) {
+        delete next[key];
+      } else {
+        next[key] = true;
+      }
+      return next;
+    });
+
+    // If it was marked as removed, restore it
+    if (removedItemKeys[key]) {
+      setRemovedItemKeys((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  const toggleItemRemoved = (key: string) => {
+    setRemovedItemKeys((prev) => {
+      const isCurrentlyRemoved = !!prev[key];
+      const next = { ...prev };
+      if (isCurrentlyRemoved) {
+        delete next[key];
+      } else {
+        next[key] = true;
+      }
+      return next;
+    });
+
+    // If it was marked as owned, un-own it
+    if (ownedItemKeys[key]) {
+      setOwnedItemKeys((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  const restoreItem = (key: string) => {
+    setRemovedItemKeys((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const restoreAllRemoved = () => {
+    setRemovedItemKeys({});
+  };
+
+  const markAllAsOwned = () => {
+    if (!analysis) return;
+    const newOwned: Record<string, boolean> = {};
+    analysis.items.forEach((it, idx) => {
+      const key = `${it.slotName}-${it.id || idx}`;
+      if (!removedItemKeys[key]) {
+        newOwned[key] = true;
+      }
+    });
+    setOwnedItemKeys(newOwned);
+  };
+
+  const resetAllStatuses = () => {
+    setOwnedItemKeys({});
+    setRemovedItemKeys({});
+  };
+
+  const handleClearSet = () => {
+    setAnalysis(null);
+    setUrlInput('');
+    setOwnedItemKeys({});
+    setRemovedItemKeys({});
+    setError(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(DOFUSBOOK_SESSION_STORAGE_KEY);
+    }
   };
 
   const handleSavePrice = async (itemId: number, price: number) => {
@@ -234,55 +408,9 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
             return it;
           });
 
-          // Recalculate totals
-          let totalCraftCost = 0;
-          let totalMarketPrice = 0;
-          let totalOptimalCost = 0;
-
-          for (const it of updatedItems) {
-            const isExcluded = (it.isDofus && excludeDofus) || (it.isTrophy && excludeTrophies);
-            if (!isExcluded) {
-              if (it.craftCost > 0) totalCraftCost += it.craftCost;
-              else if (it.marketPrice > 0) totalCraftCost += it.marketPrice;
-
-              if (it.marketPrice > 0) totalMarketPrice += it.marketPrice;
-              else if (it.craftCost > 0) totalMarketPrice += it.craftCost;
-
-              const opt =
-                it.craftCost > 0 && it.marketPrice > 0
-                  ? Math.min(it.craftCost, it.marketPrice)
-                  : it.craftCost > 0
-                  ? it.craftCost
-                  : it.marketPrice;
-              totalOptimalCost += opt;
-            }
-          }
-
-          const totalSavings = Math.max(
-            0,
-            Math.max(totalCraftCost, totalMarketPrice) - totalOptimalCost
-          );
-
-          const updatedConsolidated = prev.consolidatedIngredients.map((mat) => {
-            if (mat.itemId === itemId) {
-              const unitPrice = price;
-              const totalPrice = mat.totalQuantityRequired * unitPrice;
-              return { ...mat, unitPrice, totalPrice };
-            }
-            return mat;
-          });
-
           return {
             ...prev,
             items: updatedItems,
-            consolidatedIngredients: updatedConsolidated,
-            totals: {
-              ...prev.totals,
-              totalCraftCost,
-              totalMarketPrice,
-              totalOptimalCost,
-              totalSavings,
-            },
           };
         });
       }
@@ -293,13 +421,146 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     }
   };
 
+  // Recomputed Totals, Progress, and Consolidated Ingredients dynamically
+  const computedData = useMemo(() => {
+    if (!analysis) {
+      return {
+        items: [],
+        totals: {
+          totalCraftCost: 0,
+          totalMarketPrice: 0,
+          totalOptimalCost: 0,
+          totalSavings: 0,
+          craftablePiecesCount: 0,
+          excludedDofusCount: 0,
+          excludedTrophiesCount: 0,
+          totalPieces: 0,
+        },
+        consolidatedIngredients: [] as ConsolidatedIngredient[],
+        ownedCount: 0,
+        removedCount: 0,
+        neededCount: 0,
+        activePiecesCount: 0,
+        progressPercent: 0,
+      };
+    }
+
+    let totalCraftCost = 0;
+    let totalMarketPrice = 0;
+    let totalOptimalCost = 0;
+    let craftablePiecesCount = 0;
+    let excludedDofusCount = 0;
+    let excludedTrophiesCount = 0;
+    let ownedCount = 0;
+    let removedCount = 0;
+    let neededCount = 0;
+
+    const activeConsolidatedMap = new Map<number, ConsolidatedIngredient>();
+
+    const processedItems = analysis.items.map((it, idx) => {
+      const key = `${it.slotName}-${it.id || idx}`;
+      const isOwned = !!ownedItemKeys[key];
+      const isRemoved = !!removedItemKeys[key];
+      const isDofusExcluded = it.isDofus && excludeDofus;
+      const isTrophyExcluded = it.isTrophy && excludeTrophies;
+
+      if (it.isDofus && excludeDofus) excludedDofusCount++;
+      if (it.isTrophy && excludeTrophies) excludedTrophiesCount++;
+
+      if (isRemoved) {
+        removedCount++;
+      } else if (isOwned) {
+        ownedCount++;
+      } else {
+        neededCount++;
+      }
+
+      // Payable if needed (not removed, not owned, not excluded)
+      const isPayable = !isRemoved && !isOwned && !isDofusExcluded && !isTrophyExcluded;
+
+      if (isPayable) {
+        if (it.isCraftable) craftablePiecesCount++;
+
+        if (it.craftCost > 0) totalCraftCost += it.craftCost;
+        else if (it.marketPrice > 0) totalCraftCost += it.marketPrice;
+
+        if (it.marketPrice > 0) totalMarketPrice += it.marketPrice;
+        else if (it.craftCost > 0) totalMarketPrice += it.craftCost;
+
+        const opt =
+          it.craftCost > 0 && it.marketPrice > 0
+            ? Math.min(it.craftCost, it.marketPrice)
+            : it.craftCost > 0
+            ? it.craftCost
+            : it.marketPrice;
+        totalOptimalCost += opt;
+
+        // Consolidate ingredients for needed items that have recipe
+        if (it.isCraftable && it.ingredientsBreakdown.length > 0) {
+          for (const ing of it.ingredientsBreakdown) {
+            const existing = activeConsolidatedMap.get(ing.id);
+            if (existing) {
+              existing.totalQuantityRequired += ing.quantity;
+              existing.totalPrice += ing.totalPrice;
+            } else {
+              activeConsolidatedMap.set(ing.id, {
+                itemId: ing.id,
+                totalQuantityRequired: ing.quantity,
+                unitPrice: ing.unitPrice,
+                totalPrice: ing.totalPrice,
+                item: getItemById(ing.id),
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        ...it,
+        key,
+        isOwned,
+        isRemoved,
+        isPayable,
+      };
+    });
+
+    const totalSavings = Math.max(0, Math.max(totalCraftCost, totalMarketPrice) - totalOptimalCost);
+    const activePiecesCount = analysis.items.length - removedCount;
+    const progressPercent = activePiecesCount > 0 ? Math.round((ownedCount / activePiecesCount) * 100) : 0;
+
+    const consolidatedIngredients = Array.from(activeConsolidatedMap.values()).sort(
+      (a, b) => b.totalPrice - a.totalPrice
+    );
+
+    return {
+      items: processedItems,
+      totals: {
+        totalCraftCost,
+        totalMarketPrice,
+        totalOptimalCost,
+        totalSavings,
+        craftablePiecesCount,
+        excludedDofusCount,
+        excludedTrophiesCount,
+        totalPieces: analysis.items.length,
+      },
+      consolidatedIngredients,
+      ownedCount,
+      removedCount,
+      neededCount,
+      activePiecesCount,
+      progressPercent,
+    };
+  }, [analysis, ownedItemKeys, removedItemKeys, excludeDofus, excludeTrophies]);
+
   const handleSendToShoppingList = () => {
     if (!analysis) return;
 
-    // Send all craftable items in the build
-    const itemsToAdd = analysis.items
+    // Send only craftable items in the build that are NOT owned, NOT removed, and NOT excluded
+    const itemsToAdd = computedData.items
       .filter((it) => {
         if (!it.item) return false;
+        if (it.isOwned || it.isRemoved) return false;
         if (it.isDofus && excludeDofus) return false;
         if (it.isTrophy && excludeTrophies) return false;
         return it.isCraftable && it.cheaperOption === 'craft';
@@ -311,15 +572,17 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       }));
 
     if (itemsToAdd.length === 0) {
-      // If none marked as craft, add all items that have recipes
-      const fallbackToAdd = analysis.items
-        .filter((it) => it.item && it.isCraftable)
+      // If none marked strictly as cheaper craft, add all needed items that have recipes
+      const fallbackToAdd = computedData.items
+        .filter((it) => it.item && it.isCraftable && !it.isOwned && !it.isRemoved)
         .map((it) => ({
           item: it.item!,
           recipe: it.recipe,
           quantity: 1,
         }));
-      addDofusbookItemsToShoppingList(fallbackToAdd);
+      if (fallbackToAdd.length > 0) {
+        addDofusbookItemsToShoppingList(fallbackToAdd);
+      }
     } else {
       addDofusbookItemsToShoppingList(itemsToAdd);
     }
@@ -335,18 +598,27 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       `=== ANÁLISIS DE SET DOFUSBOOK ===`,
       `Set: ${analysis.buildName} ${analysis.buildLevel ? `(Nivel ${analysis.buildLevel})` : ''}`,
       `Enlace: ${analysis.url}`,
+      `Progreso: ${computedData.ownedCount} de ${computedData.activePiecesCount} piezas obtenidas (${computedData.progressPercent}%)`,
       ``,
-      `RESUMEN DE COSTES:`,
-      `- Total Compra Directa (HDV): ${formatKamas(analysis.totals.totalMarketPrice)}`,
-      `- Total Coste Crafteo: ${formatKamas(analysis.totals.totalCraftCost)}`,
-      `- Total Estrategia Óptima: ${formatKamas(analysis.totals.totalOptimalCost)}`,
-      `- Ahorro Estimado: ${formatKamas(analysis.totals.totalSavings)}`,
+      `RESUMEN DE COSTES PENDIENTES:`,
+      `- Total Compra Directa (HDV): ${formatKamas(computedData.totals.totalMarketPrice)}`,
+      `- Total Coste Crafteo: ${formatKamas(computedData.totals.totalCraftCost)}`,
+      `- Total Estrategia Óptima: ${formatKamas(computedData.totals.totalOptimalCost)}`,
+      `- Ahorro Estimado: ${formatKamas(computedData.totals.totalSavings)}`,
       ``,
       `DETALLE POR PIEZA:`,
     ];
 
-    analysis.items.forEach((it) => {
+    computedData.items.forEach((it) => {
       const name = it.item?.name?.es || it.rawName;
+      if (it.isRemoved) {
+        lines.push(`* [DESCARTADO] ${it.slotName}: ${name} (Eliminado del cálculo)`);
+        return;
+      }
+      if (it.isOwned) {
+        lines.push(`* [✓ YA OBTENIDO] ${it.slotName}: ${name} (En posesión - 0 K pendientes)`);
+        return;
+      }
       const craft = it.craftCost > 0 ? `${formatKamas(it.craftCost)}` : 'Sin precio';
       const hdv = it.marketPrice > 0 ? `${formatKamas(it.marketPrice)}` : 'Sin precio';
       const verdict =
@@ -368,12 +640,20 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     setTimeout(() => setCopiedSummary(false), 2500);
   };
 
-  const filteredItems = analysis
-    ? analysis.items.filter((it) => {
-        if (showOnlyCraftable && !it.isCraftable) return false;
-        return true;
-      })
-    : [];
+  const filteredItems = computedData.items.filter((it) => {
+    if (showOnlyCraftable && !it.isCraftable) return false;
+    if (filterStatus === 'needed') {
+      return !it.isOwned && !it.isRemoved;
+    }
+    if (filterStatus === 'owned') {
+      return it.isOwned;
+    }
+    if (filterStatus === 'removed') {
+      return it.isRemoved;
+    }
+    // 'all'
+    return true;
+  });
 
   return (
     <div className="space-y-5 pb-12">
@@ -392,7 +672,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
               </h2>
             </div>
             <p className="text-xs sm:text-sm text-slate-300">
-              Coloca el enlace para desglosar el costo
+              Coloca el enlace para desglosar el costo y marca los objetos que ya posees o deseas descartar
             </p>
           </div>
         </div>
@@ -512,71 +792,145 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       {/* Analysis Results View */}
       {analysis && (
         <div className="space-y-5 animate-in fade-in duration-300">
-          {/* Build Info Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black text-lg shadow-md">
-                <Shield className="w-5 h-5 text-slate-950" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base sm:text-lg font-black text-white">{analysis.buildName}</h3>
-                  {analysis.buildLevel && (
-                    <span className="px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-md">
-                      Nivel {analysis.buildLevel}
+          {/* Build Info & Progress Bar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black text-lg shadow-md shrink-0">
+                  <Shield className="w-5 h-5 text-slate-950" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base sm:text-lg font-black text-white">{analysis.buildName}</h3>
+                    {analysis.buildLevel && (
+                      <span className="px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-md">
+                        Nivel {analysis.buildLevel}
+                      </span>
+                    )}
+                    <span className="px-2 py-0.5 bg-slate-800 text-slate-300 text-xs font-medium rounded-md border border-slate-700">
+                      {analysis.items.length} piezas en build
                     </span>
-                  )}
-                  <span className="px-2 py-0.5 bg-slate-800 text-slate-300 text-xs font-medium rounded-md border border-slate-700">
-                    {analysis.items.length} piezas equipadas
-                  </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                    <span className="truncate max-w-xs font-mono">{analysis.url}</span>
+                    {analysis.resolvedUrl && (
+                      <a
+                        href={analysis.resolvedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold hover:underline"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Ver en Dofusbook</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                  <span className="truncate max-w-xs font-mono">{analysis.url}</span>
-                  {analysis.resolvedUrl && (
-                    <a
-                      href={analysis.resolvedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold hover:underline"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Ver en Dofusbook</span>
-                    </a>
+              </div>
+
+              {/* Quick Build Action Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleClearSet}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700 cursor-pointer"
+                  title="Limpiar el set actual y cargar otro"
+                >
+                  <X className="w-3 h-3 text-rose-400" />
+                  <span>Nuevo Set</span>
+                </button>
+
+                {computedData.ownedCount > 0 || computedData.removedCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={resetAllStatuses}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700 cursor-pointer"
+                    title="Reiniciar todos los objetos a pendientes"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reiniciar estados</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={markAllAsOwned}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700 cursor-pointer"
+                    title="Marcar todas las piezas como ya obtenidas"
+                  >
+                    <CheckCheck className="w-3 h-3 text-emerald-400" />
+                    <span>Marcar todo obtenido</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleCopySummary}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer shadow-sm"
+                  title="Copiar resumen con costes pendientes al portapapeles"
+                >
+                  {copiedSummary ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">¡Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Copiar Resumen</span>
+                    </>
                   )}
-                </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendToShoppingList}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                  title="Añadir ingredientes de piezas pendientes a la lista de compras"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>Enviar Materiales Pendientes a Compras</span>
+                </button>
               </div>
             </div>
 
-            {/* Quick Build Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={handleCopySummary}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer shadow-sm"
-                title="Copiar resumen al portapapeles"
-              >
-                {copiedSummary ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">¡Copiado!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Copiar Resumen</span>
-                  </>
-                )}
-              </button>
+            {/* Set Progression Bar */}
+            <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <PackageCheck className="w-4 h-4 text-emerald-400" />
+                    Progreso del Set:
+                  </span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    {computedData.ownedCount} de {computedData.activePiecesCount} piezas listas
+                  </span>
+                  {computedData.removedCount > 0 && (
+                    <span className="text-slate-500 text-[11px]">
+                      ({computedData.removedCount} descartada{computedData.removedCount > 1 ? 's' : ''})
+                    </span>
+                  )}
+                </div>
 
-              <button
-                type="button"
-                onClick={handleSendToShoppingList}
-                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-                title="Añadir ingredientes de piezas crafteables a la lista de compras"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                <span>Enviar Materiales a Compras</span>
-              </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 text-[11px]">
+                    Faltan:{' '}
+                    <strong className="text-amber-400 font-mono font-bold">
+                      {computedData.neededCount} piezas
+                    </strong>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono font-black text-xs border border-emerald-500/30">
+                    {computedData.progressPercent}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Visual Progress Track */}
+              <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 rounded-full"
+                  style={{ width: `${computedData.progressPercent}%` }}
+                ></div>
+              </div>
             </div>
           </div>
 
@@ -585,7 +939,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
             <div className="bg-emerald-500/15 border border-emerald-500/40 p-3 rounded-xl flex items-center justify-between text-emerald-300 text-xs shadow-lg animate-in slide-in-from-top duration-200">
               <div className="flex items-center gap-2 font-bold">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>¡Materiales del set añadidos al Planificador de Compras con éxito!</span>
+                <span>¡Materiales de las piezas pendientes añadidos al Planificador de Compras con éxito!</span>
               </div>
               {onNavigateToShopping && (
                 <button
@@ -599,7 +953,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
             </div>
           )}
 
-          {/* Financial KPI Summary Cards */}
+          {/* Financial KPI Summary Cards (Calculated on Pending Pieces) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Direct Market Buy Total */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1 shadow-md">
@@ -608,13 +962,15 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                   <ShoppingCart className="w-3.5 h-3.5 text-sky-400" />
                   Compra Directa (HDV)
                 </span>
-                <span className="text-[10px] uppercase font-bold text-slate-500">Todo en mercadillo</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">
+                  {computedData.neededCount} pendientes
+                </span>
               </div>
               <div className="text-xl sm:text-2xl font-black text-white font-mono tracking-tight">
-                {formatKamas(analysis.totals.totalMarketPrice)}
+                {formatKamas(computedData.totals.totalMarketPrice)}
               </div>
               <p className="text-[11px] text-slate-400">
-                Coste total si compras todas las piezas terminadas en el mercadillo.
+                Coste si compras en mercadillo todas las piezas que aún te faltan.
               </p>
             </div>
 
@@ -626,14 +982,14 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                   Coste de Crafteo
                 </span>
                 <span className="text-[10px] uppercase font-bold text-slate-500">
-                  {analysis.totals.craftablePiecesCount} crafteables
+                  {computedData.totals.craftablePiecesCount} crafteables
                 </span>
               </div>
               <div className="text-xl sm:text-2xl font-black text-amber-300 font-mono tracking-tight">
-                {formatKamas(analysis.totals.totalCraftCost)}
+                {formatKamas(computedData.totals.totalCraftCost)}
               </div>
               <p className="text-[11px] text-slate-400">
-                Coste de los materiales requeridos para fabricar el equipamiento.
+                Coste de materiales para fabricar las piezas que te faltan.
               </p>
             </div>
 
@@ -642,17 +998,17 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
               <div className="flex items-center justify-between text-emerald-400 text-xs font-semibold">
                 <span className="flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                  Mix Óptimo Inteligente
+                  Mix Óptimo Pendiente
                 </span>
                 <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
                   Recomendado
                 </span>
               </div>
               <div className="text-xl sm:text-2xl font-black text-emerald-300 font-mono tracking-tight">
-                {formatKamas(analysis.totals.totalOptimalCost)}
+                {formatKamas(computedData.totals.totalOptimalCost)}
               </div>
               <p className="text-[11px] text-slate-400">
-                Crafteando cuando es más barato y comprando en HDV cuando conviene.
+                Presupuesto real para completar tu set combinando crafteo y compra.
               </p>
             </div>
 
@@ -664,39 +1020,39 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                   Ahorro Máximo
                 </span>
                 <span className="text-[10px] uppercase font-bold text-amber-500">
-                  {analysis.totals.totalMarketPrice > 0
+                  {computedData.totals.totalMarketPrice > 0
                     ? `${Math.round(
-                        (analysis.totals.totalSavings /
-                          Math.max(1, analysis.totals.totalMarketPrice)) *
+                        (computedData.totals.totalSavings /
+                          Math.max(1, computedData.totals.totalMarketPrice)) *
                           100
                       )}%`
                     : '0%'}
                 </span>
               </div>
               <div className="text-xl sm:text-2xl font-black text-amber-400 font-mono tracking-tight">
-                +{formatKamas(analysis.totals.totalSavings)}
+                +{formatKamas(computedData.totals.totalSavings)}
               </div>
               <p className="text-[11px] text-slate-400">
-                Kamas que te ahorras optimizando cada pieza individualmente.
+                Kamas ahorradas optimizando cada pieza pendiente individualmente.
               </p>
             </div>
           </div>
 
           {/* Dofus Excluded Note Banner */}
-          {excludeDofus && analysis.totals.excludedDofusCount > 0 && (
+          {excludeDofus && computedData.totals.excludedDofusCount > 0 && (
             <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-xl flex items-center gap-2.5 text-amber-300 text-xs">
               <Info className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
                 <strong>Nota:</strong> Se detectaron{' '}
-                <strong>{analysis.totals.excludedDofusCount} Dofus</strong> en el set. Por defecto sus
+                <strong>{computedData.totals.excludedDofusCount} Dofus</strong> en el set. Por defecto sus
                 precios <strong>no se han sumado al total</strong> (puedes activar su inclusión con el botón
                 "Excluir Dofus").
               </span>
             </div>
           )}
 
-          {/* Tab Navigation: Table vs Consolidated Materials */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          {/* Tab Navigation & Status Filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -708,7 +1064,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 }`}
               >
                 <Layers className="w-4 h-4" />
-                <span>Desglose por Pieza ({analysis.items.length})</span>
+                <span>Desglose por Pieza ({computedData.items.length})</span>
               </button>
 
               <button
@@ -721,23 +1077,117 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 }`}
               >
                 <ShoppingCart className="w-4 h-4" />
-                <span>Materiales Agregados ({analysis.consolidatedIngredients.length})</span>
+                <span>Materiales Requeridos ({computedData.consolidatedIngredients.length})</span>
               </button>
             </div>
 
-            {/* Filter */}
+            {/* Sub-Filters for Piezas */}
             {activeTabSection === 'comparison' && (
-              <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showOnlyCraftable}
-                  onChange={(e) => setShowOnlyCraftable(e.target.checked)}
-                  className="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
-                />
-                <span>Solo piezas con receta</span>
-              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Status Segmented Buttons */}
+                <div className="bg-slate-950 border border-slate-800 p-0.5 rounded-xl flex items-center text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatus('all')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                      filterStatus === 'all'
+                        ? 'bg-slate-800 text-white font-bold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Todos ({computedData.items.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatus('needed')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                      filterStatus === 'needed'
+                        ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30'
+                        : 'text-slate-400 hover:text-amber-400'
+                    }`}
+                  >
+                    <span>Pendientes</span>
+                    <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">
+                      {computedData.neededCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatus('owned')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                      filterStatus === 'owned'
+                        ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30'
+                        : 'text-slate-400 hover:text-emerald-400'
+                    }`}
+                  >
+                    <span>Obtenidos</span>
+                    <span className="text-[10px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono">
+                      {computedData.ownedCount}
+                    </span>
+                  </button>
+
+                  {computedData.removedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterStatus('removed')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                        filterStatus === 'removed'
+                          ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30'
+                          : 'text-slate-400 hover:text-rose-400'
+                      }`}
+                    >
+                      <span>Descartados</span>
+                      <span className="text-[10px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono">
+                        {computedData.removedCount}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer ml-1">
+                  <input
+                    type="checkbox"
+                    checked={showOnlyCraftable}
+                    onChange={(e) => setShowOnlyCraftable(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
+                  />
+                  <span>Solo con receta</span>
+                </label>
+              </div>
             )}
           </div>
+
+          {/* Banner if items are removed */}
+          {computedData.removedCount > 0 && filterStatus !== 'removed' && (
+            <div className="bg-slate-950 border border-slate-800/80 px-4 py-2.5 rounded-xl flex items-center justify-between text-xs text-slate-400">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-3.5 h-3.5 text-slate-500" />
+                <span>
+                  Hay <strong>{computedData.removedCount} pieza(s)</strong> descartadas del cálculo del set.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus('removed')}
+                  className="text-amber-400 hover:underline font-semibold cursor-pointer"
+                >
+                  Ver descartadas
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={restoreAllRemoved}
+                  className="text-slate-300 hover:text-white font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Restaurar todas</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: Comparison Table */}
           {activeTabSection === 'comparison' && (
@@ -750,317 +1200,422 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                       <th className="py-3 px-3 text-center">Nivel / Tipo</th>
                       <th className="py-3 px-3 text-right">Coste Crafteo</th>
                       <th className="py-3 px-3 text-right">Precio HDV</th>
-                      <th className="py-3 px-3 text-center">Veredicto</th>
+                      <th className="py-3 px-3 text-center">Estado / Veredicto</th>
                       <th className="py-3 px-3 text-center">Ahorro</th>
-                      <th className="py-3 px-3 text-center">Acciones</th>
+                      <th className="py-3 px-3 text-center">Gestión & Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {filteredItems.map((it, idx) => {
-                      const itemKey = `${it.slotName}-${it.id || idx}`;
-                      const isExpanded = !!expandedItems[itemKey];
-                      const isEditingPrice = editingPriceItemId === it.id;
+                    {filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-slate-500 text-xs">
+                          No hay piezas que coincidan con el filtro seleccionado.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredItems.map((it, idx) => {
+                        const itemKey = it.key || `${it.slotName}-${it.id || idx}`;
+                        const isExpanded = !!expandedItems[itemKey];
+                        const isEditingPrice = editingPriceItemId === it.id;
+                        const isOwned = it.isOwned;
+                        const isRemoved = it.isRemoved;
 
-                      return (
-                        <React.Fragment key={itemKey}>
-                          <tr className="hover:bg-slate-800/40 transition-colors group">
-                            {/* Slot & Item Name */}
-                            <td className="py-3 px-3 sm:px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 shadow-inner">
-                                  {it.item ? (
-                                    <SafeImage
-                                      src={getItemIconUrl(it.item)}
-                                      fallbackSrc={getItemFallbackIconUrl(it.item)}
-                                      alt={it.item.name?.es || it.rawName}
-                                      className="w-8 h-8 object-contain"
-                                    />
-                                  ) : (
-                                    <Shield className="w-4 h-4 text-slate-500" />
-                                  )}
-                                </div>
-
-                                <div className="space-y-0.5 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
-                                      {it.slotName}
-                                    </span>
-                                    {it.isDofus && (
-                                      <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                        DOFUS
-                                      </span>
-                                    )}
-                                    {it.isTrophy && (
-                                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                                        TROFEO
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="font-bold text-white text-xs sm:text-sm group-hover:text-amber-300 transition-colors">
-                                    {it.item?.name?.es || it.rawName}
-                                  </div>
-                                  {it.item?.name?.fr && it.item.name.fr !== it.item.name.es && (
-                                    <div className="text-[11px] text-slate-500 font-normal truncate">
-                                      FR: {it.item.name.fr}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Level / Type */}
-                            <td className="py-3 px-3 text-center">
-                              <div className="font-bold text-slate-200">
-                                {it.item?.level ? `Nv. ${it.item.level}` : '-'}
-                              </div>
-                              <div className="text-[11px] text-slate-400 truncate max-w-[110px] mx-auto">
-                                {it.item?.type?.name?.es || '-'}
-                              </div>
-                            </td>
-
-                            {/* Craft Cost */}
-                            <td className="py-3 px-3 text-right font-mono">
-                              {it.isCraftable && it.craftCost > 0 ? (
-                                <div className="space-y-0.5">
-                                  <div className="font-black text-amber-300">
-                                    {formatKamas(it.craftCost)}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleItemExpand(itemKey)}
-                                    className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center gap-0.5 ml-auto font-sans font-semibold cursor-pointer"
-                                  >
-                                    <span>{it.ingredientsBreakdown.length} mats</span>
-                                    {isExpanded ? (
-                                      <ChevronUp className="w-3 h-3" />
+                        return (
+                          <React.Fragment key={itemKey}>
+                            <tr
+                              className={`transition-colors group ${
+                                isOwned
+                                  ? 'bg-emerald-950/20 border-l-4 border-l-emerald-500 hover:bg-emerald-950/30'
+                                  : isRemoved
+                                  ? 'bg-rose-950/10 border-l-4 border-l-rose-500/50 opacity-60 hover:bg-rose-950/20'
+                                  : 'hover:bg-slate-800/40'
+                              }`}
+                            >
+                              {/* Slot & Item Name */}
+                              <td className="py-3 px-3 sm:px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 shadow-inner relative">
+                                    {it.item ? (
+                                      <SafeImage
+                                        src={getItemIconUrl(it.item)}
+                                        fallbackSrc={getItemFallbackIconUrl(it.item)}
+                                        alt={it.item.name?.es || it.rawName}
+                                        className="w-8 h-8 object-contain"
+                                      />
                                     ) : (
-                                      <ChevronDown className="w-3 h-3" />
+                                      <Shield className="w-4 h-4 text-slate-500" />
                                     )}
-                                  </button>
-                                </div>
-                              ) : it.isCraftable ? (
-                                <span className="text-slate-500 text-xs italic">Faltan precios</span>
-                              ) : (
-                                <span className="text-slate-600 text-xs">Sin receta</span>
-                              )}
-                            </td>
 
-                            {/* Market HDV Price (Editable) */}
-                            <td className="py-3 px-3 text-right font-mono">
-                              {isEditingPrice ? (
-                                <div className="flex items-center justify-end gap-1">
-                                  <input
-                                    type="number"
-                                    value={tempPriceInput}
-                                    onChange={(e) => setTempPriceInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        handleSavePrice(it.id, Number(tempPriceInput) || 0);
-                                      } else if (e.key === 'Escape') {
-                                        setEditingPriceItemId(null);
-                                      }
-                                    }}
-                                    autoFocus
-                                    className="w-24 px-1.5 py-0.5 bg-slate-950 border border-amber-500 text-right text-xs rounded text-amber-300 font-mono outline-none"
-                                  />
-                                  <button
-                                    onClick={() =>
-                                      handleSavePrice(it.id, Number(tempPriceInput) || 0)
-                                    }
-                                    className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div
-                                  onClick={() => {
-                                    if (it.id > 0) {
-                                      setEditingPriceItemId(it.id);
-                                      setTempPriceInput(String(it.marketPrice || ''));
-                                    }
-                                  }}
-                                  className="group/price cursor-pointer"
-                                  title="Haz clic para modificar el precio de mercado"
-                                >
-                                  {it.marketPrice > 0 ? (
-                                    <div className="font-bold text-slate-200 group-hover/price:text-amber-400 transition-colors flex items-center justify-end gap-1">
-                                      <span>{formatKamas(it.marketPrice)}</span>
-                                      <Tag className="w-2.5 h-2.5 opacity-0 group-hover/price:opacity-100 text-slate-500" />
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-500 text-xs italic group-hover/price:text-amber-400">
-                                      + Añadir precio
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Verdict */}
-                            <td className="py-3 px-3 text-center">
-                              {it.cheaperOption === 'craft' && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-black text-xs">
-                                  <Hammer className="w-3 h-3" />
-                                  Craftear
-                                </span>
-                              )}
-                              {it.cheaperOption === 'buy' && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 font-black text-xs">
-                                  <ShoppingCart className="w-3 h-3" />
-                                  Comprar HDV
-                                </span>
-                              )}
-                              {it.cheaperOption === 'equal' && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold text-xs">
-                                  Mismo precio
-                                </span>
-                              )}
-                              {it.cheaperOption === 'dofus_excluded' && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-300/80 font-semibold text-xs">
-                                  Dofus (Excluido)
-                                </span>
-                              )}
-                              {it.cheaperOption === 'no_recipe' && (
-                                <span className="text-slate-500 text-xs">Comprar</span>
-                              )}
-                            </td>
-
-                            {/* Savings */}
-                            <td className="py-3 px-3 text-center font-mono">
-                              {it.savings > 0 ? (
-                                <span className="text-emerald-400 font-black text-xs">
-                                  +{formatKamas(it.savings)}
-                                </span>
-                              ) : (
-                                <span className="text-slate-600 text-xs">-</span>
-                              )}
-                            </td>
-
-                            {/* Actions */}
-                            <td className="py-3 px-3 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                {it.item && onSelectRecipeForCalculator && it.isCraftable && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onSelectRecipeForCalculator(it.item!)}
-                                    className="p-1.5 bg-slate-800 hover:bg-amber-500/20 text-slate-300 hover:text-amber-400 rounded-lg transition-colors"
-                                    title="Abrir en Calculadora de Recetas"
-                                  >
-                                    <Wrench className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-
-                                {it.item && onSelectForCrushing && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onSelectForCrushing(it.item!)}
-                                    className="p-1.5 bg-slate-800 hover:bg-sky-500/20 text-slate-300 hover:text-sky-400 rounded-lg transition-colors"
-                                    title="Calcular brisage en Rompedora"
-                                  >
-                                    <Zap className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* Expanded Ingredient Breakdown Row */}
-                          {isExpanded && it.ingredientsBreakdown.length > 0 && (
-                            <tr className="bg-slate-950/60 border-b border-slate-800/80">
-                              <td colSpan={7} className="py-3 px-4 sm:px-6">
-                                <div className="space-y-2">
-                                  <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                                    <Hammer className="w-3.5 h-3.5" />
-                                    <span>Materiales necesarios para {it.item?.name?.es || it.rawName}:</span>
+                                    {isOwned && (
+                                      <div className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 rounded-full p-0.5 shadow">
+                                        <Check className="w-3 h-3 stroke-[3]" />
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                                    {it.ingredientsBreakdown.map((ing) => {
-                                      const isEditingThisIng = editingPriceItemId === ing.id;
-
-                                      return (
-                                        <div
-                                          key={ing.id}
-                                          className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors"
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <div className="w-7 h-7 rounded-lg bg-slate-950 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
-                                              <SafeImage
-                                                src={getItemIconUrl({ id: ing.id, iconId: ing.iconId })}
-                                                fallbackSrc={getItemFallbackIconUrl({ id: ing.id, iconId: ing.iconId })}
-                                                alt={ing.name}
-                                                className="w-6 h-6 object-contain"
-                                              />
-                                            </div>
-                                            <div className="min-w-0">
-                                              <div className="font-semibold text-slate-200 text-xs truncate">
-                                                {ing.name}
-                                              </div>
-                                              <div className="text-[10px] text-slate-400">
-                                                Cant: <strong className="text-amber-300 font-mono">x{ing.quantity}</strong>
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          <div className="text-right font-mono shrink-0">
-                                            {isEditingThisIng ? (
-                                              <div className="flex items-center gap-1">
-                                                <input
-                                                  type="number"
-                                                  value={tempPriceInput}
-                                                  onChange={(e) => setTempPriceInput(e.target.value)}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                      handleSavePrice(ing.id, Number(tempPriceInput) || 0);
-                                                    } else if (e.key === 'Escape') {
-                                                      setEditingPriceItemId(null);
-                                                    }
-                                                  }}
-                                                  autoFocus
-                                                  placeholder="Precio u."
-                                                  className="w-16 px-1 py-0.5 bg-slate-950 border border-amber-500 text-right text-[11px] rounded text-amber-300 font-mono outline-none"
-                                                />
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleSavePrice(ing.id, Number(tempPriceInput) || 0)}
-                                                  className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
-                                                  title="Guardar precio"
-                                                >
-                                                  <Check className="w-2.5 h-2.5" />
-                                                </button>
-                                              </div>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setEditingPriceItemId(ing.id);
-                                                  setTempPriceInput(String(ing.unitPrice || ''));
-                                                }}
-                                                className="group/ingprice text-right block cursor-pointer"
-                                                title="Haz clic para editar el precio de este recurso"
-                                              >
-                                                <div className="text-xs font-bold text-slate-300 group-hover/ingprice:text-amber-300">
-                                                  {ing.totalPrice > 0 ? formatKamas(ing.totalPrice) : '-'}
-                                                </div>
-                                                <div className="text-[10px] text-slate-500 group-hover/ingprice:text-amber-400 flex items-center justify-end gap-0.5">
-                                                  <span>{ing.unitPrice > 0 ? `${formatKamas(ing.unitPrice)} u.` : 'Sin precio'}</span>
-                                                  <Tag className="w-2 h-2 opacity-0 group-hover/ingprice:opacity-100" />
-                                                </div>
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
+                                  <div className="space-y-0.5 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
+                                        {it.slotName}
+                                      </span>
+                                      {it.isDofus && (
+                                        <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                          DOFUS
+                                        </span>
+                                      )}
+                                      {it.isTrophy && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                          TROFEO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div
+                                      className={`font-bold text-xs sm:text-sm transition-colors ${
+                                        isOwned
+                                          ? 'text-emerald-300'
+                                          : isRemoved
+                                          ? 'text-slate-400 line-through'
+                                          : 'text-white group-hover:text-amber-300'
+                                      }`}
+                                    >
+                                      {it.item?.name?.es || it.rawName}
+                                    </div>
+                                    {it.item?.name?.fr && it.item.name.fr !== it.item.name.es && (
+                                      <div className="text-[11px] text-slate-500 font-normal truncate">
+                                        FR: {it.item.name.fr}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </td>
+
+                              {/* Level / Type */}
+                              <td className="py-3 px-3 text-center">
+                                <div className="font-bold text-slate-200">
+                                  {it.item?.level ? `Nv. ${it.item.level}` : '-'}
+                                </div>
+                                <div className="text-[11px] text-slate-400 truncate max-w-[110px] mx-auto">
+                                  {it.item?.type?.name?.es || '-'}
+                                </div>
+                              </td>
+
+                              {/* Craft Cost */}
+                              <td className="py-3 px-3 text-right font-mono">
+                                {isOwned ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-500 line-through text-xs block">
+                                      {formatKamas(it.craftCost)}
+                                    </span>
+                                    <span className="text-emerald-400 text-[11px] font-bold">0 K (Obtenido)</span>
+                                  </div>
+                                ) : isRemoved ? (
+                                  <span className="text-slate-600 text-xs italic">Descartado</span>
+                                ) : it.isCraftable && it.craftCost > 0 ? (
+                                  <div className="space-y-0.5">
+                                    <div className="font-black text-amber-300">
+                                      {formatKamas(it.craftCost)}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleItemExpand(itemKey)}
+                                      className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center gap-0.5 ml-auto font-sans font-semibold cursor-pointer"
+                                    >
+                                      <span>{it.ingredientsBreakdown.length} mats</span>
+                                      {isExpanded ? (
+                                        <ChevronUp className="w-3 h-3" />
+                                      ) : (
+                                        <ChevronDown className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                  </div>
+                                ) : it.isCraftable ? (
+                                  <span className="text-slate-500 text-xs italic">Faltan precios</span>
+                                ) : (
+                                  <span className="text-slate-600 text-xs">Sin receta</span>
+                                )}
+                              </td>
+
+                              {/* Market HDV Price (Editable) */}
+                              <td className="py-3 px-3 text-right font-mono">
+                                {isOwned ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-slate-500 line-through text-xs block">
+                                      {formatKamas(it.marketPrice)}
+                                    </span>
+                                    <span className="text-emerald-400 text-[11px] font-bold">0 K (Obtenido)</span>
+                                  </div>
+                                ) : isRemoved ? (
+                                  <span className="text-slate-600 text-xs italic">Descartado</span>
+                                ) : isEditingPrice ? (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <input
+                                      type="number"
+                                      value={tempPriceInput}
+                                      onChange={(e) => setTempPriceInput(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSavePrice(it.id, Number(tempPriceInput) || 0);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingPriceItemId(null);
+                                        }
+                                      }}
+                                      autoFocus
+                                      className="w-24 px-1.5 py-0.5 bg-slate-950 border border-amber-500 text-right text-xs rounded text-amber-300 font-mono outline-none"
+                                    />
+                                    <button
+                                      onClick={() =>
+                                        handleSavePrice(it.id, Number(tempPriceInput) || 0)
+                                      }
+                                      className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div
+                                    onClick={() => {
+                                      if (it.id > 0) {
+                                        setEditingPriceItemId(it.id);
+                                        setTempPriceInput(String(it.marketPrice || ''));
+                                      }
+                                    }}
+                                    className="group/price cursor-pointer"
+                                    title="Haz clic para modificar el precio de mercado"
+                                  >
+                                    {it.marketPrice > 0 ? (
+                                      <div className="font-bold text-slate-200 group-hover/price:text-amber-400 transition-colors flex items-center justify-end gap-1">
+                                        <span>{formatKamas(it.marketPrice)}</span>
+                                        <Tag className="w-2.5 h-2.5 opacity-0 group-hover/price:opacity-100 text-slate-500" />
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-500 text-xs italic group-hover/price:text-amber-400">
+                                        + Añadir precio
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* Verdict / Status */}
+                              <td className="py-3 px-3 text-center">
+                                {isOwned ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-xs shadow-sm">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                    YA OBTENIDO
+                                  </span>
+                                ) : isRemoved ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold text-xs">
+                                    <Trash2 className="w-3 h-3 text-rose-400" />
+                                    DESCARTADO
+                                  </span>
+                                ) : it.cheaperOption === 'craft' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-black text-xs">
+                                    <Hammer className="w-3 h-3" />
+                                    Craftear
+                                  </span>
+                                ) : it.cheaperOption === 'buy' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 font-black text-xs">
+                                    <ShoppingCart className="w-3 h-3" />
+                                    Comprar HDV
+                                  </span>
+                                ) : it.cheaperOption === 'equal' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold text-xs">
+                                    Mismo precio
+                                  </span>
+                                ) : it.cheaperOption === 'dofus_excluded' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-300/80 font-semibold text-xs">
+                                    Dofus (Excluido)
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 text-xs">Comprar</span>
+                                )}
+                              </td>
+
+                              {/* Savings */}
+                              <td className="py-3 px-3 text-center font-mono">
+                                {isOwned || isRemoved ? (
+                                  <span className="text-slate-600 text-xs">-</span>
+                                ) : it.savings > 0 ? (
+                                  <span className="text-emerald-400 font-black text-xs">
+                                    +{formatKamas(it.savings)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600 text-xs">-</span>
+                                )}
+                              </td>
+
+                              {/* Actions / Management Buttons */}
+                              <td className="py-3 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {/* TOGGLE YA OBTENIDO BUTTON */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleItemOwned(itemKey)}
+                                    className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                      isOwned
+                                        ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-sm shadow-emerald-500/20'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/30 border border-slate-700'
+                                    }`}
+                                    title={isOwned ? 'Marcar como pendiente (Clic para desmarcar)' : 'Marcar como ya obtenido (Coste 0 K)'}
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span className="hidden xl:inline text-[11px]">
+                                      {isOwned ? 'Obtenido' : 'Tengo'}
+                                    </span>
+                                  </button>
+
+                                  {/* TOGGLE ELIMINAR / DESCARTAR BUTTON */}
+                                  {isRemoved ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => restoreItem(itemKey)}
+                                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-slate-700 cursor-pointer flex items-center gap-1 text-[11px]"
+                                      title="Restaurar objeto al cálculo del set"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                                      <span className="hidden xl:inline">Restaurar</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleItemRemoved(itemKey)}
+                                      className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                                      title="Eliminar objeto de la consideración del costo del set"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+
+                                  {/* Calculator links */}
+                                  {it.item && onSelectRecipeForCalculator && it.isCraftable && !isRemoved && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSelectRecipeForCalculator(it.item!)}
+                                      className="p-1.5 bg-slate-800 hover:bg-amber-500/20 text-slate-300 hover:text-amber-400 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                                      title="Abrir en Calculadora de Recetas"
+                                    >
+                                      <Wrench className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+
+                                  {it.item && onSelectForCrushing && !isRemoved && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSelectForCrushing(it.item!)}
+                                      className="p-1.5 bg-slate-800 hover:bg-sky-500/20 text-slate-300 hover:text-sky-400 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                                      title="Calcular brisage en Rompedora"
+                                    >
+                                      <Zap className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
+
+                            {/* Expanded Ingredient Breakdown Row */}
+                            {isExpanded && it.ingredientsBreakdown.length > 0 && !isRemoved && (
+                              <tr className="bg-slate-950/60 border-b border-slate-800/80">
+                                <td colSpan={7} className="py-3 px-4 sm:px-6">
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-bold text-amber-400 flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5">
+                                        <Hammer className="w-3.5 h-3.5" />
+                                        <span>Materiales para {it.item?.name?.es || it.rawName}:</span>
+                                      </div>
+                                      {isOwned && (
+                                        <span className="text-[11px] text-emerald-400 font-semibold">
+                                          ✓ Objeto obtenido (no se requieren estos materiales)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                      {it.ingredientsBreakdown.map((ing) => {
+                                        const isEditingThisIng = editingPriceItemId === ing.id;
+
+                                        return (
+                                          <div
+                                            key={ing.id}
+                                            className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors"
+                                          >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              <div className="w-7 h-7 rounded-lg bg-slate-950 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
+                                                <SafeImage
+                                                  src={getItemIconUrl({ id: ing.id, iconId: ing.iconId })}
+                                                  fallbackSrc={getItemFallbackIconUrl({ id: ing.id, iconId: ing.iconId })}
+                                                  alt={ing.name}
+                                                  className="w-6 h-6 object-contain"
+                                                />
+                                              </div>
+                                              <div className="min-w-0">
+                                                <div className="font-semibold text-slate-200 text-xs truncate">
+                                                  {ing.name}
+                                                </div>
+                                                <div className="text-[10px] text-slate-400">
+                                                  Cant: <strong className="text-amber-300 font-mono">x{ing.quantity}</strong>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            <div className="text-right font-mono shrink-0">
+                                              {isEditingThisIng ? (
+                                                <div className="flex items-center gap-1">
+                                                  <input
+                                                    type="number"
+                                                    value={tempPriceInput}
+                                                    onChange={(e) => setTempPriceInput(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        handleSavePrice(ing.id, Number(tempPriceInput) || 0);
+                                                      } else if (e.key === 'Escape') {
+                                                        setEditingPriceItemId(null);
+                                                      }
+                                                    }}
+                                                    autoFocus
+                                                    placeholder="Precio u."
+                                                    className="w-16 px-1 py-0.5 bg-slate-950 border border-amber-500 text-right text-[11px] rounded text-amber-300 font-mono outline-none"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleSavePrice(ing.id, Number(tempPriceInput) || 0)}
+                                                    className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
+                                                    title="Guardar precio"
+                                                  >
+                                                    <Check className="w-2.5 h-2.5" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setEditingPriceItemId(ing.id);
+                                                    setTempPriceInput(String(ing.unitPrice || ''));
+                                                  }}
+                                                  className="group/ingprice text-right block cursor-pointer"
+                                                  title="Haz clic para editar el precio de este recurso"
+                                                >
+                                                  <div className="text-xs font-bold text-slate-300 group-hover/ingprice:text-amber-300">
+                                                    {ing.totalPrice > 0 ? formatKamas(ing.totalPrice) : '-'}
+                                                  </div>
+                                                  <div className="text-[10px] text-slate-500 group-hover/ingprice:text-amber-400 flex items-center justify-end gap-0.5">
+                                                    <span>{ing.unitPrice > 0 ? `${formatKamas(ing.unitPrice)} u.` : 'Sin precio'}</span>
+                                                    <Tag className="w-2 h-2 opacity-0 group-hover/ingprice:opacity-100" />
+                                                  </div>
+                                                </button>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1074,30 +1629,39 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 <div>
                   <h4 className="text-base font-black text-white flex items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-amber-400" />
-                    Lista Consolidada de Materiales del Set
+                    Lista de Materiales Requeridos ({computedData.consolidatedIngredients.length} recursos)
                   </h4>
                   <p className="text-xs text-slate-400">
-                    Suma total de todos los recursos necesarios para fabricar las piezas del set analizado.
+                    Suma total de materiales requeridos únicamente para las piezas <strong>pendientes de fabricar</strong> (los objetos ya obtenidos o descartados se excluyen automáticamente).
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleSendToShoppingList}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                  disabled={computedData.consolidatedIngredients.length === 0}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
                 >
                   <ShoppingCart className="w-3.5 h-3.5" />
                   <span>Enviar a Planificador de Compras</span>
                 </button>
               </div>
 
-              {analysis.consolidatedIngredients.length === 0 ? (
+              {computedData.consolidatedIngredients.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 text-xs">
-                  No hay materiales requeridos o las piezas no tienen recetas registradas.
+                  {computedData.ownedCount > 0 && computedData.neededCount === 0 ? (
+                    <div className="space-y-2">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                      <p className="font-bold text-emerald-300 text-sm">¡Tienes todas las piezas del set obtenidas!</p>
+                      <p className="text-slate-400">No requieres comprar ningún material adicional.</p>
+                    </div>
+                  ) : (
+                    'No hay materiales requeridos o las piezas pendientes no tienen recetas registradas.'
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                  {analysis.consolidatedIngredients.map((mat) => {
+                  {computedData.consolidatedIngredients.map((mat) => {
                     const isEditingThisMat = editingPriceItemId === mat.itemId;
 
                     return (
