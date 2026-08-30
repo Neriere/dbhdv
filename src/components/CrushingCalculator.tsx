@@ -46,7 +46,7 @@ import {
   Moon,
   RefreshCw,
 } from 'lucide-react';
-import { DofusItem, MarketPriceMap } from '../types';
+import { DofusItem, MarketPriceMap, PriceProfile } from '../types';
 import {
   CRUSHING_ALLOWED_JOBS,
   isPetItem,
@@ -82,6 +82,7 @@ import {
   getImportedItems,
   initializeDatabase,
   saveMarketPrice,
+  getActivePriceProfile,
 } from '../services/dofusDbService';
 import { SafeImage } from './SafeImage';
 import { RuneIcon } from './RuneIcon';
@@ -202,6 +203,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const [viewMode, setViewMode] = useState<CrushingViewMode>(savedViewState.viewMode ?? 'catalog');
   
   // Database & Cache state
+  const [activeProfile, setActiveProfile] = useState<PriceProfile | undefined>(() => getActivePriceProfile());
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
   const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>({});
   const [crushableItems, setCrushableItems] = useState<CraftableItem[]>([]);
@@ -327,13 +329,15 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
 
   // Hydrate local database state
   const hydrate = () => {
+    const currentProfile = getActivePriceProfile();
+    setActiveProfile(currentProfile);
     const storedPrices = getStoredMarketPrices();
     setMarketPrices(storedPrices);
     setPriceUpdatedAt(getStoredPriceUpdatedAt());
     const snapshot = getCrushableItemsSnapshot().filter((item) => !isPetItem(item));
     setCrushableItems(snapshot);
-    setSavedCoefficients(getAllSavedItemCoefficients());
-    setSavedTimestamps(getAllSavedItemCoefficientTimestamps());
+    setSavedCoefficients(getAllSavedItemCoefficients(currentProfile?.slug));
+    setSavedTimestamps(getAllSavedItemCoefficientTimestamps(currentProfile?.slug));
 
     // Initialize rune price drafts
     const initialRuneDrafts: Record<number, string> = {};
@@ -368,15 +372,23 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       .catch((e) => console.error('Error inicializando base en CrushingCalculator:', e));
 
     const handleDbUpdate = () => hydrate();
+    const handleProfileChange = (e: any) => {
+      const newProfile = e.detail?.profile || getActivePriceProfile();
+      setActiveProfile(newProfile);
+      hydrate();
+    };
     const handleCoeffUpdate = () => {
-      setSavedCoefficients(getAllSavedItemCoefficients());
-      setSavedTimestamps(getAllSavedItemCoefficientTimestamps());
+      const currentProfile = getActivePriceProfile();
+      setSavedCoefficients(getAllSavedItemCoefficients(currentProfile?.slug));
+      setSavedTimestamps(getAllSavedItemCoefficientTimestamps(currentProfile?.slug));
     };
 
     window.addEventListener('dofus_database_updated', handleDbUpdate);
+    window.addEventListener('dofus_profile_changed', handleProfileChange);
     window.addEventListener('dofus_coefficients_updated', handleCoeffUpdate);
     return () => {
       window.removeEventListener('dofus_database_updated', handleDbUpdate);
+      window.removeEventListener('dofus_profile_changed', handleProfileChange);
       window.removeEventListener('dofus_coefficients_updated', handleCoeffUpdate);
     };
   }, []);
@@ -1981,6 +1993,8 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             savedCoefficientTimestamp={savedTimestamps[selectedItem.id]}
             savedCoeffFeedback={savedCoeffFeedback}
             breakEvenCoefficient={crushingSimulation.breakEvenCoefficient}
+            activeServerName={activeProfile?.name}
+            activeServerSlug={activeProfile?.slug}
             onCoefficientChange={(newCoeff) => setCoefficientPercent(newCoeff)}
             onSaveCoefficient={handleSaveItemCoefficient}
             onResetStatsPreset={handleResetStatsToPreset}
@@ -2188,10 +2202,11 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       <DofocusSyncModal
         isOpen={isDofocusModalOpen}
         onClose={() => setIsDofocusModalOpen(false)}
+        activeProfile={activeProfile}
         onSyncCompleted={(result) => {
-          // Re-load saved coefficients into local state
-          const updatedCoeffs = getAllSavedItemCoefficients();
-          const updatedTimestamps = getAllSavedItemCoefficientTimestamps();
+          // Re-load saved coefficients into local state for active profile
+          const updatedCoeffs = getAllSavedItemCoefficients(activeProfile?.slug);
+          const updatedTimestamps = getAllSavedItemCoefficientTimestamps(activeProfile?.slug);
           setSavedCoefficients(updatedCoeffs);
           setSavedTimestamps(updatedTimestamps);
         }}

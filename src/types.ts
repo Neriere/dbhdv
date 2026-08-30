@@ -123,10 +123,18 @@ export interface SyncStatus {
   currentStepIndex?: number;
 }
 
+export type ServerCategory =
+  | "monocuenta_pionero"
+  | "monocuenta_clasico"
+  | "multicuenta_pionero"
+  | "multicuenta_clasico";
+
 export interface PriceProfile {
   id: number;
   name: string;
   slug: string;
+  category?: ServerCategory;
+  categoryLabel?: string;
   isDefault: boolean;
 }
 

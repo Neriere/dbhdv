@@ -22,6 +22,7 @@ import {
   setStoredTheme,
 } from '../services/dofusDbService';
 import { DofusTheme } from '../types';
+import { groupPriceProfilesByCategory } from '../utils/serverUtils';
 
 export type ActiveTab =
   | 'recipes'
@@ -163,12 +164,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setActiveProfileId(Number(event.target.value));
                   void handleProfileChange(Number(event.target.value));
                 }}
-                className="w-[110px] sm:w-[130px] px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
+                className="w-[125px] sm:w-[155px] px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
+                title="Seleccionar servidor de Dofus"
               >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id} className="bg-slate-900 text-white">
-                    {profile.name}
-                  </option>
+                {groupPriceProfilesByCategory(profiles).map((group) => (
+                  <optgroup
+                    key={group.category}
+                    label={`── ${group.label} ──`}
+                    className="bg-slate-950 text-amber-400 font-bold"
+                  >
+                    {group.profiles.map((profile) => (
+                      <option
+                        key={profile.id}
+                        value={profile.id}
+                        className="bg-slate-900 text-slate-100 font-normal py-1"
+                      >
+                        {profile.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

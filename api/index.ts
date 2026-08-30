@@ -754,6 +754,32 @@ const DOFOCUS_HEADERS = {
 let cachedServers: { data: any[]; timestamp: number } | null = null;
 const cachedCoefficientsByServer = new Map<string, { data: any[]; timestamp: number }>();
 
+const DOFOCUS_SERVER_NAME_MAP: Record<string, string> = {
+  draconiros: "Draconiros",
+  dakal: "Dakal",
+  rafal: "Rafal",
+  mikhal: "Mikhal",
+  brial: "Brial",
+  kourial: "Kourial",
+  salar: "Salar",
+  "tal-kasha": "TalKasha",
+  talkasha: "TalKasha",
+  "tal kasha": "TalKasha",
+  imagiro: "Imagiro",
+  tylezia: "Tylezia",
+  hellmina: "HellMina",
+  "hell-mina": "HellMina",
+  "hell mina": "HellMina",
+  orukam: "Orukam",
+  ombre: "Ombre",
+};
+
+function normalizeDofocusServer(input: string): string {
+  if (!input) return "Draconiros";
+  const clean = input.trim().toLowerCase();
+  return DOFOCUS_SERVER_NAME_MAP[clean] || input;
+}
+
 app.get("/api/dofocus/servers", async (req, res) => {
   try {
     const now = Date.now();
@@ -796,7 +822,8 @@ app.get("/api/dofocus/servers", async (req, res) => {
 
 app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
   try {
-    const serverName = req.params.serverName || "Draconiros";
+    const rawServerName = req.params.serverName || "Draconiros";
+    const serverName = normalizeDofocusServer(rawServerName);
     const forceRefresh = req.query.refresh === "true";
     const now = Date.now();
 
@@ -839,7 +866,8 @@ app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
 app.get("/api/dofocus/item/:itemId", async (req, res) => {
   try {
     const itemId = Number(req.params.itemId);
-    const serverName = (req.query.server as string) || "Draconiros";
+    const rawServer = (req.query.server as string) || "Draconiros";
+    const serverName = normalizeDofocusServer(rawServer);
 
     if (!itemId) {
       return res.status(400).json({ error: "Item ID inválido" });

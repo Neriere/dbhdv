@@ -36,6 +36,8 @@ interface CrushingStrategyHeroProps {
   savedCoefficientTimestamp?: number;
   savedCoeffFeedback: boolean;
   breakEvenCoefficient: number;
+  activeServerName?: string;
+  activeServerSlug?: string;
   onCoefficientChange: (newCoeff: number) => void;
   onSaveCoefficient: () => void;
   onResetStatsPreset: (preset: 'min' | 'avg' | 'max') => void;
@@ -77,6 +79,8 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
   savedCoefficientTimestamp,
   savedCoeffFeedback,
   breakEvenCoefficient,
+  activeServerName = 'Draconiros',
+  activeServerSlug,
   onCoefficientChange,
   onSaveCoefficient,
   onResetStatsPreset,
@@ -99,11 +103,12 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
     setIsFetchingDofocus(true);
     setDofocusFeedback(null);
     try {
-      const data = await fetchDofocusItemCoefficient(selectedItem.id, 'Draconiros');
+      const serverTarget = activeServerName || activeServerSlug || 'Draconiros';
+      const data = await fetchDofocusItemCoefficient(selectedItem.id, serverTarget);
       if (data && typeof data.coefficient === 'number') {
         onCoefficientChange(data.coefficient);
         onSaveCoefficient();
-        setDofocusFeedback(`DoFocus: ${data.coefficient}%`);
+        setDofocusFeedback(`${serverTarget}: ${data.coefficient}%`);
         setTimeout(() => setDofocusFeedback(null), 3000);
       }
     } catch (err) {

@@ -1713,14 +1713,42 @@ export function calculateItemCrushing(
   };
 }
 
-// LocalStorage helpers to remember found coefficients for items (Kamaskope history)
-const COEFFICIENTS_STORAGE_KEY = "dofus_user_item_coefficients";
-const COEFFICIENTS_TIMESTAMPS_KEY = "dofus_user_item_coeff_timestamps";
+// LocalStorage helpers to remember found coefficients for items (partitioned per server)
+const BASE_COEFFICIENTS_STORAGE_KEY = "dofus_user_item_coefficients";
+const BASE_COEFFICIENTS_TIMESTAMPS_KEY = "dofus_user_item_coeff_timestamps";
 
-export function getSavedItemCoefficient(itemId: number): number | null {
+export function resolveServerSlug(serverSlug?: string): string {
+  if (serverSlug && serverSlug.trim()) {
+    return serverSlug.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  }
+  if (typeof window !== "undefined") {
+    const activeSlug = localStorage.getItem("selected_dofus_price_profile_slug");
+    if (activeSlug) {
+      return activeSlug.trim().toLowerCase().replace(/[\s_]+/g, "-");
+    }
+  }
+  return "draconiros";
+}
+
+function getCoefficientsStorageKey(serverSlug?: string): string {
+  const slug = resolveServerSlug(serverSlug);
+  return `${BASE_COEFFICIENTS_STORAGE_KEY}_${slug}`;
+}
+
+function getTimestampsStorageKey(serverSlug?: string): string {
+  const slug = resolveServerSlug(serverSlug);
+  return `${BASE_COEFFICIENTS_TIMESTAMPS_KEY}_${slug}`;
+}
+
+export function getSavedItemCoefficient(itemId: number, serverSlug?: string): number | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    const serverKey = getCoefficientsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    // Backward compatibility fallback to base key if server key is empty
+    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
@@ -1729,10 +1757,14 @@ export function getSavedItemCoefficient(itemId: number): number | null {
   }
 }
 
-export function getItemCoefficientTimestamp(itemId: number): number | null {
+export function getItemCoefficientTimestamp(itemId: number, serverSlug?: string): number | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const serverKey = getTimestampsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
@@ -1741,109 +1773,165 @@ export function getItemCoefficientTimestamp(itemId: number): number | null {
   }
 }
 
-export function saveItemCoefficient(itemId: number, coeff: number): void {
+export function saveItemCoefficient(itemId: number, coeff: number, serverSlug?: string): void {
   if (typeof window === "undefined" || !itemId) return;
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    const resolvedSlug = resolveServerSlug(serverSlug);
+    const serverKey = getCoefficientsStorageKey(resolvedSlug);
+    const raw = localStorage.getItem(serverKey);
     const parsed = raw ? JSON.parse(raw) : {};
     parsed[itemId] = Math.max(1, Math.min(2000, Number(coeff) || 100));
-    localStorage.setItem(COEFFICIENTS_STORAGE_KEY, JSON.stringify(parsed));
+    localStorage.setItem(serverKey, JSON.stringify(parsed));
 
-    const rawTs = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const serverTsKey = getTimestampsStorageKey(resolvedSlug);
+    const rawTs = localStorage.getItem(serverTsKey);
     const parsedTs = rawTs ? JSON.parse(rawTs) : {};
     parsedTs[itemId] = Date.now();
-    localStorage.setItem(COEFFICIENTS_TIMESTAMPS_KEY, JSON.stringify(parsedTs));
+    localStorage.setItem(serverTsKey, JSON.stringify(parsedTs));
     
     // Dispatch custom event for real-time reactivity
-    window.dispatchEvent(new CustomEvent('dofus_coefficients_updated', { detail: { itemId, coeff } }));
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { itemId, coeff, server: resolvedSlug },
+      })
+    );
   } catch {}
 }
 
-export function getAllSavedItemCoefficients(): Record<number, number> {
+export function getAllSavedItemCoefficients(serverSlug?: string): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    const serverKey = getCoefficientsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    }
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-export function getAllSavedItemCoefficientTimestamps(): Record<number, number> {
+export function getAllSavedItemCoefficientTimestamps(serverSlug?: string): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const serverKey = getTimestampsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
+    }
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
+}
+
+export interface BulkSaveOptions {
+  onlyIfDefault?: boolean;
+  maxAgeDays?: number | null; // e.g. 1, 3, 5, 7, 15, 30 or null for all
+  protectNewerLocalEdits?: boolean;
+  serverSlug?: string;
 }
 
 export function bulkSaveItemCoefficients(
   entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number }>,
-  options: { onlyIfDefault?: boolean } = {}
-): { updatedCount: number; totalCount: number } {
+  options: BulkSaveOptions = {},
+  serverSlugParam?: string
+): { updatedCount: number; totalCount: number; skippedCount: number; server: string } {
+  const resolvedSlug = resolveServerSlug(options.serverSlug || serverSlugParam);
   if (typeof window === "undefined" || !Array.isArray(entries) || entries.length === 0) {
-    return { updatedCount: 0, totalCount: 0 };
+    return { updatedCount: 0, totalCount: 0, skippedCount: 0, server: resolvedSlug };
   }
 
   try {
-    const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    const serverKey = getCoefficientsStorageKey(resolvedSlug);
+    const raw = localStorage.getItem(serverKey);
     const parsed = raw ? JSON.parse(raw) : {};
 
-    const rawTs = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const serverTsKey = getTimestampsStorageKey(resolvedSlug);
+    const rawTs = localStorage.getItem(serverTsKey);
     const parsedTs = rawTs ? JSON.parse(rawTs) : {};
 
     let updatedCount = 0;
+    let skippedCount = 0;
+    const now = Date.now();
+    const cutoffTs =
+      options.maxAgeDays && options.maxAgeDays > 0
+        ? now - options.maxAgeDays * 24 * 60 * 60 * 1000
+        : 0;
 
     for (const item of entries) {
       if (!item.itemId) continue;
+
+      let dofocusTs = 0;
+      if (item.dateUpdated) {
+        const parsedDate = new Date(item.dateUpdated).getTime();
+        if (!isNaN(parsedDate) && parsedDate > 0) {
+          dofocusTs = parsedDate;
+        }
+      }
+
+      // Filter by max age in DoFocus (e.g. updated within 1 day, 3 days, 5 days, 7 days)
+      if (cutoffTs > 0 && dofocusTs < cutoffTs) {
+        skippedCount++;
+        continue;
+      }
+
       const currentCoeff = parsed[item.itemId];
       const isDefaultOrMissing = currentCoeff === undefined || currentCoeff === 100;
 
+      // Filter only if default or missing
       if (options.onlyIfDefault && !isDefaultOrMissing) {
+        skippedCount++;
+        continue;
+      }
+
+      // Protect newer local edits (if user manually edited this item after DoFocus date)
+      const localTs = parsedTs[item.itemId] ? Number(parsedTs[item.itemId]) : 0;
+      if (options.protectNewerLocalEdits && localTs > 0 && dofocusTs > 0 && localTs > dofocusTs) {
+        skippedCount++;
         continue;
       }
 
       const validCoeff = Math.max(1, Math.min(2000, Number(item.coefficient) || 100));
       parsed[item.itemId] = validCoeff;
-
-      let ts = Date.now();
-      if (item.dateUpdated) {
-        const parsedDate = new Date(item.dateUpdated).getTime();
-        if (!isNaN(parsedDate) && parsedDate > 0) {
-          ts = parsedDate;
-        }
-      }
-      parsedTs[item.itemId] = ts;
+      parsedTs[item.itemId] = dofocusTs > 0 ? dofocusTs : now;
       updatedCount++;
     }
 
-    localStorage.setItem(COEFFICIENTS_STORAGE_KEY, JSON.stringify(parsed));
-    localStorage.setItem(COEFFICIENTS_TIMESTAMPS_KEY, JSON.stringify(parsedTs));
+    localStorage.setItem(serverKey, JSON.stringify(parsed));
+    localStorage.setItem(serverTsKey, JSON.stringify(parsedTs));
 
     // Dispatch custom event for real-time reactivity across all UI tabs
     window.dispatchEvent(
       new CustomEvent("dofus_coefficients_updated", {
-        detail: { bulk: true, updatedCount },
+        detail: { bulk: true, updatedCount, server: resolvedSlug },
       })
     );
 
-    return { updatedCount, totalCount: entries.length };
+    return { updatedCount, totalCount: entries.length, skippedCount, server: resolvedSlug };
   } catch (err) {
     console.error("Error bulk saving coefficients:", err);
-    return { updatedCount: 0, totalCount: entries.length };
+    return {
+      updatedCount: 0,
+      totalCount: entries.length,
+      skippedCount: entries.length,
+      server: options.serverSlug || "draconiros",
+    };
   }
 }
 
-export function clearAllSavedItemCoefficients(): void {
+export function clearAllSavedItemCoefficients(serverSlug?: string): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(COEFFICIENTS_STORAGE_KEY);
-    localStorage.removeItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const slug = resolveServerSlug(serverSlug);
+    localStorage.removeItem(getCoefficientsStorageKey(slug));
+    localStorage.removeItem(getTimestampsStorageKey(slug));
+    localStorage.removeItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    localStorage.removeItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
     window.dispatchEvent(
       new CustomEvent("dofus_coefficients_updated", {
-        detail: { cleared: true },
+        detail: { cleared: true, server: slug },
       })
     );
   } catch {}

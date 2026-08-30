@@ -1044,6 +1044,10 @@ export function getActivePriceProfileId(): number {
   return activePriceProfileIdMemoryCache;
 }
 
+export function getActivePriceProfile(): PriceProfile | undefined {
+  return priceProfilesMemoryCache.find((p) => p.id === activePriceProfileIdMemoryCache) || priceProfilesMemoryCache[0];
+}
+
 const presetItemMap = new Map<number, PresetCraftableItem>(
   ALL_PRESET_ITEMS.map((item) => [item.id, item]),
 );
@@ -1334,12 +1338,31 @@ export async function setActiveLocalPriceProfile(
     body: JSON.stringify({ profileId }),
   });
 
+  const activeProfile =
+    response.profiles.find((p) => p.id === response.activePriceProfileId) ||
+    response.profiles[0];
+
+  if (typeof window !== "undefined" && activeProfile) {
+    localStorage.setItem("selected_dofus_price_profile_slug", activeProfile.slug);
+  }
+
   updateMemoryCache({
     priceProfiles: response.profiles,
     activePriceProfileId: response.activePriceProfileId,
     prices: response.prices,
     priceUpdatedAt: response.priceUpdatedAt,
   });
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("dofus_profile_changed", {
+        detail: {
+          profileId: response.activePriceProfileId,
+          profile: activeProfile,
+        },
+      })
+    );
+  }
 }
 
 export async function saveAutomaticSyncSettings(

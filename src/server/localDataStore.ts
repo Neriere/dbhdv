@@ -13,6 +13,7 @@ import {
   ItemPriceHistorySummary,
   PriceProfile,
   PriceUpdatedAtMap,
+  ServerCategory,
   SyncSettings,
   SyncStatus,
 } from "../types.js";
@@ -24,16 +25,32 @@ const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   intervalDays: 30,
 };
 
-// Lista estricta de servidores permitidos[cite: 3]
-const UNITY_SERVER_PROFILES: Array<{
+// Lista oficial de servidores de Dofus con categorización
+export const UNITY_SERVER_PROFILES: Array<{
   slug: string;
   name: string;
+  category: ServerCategory;
+  categoryLabel: string;
   isDefault?: boolean;
 }> = [
-  { slug: "draconiros", name: "Draconiros", isDefault: true },
-  { slug: "mikhal", name: "Mikhal" },
-  { slug: "tal-kasha", name: "Tal Kasha" },
-  { slug: "rafal", name: "Rafal" },
+  // Monocuenta Clásico
+  { slug: "draconiros", name: "Draconiros", category: "monocuenta_clasico", categoryLabel: "Monocuenta Clásico", isDefault: true },
+
+  // Monocuenta Pionero
+  { slug: "dakal", name: "Dakal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "rafal", name: "Rafal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "mikhal", name: "Mikhal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "brial", name: "Brial", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "kourial", name: "Kourial", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "salar", name: "Salar", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+
+  // Multicuenta Clásico
+  { slug: "tal-kasha", name: "Tal Kasha", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "imagiro", name: "Imagiro", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "hellmina", name: "Hell Mina", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "orukam", name: "Orukam", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "ombre", name: "Ombre", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
 const dbUrl =
@@ -120,6 +137,8 @@ export async function initDB() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         slug TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL DEFAULT 'monocuenta_clasico',
+        category_label TEXT NOT NULL DEFAULT 'Monocuenta Clásico',
         is_default INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -172,6 +191,18 @@ export async function initDB() {
       await database.execute("DROP TABLE IF EXISTS prices;");
     } catch {
       // Ignored
+    }
+
+    // Ensure category columns exist in price_profiles
+    try {
+      await database.execute("ALTER TABLE price_profiles ADD COLUMN category TEXT NOT NULL DEFAULT 'monocuenta_clasico';");
+    } catch {
+      // Column might already exist
+    }
+    try {
+      await database.execute("ALTER TABLE price_profiles ADD COLUMN category_label TEXT NOT NULL DEFAULT 'Monocuenta Clásico';");
+    } catch {
+      // Column might already exist
     }
 
     try {
@@ -733,7 +764,7 @@ async function getMetaValue<T>(key: string): Promise<T | null> {
 
 async function getPriceProfiles(): Promise<PriceProfile[]> {
   const result = await database.execute(
-    `SELECT id, name, slug, is_default FROM price_profiles ORDER BY id ASC`,
+    `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
   );
   const bySlug = new Map(
     result.rows.map((row) => [
@@ -742,13 +773,31 @@ async function getPriceProfiles(): Promise<PriceProfile[]> {
         id: row.id as number,
         name: row.name as string,
         slug: row.slug as string,
+        category:
+          (row.category as ServerCategory) ||
+          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.category ||
+          "monocuenta_clasico",
+        categoryLabel:
+          (row.category_label as string) ||
+          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.categoryLabel ||
+          "Monocuenta Clásico",
         isDefault: (row.is_default as number) === 1,
       } as PriceProfile,
     ]),
   );
-  return UNITY_SERVER_PROFILES.map((profile) =>
-    bySlug.get(profile.slug),
-  ).filter((profile): profile is PriceProfile => Boolean(profile));
+  const profilesList: PriceProfile[] = [];
+  for (const profile of UNITY_SERVER_PROFILES) {
+    const existing = bySlug.get(profile.slug);
+    if (existing) {
+      profilesList.push({
+        ...existing,
+        name: profile.name,
+        category: profile.category,
+        categoryLabel: profile.categoryLabel,
+      });
+    }
+  }
+  return profilesList;
 }
 
 let serverBootstrapCache: { data: BootstrapData; expiresAt: number } | null = null;
@@ -760,44 +809,47 @@ export function invalidateServerBootstrapCache(): void {
 
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
   const existingResult = await database.execute(
-    `SELECT id, name, slug, is_default FROM price_profiles ORDER BY id ASC`,
+    `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
   );
-  if (existingResult.rows.length >= UNITY_SERVER_PROFILES.length) {
-    const defaultProfile =
-      existingResult.rows.find((r) => r.slug === "private") ||
-      existingResult.rows[0];
-    return {
-      id: defaultProfile.id as number,
-      name: defaultProfile.name as string,
-      slug: defaultProfile.slug as string,
-      isDefault: (defaultProfile.is_default as number) === 1,
-    };
-  }
-
-  const validSlugs = UNITY_SERVER_PROFILES.map((p) => p.slug);
-  await database.execute({
-    sql: `DELETE FROM price_profiles WHERE slug NOT IN (${validSlugs.map(() => "?").join(", ")})`,
-    args: validSlugs,
-  });
+  const existingSlugs = new Set(existingResult.rows.map((r) => r.slug as string));
 
   const now = Date.now();
   const statements = [];
   for (const profile of UNITY_SERVER_PROFILES) {
-    statements.push({
-      sql: `INSERT OR IGNORE INTO price_profiles (name, slug, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-      args: [profile.name, profile.slug, profile.isDefault ? 1 : 0, now, now],
-    });
+    if (!existingSlugs.has(profile.slug)) {
+      statements.push({
+        sql: `INSERT OR IGNORE INTO price_profiles (name, slug, category, category_label, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          profile.name,
+          profile.slug,
+          profile.category,
+          profile.categoryLabel,
+          profile.isDefault ? 1 : 0,
+          now,
+          now,
+        ],
+      });
+    } else {
+      statements.push({
+        sql: `UPDATE price_profiles SET name = ?, category = ?, category_label = ?, updated_at = ? WHERE slug = ?`,
+        args: [profile.name, profile.category, profile.categoryLabel, now, profile.slug],
+      });
+    }
   }
 
   if (statements.length > 0) await database.batch(statements, "write");
+
   const defaultSlug = UNITY_SERVER_PROFILES.find((p) => p.isDefault)?.slug || "draconiros";
-  await database.execute({
-    sql: "UPDATE price_profiles SET is_default = CASE WHEN slug = ? THEN 1 ELSE 0 END",
-    args: [defaultSlug],
-  });
+  const hasDefault = existingResult.rows.some((r) => (r.is_default as number) === 1);
+  if (!hasDefault) {
+    await database.execute({
+      sql: "UPDATE price_profiles SET is_default = CASE WHEN slug = ? THEN 1 ELSE 0 END",
+      args: [defaultSlug],
+    });
+  }
 
   const insertedResult = await database.execute({
-    sql: "SELECT id, name, slug, is_default FROM price_profiles WHERE slug = ? LIMIT 1",
+    sql: "SELECT id, name, slug, category, category_label, is_default FROM price_profiles WHERE slug = ? LIMIT 1",
     args: [defaultSlug],
   });
   const inserted = insertedResult.rows[0];
@@ -805,6 +857,8 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
     id: inserted.id as number,
     name: inserted.name as string,
     slug: inserted.slug as string,
+    category: (inserted.category as ServerCategory) || "monocuenta_clasico",
+    categoryLabel: (inserted.category_label as string) || "Monocuenta Clásico",
     isDefault: (inserted.is_default as number) === 1,
   };
 }
@@ -1486,7 +1540,7 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     { sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ?", args: [activeProfileId] },
     { sql: "SELECT value_json FROM meta WHERE key = 'sync_status'", args: [] },
     { sql: "SELECT value_json FROM meta WHERE key = 'sync_settings'", args: [] },
-    { sql: "SELECT id, name, slug, is_default FROM price_profiles ORDER BY id ASC", args: [] },
+    { sql: "SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC", args: [] },
   ], "read");
 
   const items: DofusItem[] = batchResults[0].rows
@@ -1524,13 +1578,30 @@ async function buildBootstrapData(): Promise<BootstrapData> {
         id: row.id as number,
         name: row.name as string,
         slug: row.slug as string,
+        category:
+          (row.category as ServerCategory) ||
+          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.category ||
+          "monocuenta_clasico",
+        categoryLabel:
+          (row.category_label as string) ||
+          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.categoryLabel ||
+          "Monocuenta Clásico",
         isDefault: (row.is_default as number) === 1,
       } as PriceProfile,
     ]),
   );
-  const priceProfiles = UNITY_SERVER_PROFILES.map((profile) =>
-    bySlug.get(profile.slug),
-  ).filter((profile): profile is PriceProfile => Boolean(profile));
+  const priceProfiles: PriceProfile[] = [];
+  for (const profile of UNITY_SERVER_PROFILES) {
+    const existing = bySlug.get(profile.slug);
+    if (existing) {
+      priceProfiles.push({
+        ...existing,
+        name: profile.name,
+        category: profile.category,
+        categoryLabel: profile.categoryLabel,
+      });
+    }
+  }
 
   const resultData: BootstrapData = {
     items,

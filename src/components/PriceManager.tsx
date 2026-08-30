@@ -53,6 +53,7 @@ import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
 import { GlobalPriceHistoryModal } from './GlobalPriceHistoryModal';
 import { ItemPriceHistoryModal } from './ItemPriceHistoryModal';
+import { groupPriceProfilesByCategory } from '../utils/serverUtils';
 
 type PriceFilterCategory =
   | 'all'
@@ -517,13 +518,25 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             onChange={(event) => {
               void handleChangeProfile(Number(event.target.value));
             }}
-            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500"
+            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 focus:outline-none focus:border-amber-500 shadow-inner cursor-pointer"
             title="Servidor o perfil de precios"
           >
-            {priceProfiles.map((profile) => (
-              <option key={profile.id} value={profile.id} className="bg-slate-900 text-white">
-                {profile.name}
-              </option>
+            {groupPriceProfilesByCategory(priceProfiles).map((group) => (
+              <optgroup
+                key={group.category}
+                label={`── ${group.label} ──`}
+                className="bg-slate-950 text-amber-400 font-bold"
+              >
+                {group.profiles.map((profile) => (
+                  <option
+                    key={profile.id}
+                    value={profile.id}
+                    className="bg-slate-900 text-slate-100 font-normal py-1"
+                  >
+                    {profile.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
