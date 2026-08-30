@@ -44,6 +44,7 @@ import {
   Target,
   Heart,
   Moon,
+  RefreshCw,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -63,6 +64,7 @@ import {
   getAllSavedItemCoefficientTimestamps,
   TopFocusOption,
 } from '../data/dofusRuneWeights';
+import { DofocusSyncModal } from './crushing/DofocusSyncModal';
 import {
   CraftableItem,
   getCrushableItemsSnapshot,
@@ -206,6 +208,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const [selectedItem, setSelectedItem] = useState<CraftableItem | null>(null);
   const [savedCoefficients, setSavedCoefficients] = useState<Record<number, number>>({});
   const [savedTimestamps, setSavedTimestamps] = useState<Record<number, number>>({});
+  const [isDofocusModalOpen, setIsDofocusModalOpen] = useState<boolean>(false);
 
   // Persist current viewMode and selectedItem in storage so switching tabs keeps exact section
   useEffect(() => {
@@ -1225,45 +1228,61 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           </div>
         </div>
 
-        {/* View Switcher Tabs */}
-        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 gap-1">
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setViewMode('catalog')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'catalog'
-                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
+            type="button"
+            onClick={() => setIsDofocusModalOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-amber-500/15 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 shadow-sm transition-all cursor-pointer"
+            title="Sincronizar coeficientes de rotura desde DoFocus (Draconiros)"
           >
-            <Layers className="w-3.5 h-3.5" />
-            Catálogo
+            <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+            <span>Sincronizar DoFocus</span>
+            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
+              Draconiros
+            </span>
           </button>
 
-          {selectedItem && (
+          {/* View Switcher Tabs */}
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 gap-1">
             <button
-              onClick={() => setViewMode('detail')}
+              onClick={() => setViewMode('catalog')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'detail'
+                viewMode === 'catalog'
                   ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Crosshair className="w-3.5 h-3.5" />
-              Simulador
+              <Layers className="w-3.5 h-3.5" />
+              Catálogo
             </button>
-          )}
 
-          <button
-            onClick={() => setViewMode('rune_prices')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'rune_prices'
-                ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Tag className="w-3.5 h-3.5" />
-            Precios Runas ({DOFUS_BASE_RUNES.length})
-          </button>
+            {selectedItem && (
+              <button
+                onClick={() => setViewMode('detail')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === 'detail'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Crosshair className="w-3.5 h-3.5" />
+                Simulador
+              </button>
+            )}
+
+            <button
+              onClick={() => setViewMode('rune_prices')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'rune_prices'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5" />
+              Precios Runas ({DOFUS_BASE_RUNES.length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2164,6 +2183,19 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           </div>
         </div>
       )}
+
+      {/* DoFocus Synchronization Modal */}
+      <DofocusSyncModal
+        isOpen={isDofocusModalOpen}
+        onClose={() => setIsDofocusModalOpen(false)}
+        onSyncCompleted={(result) => {
+          // Re-load saved coefficients into local state
+          const updatedCoeffs = getAllSavedItemCoefficients();
+          const updatedTimestamps = getAllSavedItemCoefficientTimestamps();
+          setSavedCoefficients(updatedCoeffs);
+          setSavedTimestamps(updatedTimestamps);
+        }}
+      />
     </div>
   );
 };

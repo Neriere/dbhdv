@@ -1779,3 +1779,73 @@ export function getAllSavedItemCoefficientTimestamps(): Record<number, number> {
   }
 }
 
+export function bulkSaveItemCoefficients(
+  entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number }>,
+  options: { onlyIfDefault?: boolean } = {}
+): { updatedCount: number; totalCount: number } {
+  if (typeof window === "undefined" || !Array.isArray(entries) || entries.length === 0) {
+    return { updatedCount: 0, totalCount: 0 };
+  }
+
+  try {
+    const raw = localStorage.getItem(COEFFICIENTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+
+    const rawTs = localStorage.getItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    const parsedTs = rawTs ? JSON.parse(rawTs) : {};
+
+    let updatedCount = 0;
+
+    for (const item of entries) {
+      if (!item.itemId) continue;
+      const currentCoeff = parsed[item.itemId];
+      const isDefaultOrMissing = currentCoeff === undefined || currentCoeff === 100;
+
+      if (options.onlyIfDefault && !isDefaultOrMissing) {
+        continue;
+      }
+
+      const validCoeff = Math.max(1, Math.min(2000, Number(item.coefficient) || 100));
+      parsed[item.itemId] = validCoeff;
+
+      let ts = Date.now();
+      if (item.dateUpdated) {
+        const parsedDate = new Date(item.dateUpdated).getTime();
+        if (!isNaN(parsedDate) && parsedDate > 0) {
+          ts = parsedDate;
+        }
+      }
+      parsedTs[item.itemId] = ts;
+      updatedCount++;
+    }
+
+    localStorage.setItem(COEFFICIENTS_STORAGE_KEY, JSON.stringify(parsed));
+    localStorage.setItem(COEFFICIENTS_TIMESTAMPS_KEY, JSON.stringify(parsedTs));
+
+    // Dispatch custom event for real-time reactivity across all UI tabs
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { bulk: true, updatedCount },
+      })
+    );
+
+    return { updatedCount, totalCount: entries.length };
+  } catch (err) {
+    console.error("Error bulk saving coefficients:", err);
+    return { updatedCount: 0, totalCount: entries.length };
+  }
+}
+
+export function clearAllSavedItemCoefficients(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(COEFFICIENTS_STORAGE_KEY);
+    localStorage.removeItem(COEFFICIENTS_TIMESTAMPS_KEY);
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { cleared: true },
+      })
+    );
+  } catch {}
+}
+

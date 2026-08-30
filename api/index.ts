@@ -738,4 +738,160 @@ app.get("/api/dofusbook/analyze", async (req, res) => {
   }
 });
 
+// ----------------------------------------------------------------------------
+// DoFocus Coefficients & Brisage Integration Endpoints
+// ----------------------------------------------------------------------------
+const DOFOCUS_BASE_URL = "https://dofocus.fr/api";
+const DOFOCUS_HEADERS = {
+  "X-Dofocus-Client": "web",
+  "Referer": "https://dofocus.fr/",
+  "Origin": "https://dofocus.fr",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "application/json, text/plain, */*",
+};
+
+// In-memory caches for DoFocus responses
+let cachedServers: { data: any[]; timestamp: number } | null = null;
+const cachedCoefficientsByServer = new Map<string, { data: any[]; timestamp: number }>();
+
+app.get("/api/dofocus/servers", async (req, res) => {
+  try {
+    const now = Date.now();
+    if (cachedServers && now - cachedServers.timestamp < 10 * 60 * 1000) {
+      return res.json(cachedServers.data);
+    }
+
+    const response = await fetch(`${DOFOCUS_BASE_URL}/servers`, {
+      headers: DOFOCUS_HEADERS,
+    });
+
+    if (!response.ok) {
+      // Fallback default servers list if DoFocus is slow
+      const fallbackServers = [
+        { _id: "draconiros", name: "Draconiros" },
+        { _id: "dakal", name: "Dakal" },
+        { _id: "brial", name: "Brial" },
+        { _id: "mikhal", name: "Mikhal" },
+        { _id: "rafal", name: "Rafal" },
+        { _id: "kourial", name: "Kourial" },
+        { _id: "salar", name: "Salar" },
+        { _id: "hellmina", name: "HellMina" },
+        { _id: "imagiro", name: "Imagiro" },
+        { _id: "orukam", name: "Orukam" },
+        { _id: "talkasha", name: "TalKasha" },
+        { _id: "tylezia", name: "Tylezia" },
+        { _id: "ombre", name: "Ombre" },
+      ];
+      return res.json(fallbackServers);
+    }
+
+    const data = await response.json();
+    cachedServers = { data, timestamp: now };
+    res.json(data);
+  } catch (err: any) {
+    console.error("[DoFocus Servers Error]:", err);
+    res.status(500).json({ error: err.message || "Error al consultar servidores de DoFocus" });
+  }
+});
+
+app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
+  try {
+    const serverName = req.params.serverName || "Draconiros";
+    const forceRefresh = req.query.refresh === "true";
+    const now = Date.now();
+
+    const cached = cachedCoefficientsByServer.get(serverName.toLowerCase());
+    if (!forceRefresh && cached && now - cached.timestamp < 3 * 60 * 1000) {
+      return res.json({
+        server: serverName,
+        total: cached.data.length,
+        coefficients: cached.data,
+        cached: true,
+        timestamp: cached.timestamp,
+      });
+    }
+
+    const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
+    const response = await fetch(targetUrl, {
+      headers: DOFOCUS_HEADERS,
+    });
+
+    if (!response.ok) {
+      throw new Error(`DoFocus respondió con status ${response.status}: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as Array<{ itemId: number; coefficient: number; dateUpdated?: string }>;
+    cachedCoefficientsByServer.set(serverName.toLowerCase(), { data, timestamp: now });
+
+    res.json({
+      server: serverName,
+      total: data.length,
+      coefficients: data,
+      cached: false,
+      timestamp: now,
+    });
+  } catch (err: any) {
+    console.error(`[DoFocus Coefficients Error for ${req.params.serverName}]:`, err);
+    res.status(500).json({ error: err.message || "Error al sincronizar coeficientes de DoFocus" });
+  }
+});
+
+app.get("/api/dofocus/item/:itemId", async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    const serverName = (req.query.server as string) || "Draconiros";
+
+    if (!itemId) {
+      return res.status(400).json({ error: "Item ID inválido" });
+    }
+
+    // Try to get from server-level cache first
+    const cached = cachedCoefficientsByServer.get(serverName.toLowerCase());
+    if (cached) {
+      const match = cached.data.find((c) => c.itemId === itemId);
+      if (match) {
+        return res.json({
+          itemId,
+          server: serverName,
+          coefficient: match.coefficient,
+          dateUpdated: match.dateUpdated,
+          source: "server_cache",
+        });
+      }
+    }
+
+    // Otherwise fetch coefficients for server
+    const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
+    const response = await fetch(targetUrl, {
+      headers: DOFOCUS_HEADERS,
+    });
+
+    if (response.ok) {
+      const list = (await response.json()) as Array<{ itemId: number; coefficient: number; dateUpdated?: string }>;
+      cachedCoefficientsByServer.set(serverName.toLowerCase(), { data: list, timestamp: Date.now() });
+      const match = list.find((c) => c.itemId === itemId);
+      if (match) {
+        return res.json({
+          itemId,
+          server: serverName,
+          coefficient: match.coefficient,
+          dateUpdated: match.dateUpdated,
+          source: "dofocus_live",
+        });
+      }
+    }
+
+    res.json({
+      itemId,
+      server: serverName,
+      coefficient: 100,
+      dateUpdated: null,
+      source: "default",
+    });
+  } catch (err: any) {
+    console.error(`[DoFocus Item Error]:`, err);
+    res.status(500).json({ error: err.message || "Error al consultar coeficiente en DoFocus" });
+  }
+});
+
 export default app;

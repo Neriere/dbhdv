@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Check,
   Save,
@@ -10,6 +10,8 @@ import {
   Target,
   TrendingUp,
   AlertTriangle,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { DofusItem } from '../../types';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../services/dofusDbService';
 import { SafeImage } from '../SafeImage';
 import { TopFocusOption } from '../../data/dofusRuneWeights';
+import { fetchDofocusItemCoefficient } from '../../services/dofocusService';
 
 interface CrushingStrategyHeroProps {
   selectedItem: CraftableItem;
@@ -87,6 +90,30 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
     bestFocusOption && !bestFocusOption.isNormal && bestFocusOption.rune
       ? bestFocusOption.rune.name.replace('Runa ', '')
       : 'Sin Foco';
+
+  const [isFetchingDofocus, setIsFetchingDofocus] = useState(false);
+  const [dofocusFeedback, setDofocusFeedback] = useState<string | null>(null);
+
+  const handleFetchFromDofocus = async () => {
+    if (!selectedItem?.id || isFetchingDofocus) return;
+    setIsFetchingDofocus(true);
+    setDofocusFeedback(null);
+    try {
+      const data = await fetchDofocusItemCoefficient(selectedItem.id, 'Draconiros');
+      if (data && typeof data.coefficient === 'number') {
+        onCoefficientChange(data.coefficient);
+        onSaveCoefficient();
+        setDofocusFeedback(`DoFocus: ${data.coefficient}%`);
+        setTimeout(() => setDofocusFeedback(null), 3000);
+      }
+    } catch (err) {
+      console.error('Error fetching DoFocus coefficient:', err);
+      setDofocusFeedback('Error');
+      setTimeout(() => setDofocusFeedback(null), 2500);
+    } finally {
+      setIsFetchingDofocus(false);
+    }
+  };
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-4">
@@ -185,6 +212,24 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
                 +
               </button>
             </div>
+
+            {/* Quick DoFocus Draconiros button */}
+            <button
+              type="button"
+              onClick={handleFetchFromDofocus}
+              disabled={isFetchingDofocus}
+              title="Obtener coeficiente actualizado de Draconiros en DoFocus"
+              className={`px-2 py-1.5 rounded-lg border font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer ${
+                dofocusFeedback
+                  ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                  : 'bg-slate-900 hover:bg-sky-500/20 border-slate-700 hover:border-sky-500/40 text-slate-300 hover:text-sky-300'
+              }`}
+            >
+              <RefreshCw className={`w-3 h-3 text-sky-400 ${isFetchingDofocus ? 'animate-spin' : ''}`} />
+              <span className="font-mono">
+                {dofocusFeedback || 'DoFocus'}
+              </span>
+            </button>
 
             <button
               onClick={onSaveCoefficient}
