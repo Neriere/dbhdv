@@ -25,7 +25,7 @@ const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   intervalDays: 30,
 };
 
-// Lista oficial de servidores de Dofus con categorización
+// Lista oficial de servidores de Dofus con categorización exacta
 export const UNITY_SERVER_PROFILES: Array<{
   slug: string;
   name: string;
@@ -36,21 +36,22 @@ export const UNITY_SERVER_PROFILES: Array<{
   // Monocuenta Clásico
   { slug: "draconiros", name: "Draconiros", category: "monocuenta_clasico", categoryLabel: "Monocuenta Clásico", isDefault: true },
 
-  // Monocuenta Pionero
-  { slug: "dakal", name: "Dakal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
-  { slug: "rafal", name: "Rafal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
-  { slug: "mikhal", name: "Mikhal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
-  { slug: "brial", name: "Brial", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  // Monocuenta Pionero (Kourial, Mikhal, Dakal)
   { slug: "kourial", name: "Kourial", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
-  { slug: "salar", name: "Salar", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "mikhal", name: "Mikhal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
+  { slug: "dakal", name: "Dakal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero" },
 
-  // Multicuenta Clásico
+  // Multicuenta Pionero (Brial, Rafal, Salar)
+  { slug: "brial", name: "Brial", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero" },
+  { slug: "rafal", name: "Rafal", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero" },
+  { slug: "salar", name: "Salar", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero" },
+
+  // Multicuenta Clásico (Tal Kasha, Hell Mina, Imagiro, Oruka, Tylezia)
   { slug: "tal-kasha", name: "Tal Kasha", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
-  { slug: "imagiro", name: "Imagiro", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
-  { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
   { slug: "hellmina", name: "Hell Mina", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
-  { slug: "orukam", name: "Orukam", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
-  { slug: "ombre", name: "Ombre", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "imagiro", name: "Imagiro", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "oruka", name: "Oruka", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
 const dbUrl =
@@ -808,6 +809,28 @@ export function invalidateServerBootstrapCache(): void {
 }
 
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
+  // Migrate legacy slug orukam to oruka if present
+  try {
+    await database.execute(
+      "UPDATE price_profiles SET slug = 'oruka', name = 'Oruka', category = 'multicuenta_clasico', category_label = 'Multicuenta Clásico' WHERE slug = 'orukam'"
+    );
+  } catch {}
+
+  const validSlugs = UNITY_SERVER_PROFILES.map((p) => p.slug);
+  const placeholders = validSlugs.map(() => "?").join(",");
+
+  // Clean up any deleted/unwanted profiles (e.g. Ombre or old test profiles)
+  try {
+    await database.execute({
+      sql: `DELETE FROM profile_prices WHERE profile_id IN (SELECT id FROM price_profiles WHERE slug NOT IN (${placeholders}))`,
+      args: validSlugs,
+    });
+    await database.execute({
+      sql: `DELETE FROM price_profiles WHERE slug NOT IN (${placeholders})`,
+      args: validSlugs,
+    });
+  } catch {}
+
   const existingResult = await database.execute(
     `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
   );

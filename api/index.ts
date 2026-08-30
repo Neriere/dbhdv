@@ -756,22 +756,22 @@ const cachedCoefficientsByServer = new Map<string, { data: any[]; timestamp: num
 
 const DOFOCUS_SERVER_NAME_MAP: Record<string, string> = {
   draconiros: "Draconiros",
-  dakal: "Dakal",
-  rafal: "Rafal",
-  mikhal: "Mikhal",
-  brial: "Brial",
   kourial: "Kourial",
+  mikhal: "Mikhal",
+  dakal: "Dakal",
+  brial: "Brial",
+  rafal: "Rafal",
   salar: "Salar",
   "tal-kasha": "TalKasha",
   talkasha: "TalKasha",
   "tal kasha": "TalKasha",
-  imagiro: "Imagiro",
-  tylezia: "Tylezia",
   hellmina: "HellMina",
   "hell-mina": "HellMina",
   "hell mina": "HellMina",
+  imagiro: "Imagiro",
+  oruka: "Orukam",
   orukam: "Orukam",
-  ombre: "Ombre",
+  tylezia: "Tylezia",
 };
 
 function normalizeDofocusServer(input: string): string {
@@ -795,18 +795,17 @@ app.get("/api/dofocus/servers", async (req, res) => {
       // Fallback default servers list if DoFocus is slow
       const fallbackServers = [
         { _id: "draconiros", name: "Draconiros" },
+        { _id: "kourial", name: "Kourial" },
+        { _id: "mikhal", name: "Mikhal" },
         { _id: "dakal", name: "Dakal" },
         { _id: "brial", name: "Brial" },
-        { _id: "mikhal", name: "Mikhal" },
         { _id: "rafal", name: "Rafal" },
-        { _id: "kourial", name: "Kourial" },
         { _id: "salar", name: "Salar" },
+        { _id: "talkasha", name: "TalKasha" },
         { _id: "hellmina", name: "HellMina" },
         { _id: "imagiro", name: "Imagiro" },
-        { _id: "orukam", name: "Orukam" },
-        { _id: "talkasha", name: "TalKasha" },
+        { _id: "oruka", name: "Orukam" },
         { _id: "tylezia", name: "Tylezia" },
-        { _id: "ombre", name: "Ombre" },
       ];
       return res.json(fallbackServers);
     }
