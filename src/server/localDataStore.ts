@@ -46,11 +46,11 @@ export const UNITY_SERVER_PROFILES: Array<{
   { slug: "rafal", name: "Rafal", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero" },
   { slug: "salar", name: "Salar", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero" },
 
-  // Multicuenta Clásico (Tal Kasha, Hell Mina, Imagiro, Oruka, Tylezia)
+  // Multicuenta Clásico (Tal Kasha, Hell Mina, Imagiro, Orukam, Tylezia)
   { slug: "tal-kasha", name: "Tal Kasha", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
   { slug: "hellmina", name: "Hell Mina", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
   { slug: "imagiro", name: "Imagiro", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
-  { slug: "oruka", name: "Oruka", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
+  { slug: "orukam", name: "Orukam", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
   { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
@@ -165,6 +165,14 @@ export async function initDB() {
         timestamp INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS profile_coefficients (
+        profile_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        coefficient INTEGER NOT NULL DEFAULT 100,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, item_id)
+      );
+
       /* Optimized indexes for lightning-fast lookups */
       CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
       CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
@@ -182,6 +190,8 @@ export async function initDB() {
 
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+
+      CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_id ON profile_coefficients(profile_id);
 
       CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
@@ -516,6 +526,8 @@ type BootstrapData = {
   recipes: Record<number, DofusRecipe>;
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
+  coefficients?: Record<number, number>;
+  coefficientUpdatedAt?: Record<number, number>;
   syncStatus: SyncStatus;
   syncSettings: SyncSettings;
   priceProfiles: PriceProfile[];
@@ -809,10 +821,10 @@ export function invalidateServerBootstrapCache(): void {
 }
 
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
-  // Migrate legacy slug orukam to oruka if present
+  // Migrate slug oruka to orukam if present
   try {
     await database.execute(
-      "UPDATE price_profiles SET slug = 'oruka', name = 'Oruka', category = 'multicuenta_clasico', category_label = 'Multicuenta Clásico' WHERE slug = 'orukam'"
+      "UPDATE price_profiles SET slug = 'orukam', name = 'Orukam', category = 'multicuenta_clasico', category_label = 'Multicuenta Clásico' WHERE slug = 'oruka'"
     );
   } catch {}
 
@@ -1564,6 +1576,7 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     { sql: "SELECT value_json FROM meta WHERE key = 'sync_status'", args: [] },
     { sql: "SELECT value_json FROM meta WHERE key = 'sync_settings'", args: [] },
     { sql: "SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC", args: [] },
+    { sql: "SELECT item_id, coefficient, updated_at FROM profile_coefficients WHERE profile_id = ?", args: [activeProfileId] },
   ], "read");
 
   const items: DofusItem[] = batchResults[0].rows
@@ -1626,11 +1639,23 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     }
   }
 
+  const coefficients: Record<number, number> = {};
+  const coefficientUpdatedAt: Record<number, number> = {};
+  if (batchResults[6]?.rows) {
+    for (const row of batchResults[6].rows) {
+      const id = row.item_id as number;
+      coefficients[id] = row.coefficient as number;
+      coefficientUpdatedAt[id] = row.updated_at as number;
+    }
+  }
+
   const resultData: BootstrapData = {
     items,
     recipes,
     prices,
     priceUpdatedAt,
+    coefficients,
+    coefficientUpdatedAt,
     syncStatus,
     syncSettings,
     priceProfiles,
@@ -2093,12 +2118,99 @@ export async function deleteAllStoredPrices(profileId?: number) {
 export async function changeActivePriceProfile(profileId: number) {
   invalidateServerBootstrapCache();
   const pid = await setActivePriceProfileId(profileId);
+  const coeffData = await getProfileCoefficients(pid);
   return {
     activePriceProfileId: pid,
     prices: await getPricesMap(pid),
     priceUpdatedAt: await getPriceUpdatedAtMap(pid),
+    coefficients: coeffData.coefficients,
+    coefficientUpdatedAt: coeffData.coefficientUpdatedAt,
     profiles: await getPriceProfiles(),
   };
+}
+
+export async function getProfileCoefficients(profileId?: number): Promise<{
+  coefficients: Record<number, number>;
+  coefficientUpdatedAt: Record<number, number>;
+  activePriceProfileId: number;
+}> {
+  const pid = profileId || (await getActivePriceProfileId());
+  const result = await database.execute({
+    sql: "SELECT item_id, coefficient, updated_at FROM profile_coefficients WHERE profile_id = ?",
+    args: [pid],
+  });
+  const coefficients: Record<number, number> = {};
+  const coefficientUpdatedAt: Record<number, number> = {};
+  for (const row of result.rows) {
+    const itemId = Number(row.item_id);
+    coefficients[itemId] = Number(row.coefficient);
+    coefficientUpdatedAt[itemId] = Number(row.updated_at);
+  }
+  return {
+    coefficients,
+    coefficientUpdatedAt,
+    activePriceProfileId: pid,
+  };
+}
+
+export async function setItemCoefficient(
+  itemId: number,
+  coefficient: number,
+  profileId?: number,
+  updatedAt?: number,
+) {
+  invalidateServerBootstrapCache();
+  const pid = profileId || (await getActivePriceProfileId());
+  const ts = updatedAt || Date.now();
+  const validCoeff = Math.max(1, Math.min(10000, Number(coefficient) || 100));
+
+  await database.execute({
+    sql: `
+      INSERT INTO profile_coefficients (profile_id, item_id, coefficient, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(profile_id, item_id) DO UPDATE SET
+        coefficient = excluded.coefficient,
+        updated_at = excluded.updated_at
+    `,
+    args: [pid, itemId, validCoeff, ts],
+  });
+
+  return await getProfileCoefficients(pid);
+}
+
+export async function bulkSaveProfileCoefficients(
+  entries: Array<{ itemId: number; coefficient: number; updatedAt?: number }>,
+  profileId?: number,
+) {
+  invalidateServerBootstrapCache();
+  const pid = profileId || (await getActivePriceProfileId());
+  if (!entries || entries.length === 0) {
+    return await getProfileCoefficients(pid);
+  }
+
+  const now = Date.now();
+  const chunkSize = 200;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    const statements = chunk.map((entry) => ({
+      sql: `
+        INSERT INTO profile_coefficients (profile_id, item_id, coefficient, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(profile_id, item_id) DO UPDATE SET
+          coefficient = excluded.coefficient,
+          updated_at = excluded.updated_at
+      `,
+      args: [
+        pid,
+        Number(entry.itemId),
+        Math.max(1, Math.min(10000, Number(entry.coefficient) || 100)),
+        Number(entry.updatedAt) || now,
+      ],
+    }));
+    await database.batch(statements, "write");
+  }
+
+  return await getProfileCoefficients(pid);
 }
 
 export async function getPriceProfileState() {

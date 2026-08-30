@@ -1717,14 +1717,45 @@ export function calculateItemCrushing(
 const BASE_COEFFICIENTS_STORAGE_KEY = "dofus_user_item_coefficients";
 const BASE_COEFFICIENTS_TIMESTAMPS_KEY = "dofus_user_item_coeff_timestamps";
 
+const KNOWN_SERVER_SLUG_MAP: Record<string, string> = {
+  hellmina: "hellmina",
+  "hell-mina": "hellmina",
+  "hell mina": "hellmina",
+  talkasha: "tal-kasha",
+  "tal-kasha": "tal-kasha",
+  "tal kasha": "tal-kasha",
+  orukam: "orukam",
+  oruka: "orukam",
+  draconiros: "draconiros",
+  kourial: "kourial",
+  mikhal: "mikhal",
+  dakal: "dakal",
+  "dakal-1": "dakal",
+  brial: "brial",
+  rafal: "rafal",
+  salar: "salar",
+  imagiro: "imagiro",
+  tylezia: "tylezia",
+  ombre: "ombre",
+  shadow: "ombre",
+};
+
 export function resolveServerSlug(serverSlug?: string): string {
   if (serverSlug && serverSlug.trim()) {
-    return serverSlug.trim().toLowerCase().replace(/[\s_]+/g, "-");
+    const raw = serverSlug.trim().toLowerCase();
+    if (KNOWN_SERVER_SLUG_MAP[raw]) return KNOWN_SERVER_SLUG_MAP[raw];
+    const normalized = raw.replace(/[\s_]+/g, "-");
+    if (KNOWN_SERVER_SLUG_MAP[normalized]) return KNOWN_SERVER_SLUG_MAP[normalized];
+    return normalized;
   }
   if (typeof window !== "undefined") {
     const activeSlug = localStorage.getItem("selected_dofus_price_profile_slug");
-    if (activeSlug) {
-      return activeSlug.trim().toLowerCase().replace(/[\s_]+/g, "-");
+    if (activeSlug && activeSlug.trim()) {
+      const raw = activeSlug.trim().toLowerCase();
+      if (KNOWN_SERVER_SLUG_MAP[raw]) return KNOWN_SERVER_SLUG_MAP[raw];
+      const normalized = raw.replace(/[\s_]+/g, "-");
+      if (KNOWN_SERVER_SLUG_MAP[normalized]) return KNOWN_SERVER_SLUG_MAP[normalized];
+      return normalized;
     }
   }
   return "draconiros";
@@ -1780,7 +1811,7 @@ export function saveItemCoefficient(itemId: number, coeff: number, serverSlug?: 
     const serverKey = getCoefficientsStorageKey(resolvedSlug);
     const raw = localStorage.getItem(serverKey);
     const parsed = raw ? JSON.parse(raw) : {};
-    parsed[itemId] = Math.max(1, Math.min(2000, Number(coeff) || 100));
+    parsed[itemId] = Math.max(1, Math.min(10000, Number(coeff) || 100));
     localStorage.setItem(serverKey, JSON.stringify(parsed));
 
     const serverTsKey = getTimestampsStorageKey(resolvedSlug);
@@ -1893,7 +1924,7 @@ export function bulkSaveItemCoefficients(
         continue;
       }
 
-      const validCoeff = Math.max(1, Math.min(2000, Number(item.coefficient) || 100));
+      const validCoeff = Math.max(1, Math.min(10000, Number(item.coefficient) || 100));
       parsed[item.itemId] = validCoeff;
       parsedTs[item.itemId] = dofocusTs > 0 ? dofocusTs : now;
       updatedCount++;

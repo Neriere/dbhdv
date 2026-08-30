@@ -39,6 +39,11 @@ import {
   DOFUS_BASE_RUNES,
   extractItemStats,
   calculateItemCrushing,
+  saveItemCoefficient,
+  bulkSaveItemCoefficients,
+  getAllSavedItemCoefficients,
+  getAllSavedItemCoefficientTimestamps,
+  resolveServerSlug,
 } from "../data/dofusRuneWeights";
 
 const ALL_PRESET_ITEMS: PresetCraftableItem[] = [
@@ -221,6 +226,8 @@ type BootstrapResponse = {
   recipes: Record<number, DofusRecipe>;
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
+  coefficients?: Record<number, number>;
+  coefficientUpdatedAt?: Record<number, number>;
   syncStatus: SyncStatus;
   syncSettings: SyncSettings;
   priceProfiles: PriceProfile[];
@@ -239,6 +246,8 @@ let itemsMemoryCache: DofusItem[] = [];
 let recipesMemoryCache: Record<number, DofusRecipe> = {};
 let pricesMemoryCache: MarketPriceMap = {};
 let priceUpdatedAtMemoryCache: PriceUpdatedAtMap = {};
+let coefficientsMemoryCache: Record<number, number> = {};
+let coefficientUpdatedAtMemoryCache: Record<number, number> = {};
 let syncStatusMemoryCache: SyncStatus = { ...DEFAULT_SYNC_STATUS };
 let syncSettingsMemoryCache: SyncSettings = { ...DEFAULT_SYNC_SETTINGS };
 let priceProfilesMemoryCache: PriceProfile[] = [];
@@ -326,6 +335,8 @@ function updateMemoryCache(payload: {
   syncSettings?: SyncSettings;
   priceProfiles?: PriceProfile[];
   activePriceProfileId?: number;
+  coefficients?: Record<number, number>;
+  coefficientUpdatedAt?: Record<number, number>;
 }): void {
   let changedStructure = false;
   if (payload.items || payload.recipes) {
@@ -375,6 +386,37 @@ function updateMemoryCache(payload: {
 
   if (typeof payload.activePriceProfileId === "number") {
     activePriceProfileIdMemoryCache = payload.activePriceProfileId;
+  }
+
+  if (payload.coefficients) {
+    coefficientsMemoryCache = payload.coefficients;
+  }
+
+  if (payload.coefficientUpdatedAt) {
+    coefficientUpdatedAtMemoryCache = payload.coefficientUpdatedAt;
+  }
+
+  if (typeof window !== "undefined") {
+    const activeProfile =
+      priceProfilesMemoryCache.find((p) => p.id === activePriceProfileIdMemoryCache) ||
+      priceProfilesMemoryCache[0];
+    if (activeProfile?.slug) {
+      localStorage.setItem("selected_dofus_price_profile_slug", activeProfile.slug);
+      localStorage.setItem("selected_dofus_price_profile_id", String(activeProfile.id));
+
+      if (payload.coefficients && Object.keys(payload.coefficients).length > 0) {
+        localStorage.setItem(
+          `dofus_user_item_coefficients_${activeProfile.slug}`,
+          JSON.stringify(payload.coefficients)
+        );
+      }
+      if (payload.coefficientUpdatedAt && Object.keys(payload.coefficientUpdatedAt).length > 0) {
+        localStorage.setItem(
+          `dofus_user_item_coeff_timestamps_${activeProfile.slug}`,
+          JSON.stringify(payload.coefficientUpdatedAt)
+        );
+      }
+    }
   }
 
   if (changedStructure) {
@@ -1333,6 +1375,8 @@ export async function setActiveLocalPriceProfile(
     activePriceProfileId: number;
     prices: MarketPriceMap;
     priceUpdatedAt: PriceUpdatedAtMap;
+    coefficients?: Record<number, number>;
+    coefficientUpdatedAt?: Record<number, number>;
   }>(`${LOCAL_DB_API_BASE}/price-profiles/active`, {
     method: "PUT",
     body: JSON.stringify({ profileId }),
@@ -1344,6 +1388,7 @@ export async function setActiveLocalPriceProfile(
 
   if (typeof window !== "undefined" && activeProfile) {
     localStorage.setItem("selected_dofus_price_profile_slug", activeProfile.slug);
+    localStorage.setItem("selected_dofus_price_profile_id", String(activeProfile.id));
   }
 
   updateMemoryCache({
@@ -1351,6 +1396,8 @@ export async function setActiveLocalPriceProfile(
     activePriceProfileId: response.activePriceProfileId,
     prices: response.prices,
     priceUpdatedAt: response.priceUpdatedAt,
+    coefficients: response.coefficients,
+    coefficientUpdatedAt: response.coefficientUpdatedAt,
   });
 
   if (typeof window !== "undefined") {
@@ -1362,7 +1409,73 @@ export async function setActiveLocalPriceProfile(
         },
       })
     );
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: {
+          profileId: response.activePriceProfileId,
+          server: activeProfile?.slug,
+        },
+      })
+    );
   }
+}
+
+export async function saveProfileCoefficient(
+  itemId: number,
+  coefficient: number,
+  profileId?: number
+): Promise<void> {
+  const pid = profileId || activePriceProfileIdMemoryCache;
+  const profile =
+    priceProfilesMemoryCache.find((p) => p.id === pid) ||
+    priceProfilesMemoryCache[0];
+  const slug = profile?.slug || "draconiros";
+
+  saveItemCoefficient(itemId, coefficient, slug);
+
+  try {
+    await requestJson(`${LOCAL_DB_API_BASE}/coefficients/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        coefficient,
+        profileId: pid,
+        updatedAt: Date.now(),
+      }),
+    });
+  } catch (err) {
+    console.warn("Failed to persist coefficient to SQLite backend:", err);
+  }
+}
+
+export async function bulkSaveProfileCoefficients(
+  entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number }>,
+  profileId?: number
+): Promise<{ updatedCount: number; server: string }> {
+  const pid = profileId || activePriceProfileIdMemoryCache;
+  const profile =
+    priceProfilesMemoryCache.find((p) => p.id === pid) ||
+    priceProfilesMemoryCache[0];
+  const slug = profile?.slug || "draconiros";
+
+  const result = bulkSaveItemCoefficients(entries, {}, slug);
+
+  try {
+    await requestJson(`${LOCAL_DB_API_BASE}/coefficients/bulk`, {
+      method: "POST",
+      body: JSON.stringify({
+        entries: entries.map((e) => ({
+          itemId: e.itemId,
+          coefficient: e.coefficient,
+          updatedAt: e.dateUpdated ? new Date(e.dateUpdated).getTime() : Date.now(),
+        })),
+        profileId: pid,
+      }),
+    });
+  } catch (err) {
+    console.warn("Failed to bulk persist coefficients to SQLite backend:", err);
+  }
+
+  return { updatedCount: result.updatedCount, server: slug };
 }
 
 export async function saveAutomaticSyncSettings(

@@ -38,7 +38,6 @@ import {
   setActiveLocalPriceProfile,
 } from "../../services/dofusDbService";
 import {
-  groupPriceProfilesByCategory,
   getProfileCategoryInfo,
   SERVER_CATEGORIES_CONFIG,
 } from "../../utils/serverUtils";
@@ -237,8 +236,6 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
 
   if (!isOpen) return null;
 
-  const groupedProfiles = groupPriceProfilesByCategory(profiles);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
       <div
@@ -277,61 +274,47 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
 
         {/* Server & Data Preview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Server selection with Categories */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 space-y-1.5">
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
+          {/* Active Server Info (Locked to Current Profile) */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Server className="w-3.5 h-3.5 text-amber-400" />
-                <span>Servidor a Sincronizar</span>
+                <span>Servidor Activo</span>
               </span>
-              <span className="text-[10px] text-amber-400/90 font-medium">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-wider ${categoryInfo.badgeClass}`}>
                 {categoryInfo.label}
               </span>
-            </label>
-            <select
-              value={selectedServer}
-              onChange={(e) => setSelectedServer(e.target.value)}
-              disabled={isSyncing}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 cursor-pointer shadow-inner"
-            >
-              {groupedProfiles.map((group) => (
-                <optgroup
-                  key={group.category}
-                  label={`── ${group.label} ──`}
-                  className="bg-slate-950 text-amber-400 font-bold"
-                >
-                  {group.profiles.map((p) => {
-                    const dofocusName = normalizeServerToDoFocusName(p.name || p.slug);
-                    return (
-                      <option
-                        key={p.id}
-                        value={dofocusName}
-                        className="bg-slate-900 text-slate-100 font-normal py-1"
-                      >
-                        {p.name}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              ))}
-            </select>
+            </div>
+            <div className="flex items-baseline gap-2 pt-0.5">
+              <span className="text-lg font-black text-amber-300">
+                {currentActiveProfile?.name || selectedServer}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-tight">
+              Los datos sincronizados se aplicarán y guardarán únicamente en tu perfil de <strong className="text-slate-200">{currentActiveProfile?.name || selectedServer}</strong>.
+            </p>
           </div>
 
           {/* DoFocus Available Data Card */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Database className="w-3.5 h-3.5 text-sky-400" />
-              <span>Disponibles en DoFocus</span>
-            </span>
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-sky-400" />
+                <span>Disponibles en DoFocus</span>
+              </span>
+              <span className="text-[10px] text-sky-400/90 font-medium">
+                {serverStats.loaded ? "Listo" : "Consultando..."}
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-black text-sky-300 font-mono">
+              <span className="text-2xl font-black text-sky-300 font-mono">
                 ~{serverStats.totalAvailable.toLocaleString()}
               </span>
               <span className="text-xs text-slate-400 font-medium">objetos</span>
             </div>
-            <p className="text-[10px] text-slate-500">
-              Coinciden con los filtros para <strong className="text-amber-300">{selectedServer}</strong>:{" "}
-              <strong className="text-amber-300">{matchingItemsCount.toLocaleString()}</strong>
+            <p className="text-[11px] text-slate-400 leading-tight">
+              Coinciden con los filtros para <strong className="text-amber-300">{currentActiveProfile?.name || selectedServer}</strong>:{" "}
+              <strong className="text-emerald-400">{matchingItemsCount.toLocaleString()}</strong>
             </p>
           </div>
         </div>

@@ -218,12 +218,12 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
               </button>
             </div>
 
-            {/* Quick DoFocus Draconiros button */}
+            {/* Quick DoFocus Server button */}
             <button
               type="button"
               onClick={handleFetchFromDofocus}
               disabled={isFetchingDofocus}
-              title="Obtener coeficiente actualizado de Draconiros en DoFocus"
+              title={`Obtener coeficiente actualizado de ${activeServerName || 'DoFocus'} en DoFocus`}
               className={`px-2 py-1.5 rounded-lg border font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer ${
                 dofocusFeedback
                   ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'

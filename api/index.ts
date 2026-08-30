@@ -39,6 +39,9 @@ import {
   getItemPriceHistory,
   revertPriceHistoryEntry,
   clearPriceHistory,
+  getProfileCoefficients,
+  setItemCoefficient,
+  bulkSaveProfileCoefficients,
 } from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -561,6 +564,46 @@ app.delete("/api/local-db/price-history", async (req, res) => {
   }
 });
 
+app.get("/api/local-db/coefficients", async (req, res) => {
+  try {
+    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const result = await getProfileCoefficients(profileId);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to fetch coefficients";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.put("/api/local-db/coefficients/:itemId", async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    const coefficient = Number(req.body?.coefficient);
+    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const updatedAt = req.body?.updatedAt ? Number(req.body?.updatedAt) : undefined;
+    if (!itemId || Number.isNaN(coefficient)) {
+      return res.status(400).json({ error: "Valid itemId and coefficient are required" });
+    }
+    const result = await setItemCoefficient(itemId, coefficient, profileId, updatedAt);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save coefficient";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/coefficients/bulk", async (req, res) => {
+  try {
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const result = await bulkSaveProfileCoefficients(entries, profileId);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to bulk save coefficients";
+    res.status(500).json({ error: message });
+  }
+});
+
 app.get("/api/dofusdb/proxy/*", async (req, res) => {
   try {
     const params = req.params as Record<string, string>;
@@ -804,7 +847,7 @@ app.get("/api/dofocus/servers", async (req, res) => {
         { _id: "talkasha", name: "TalKasha" },
         { _id: "hellmina", name: "HellMina" },
         { _id: "imagiro", name: "Imagiro" },
-        { _id: "oruka", name: "Orukam" },
+        { _id: "orukam", name: "Orukam" },
         { _id: "tylezia", name: "Tylezia" },
       ];
       return res.json(fallbackServers);

@@ -20,8 +20,8 @@ export const SERVER_NAME_TO_SLUG: Record<string, string> = {
   "hell mina": "hellmina",
   "hell-mina": "hellmina",
   imagiro: "imagiro",
-  oruka: "oruka",
-  orukam: "oruka",
+  orukam: "orukam",
+  oruka: "orukam",
   tylezia: "tylezia",
 };
 
@@ -36,7 +36,7 @@ export const SERVER_SLUG_TO_DOFOCUS_NAME: Record<string, string> = {
   "tal-kasha": "TalKasha",
   hellmina: "HellMina",
   imagiro: "Imagiro",
-  oruka: "Orukam",
+  orukam: "Orukam",
   tylezia: "Tylezia",
 };
 
@@ -106,7 +106,7 @@ export async function getDofocusServers(): Promise<DofocusServer[]> {
       { _id: "talkasha", name: "TalKasha" },
       { _id: "hellmina", name: "HellMina" },
       { _id: "imagiro", name: "Imagiro" },
-      { _id: "oruka", name: "Oruka" },
+      { _id: "orukam", name: "Orukam" },
       { _id: "tylezia", name: "Tylezia" },
     ];
   }
@@ -179,6 +179,27 @@ export async function syncDofocusCoefficients(
     },
     serverSlug
   );
+
+  // Also persist to SQLite backend database in background
+  try {
+    const allSavedCoeffs = getAllSavedItemCoefficients(serverSlug);
+    const allSavedTimestamps = getAllSavedItemCoefficientTimestamps(serverSlug);
+    const entries = Object.entries(allSavedCoeffs).map(([itemIdStr, coeff]) => ({
+      itemId: Number(itemIdStr),
+      coefficient: coeff,
+      updatedAt: allSavedTimestamps[Number(itemIdStr)] || Date.now(),
+    }));
+
+    if (entries.length > 0) {
+      void fetch("/api/local-db/coefficients/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries }),
+      }).catch((e) => console.warn("Background SQLite sync failed:", e));
+    }
+  } catch (err) {
+    console.warn("Could not push bulk coefficients to backend SQLite:", err);
+  }
 
   // Compute summary metrics
   const validCoeffs = coefficients.map((c) => c.coefficient).filter((c) => typeof c === "number");

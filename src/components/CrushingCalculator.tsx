@@ -83,6 +83,7 @@ import {
   initializeDatabase,
   saveMarketPrice,
   getActivePriceProfile,
+  saveProfileCoefficient,
 } from '../services/dofusDbService';
 import { SafeImage } from './SafeImage';
 import { RuneIcon } from './RuneIcon';
@@ -586,9 +587,11 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   // Handle saving coefficient for current item
   const handleSaveItemCoefficient = () => {
     if (!selectedItem) return;
-    saveItemCoefficient(selectedItem.id, coefficientPercent);
-    setSavedCoefficients(getAllSavedItemCoefficients());
-    setSavedTimestamps(getAllSavedItemCoefficientTimestamps());
+    const currentProfile = activeProfile || getActivePriceProfile();
+    saveItemCoefficient(selectedItem.id, coefficientPercent, currentProfile?.slug);
+    void saveProfileCoefficient(selectedItem.id, coefficientPercent, currentProfile?.id);
+    setSavedCoefficients(getAllSavedItemCoefficients(currentProfile?.slug));
+    setSavedTimestamps(getAllSavedItemCoefficientTimestamps(currentProfile?.slug));
     setSavedCoeffFeedback(true);
     setTimeout(() => setSavedCoeffFeedback(false), 2000);
   };
@@ -1246,12 +1249,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             type="button"
             onClick={() => setIsDofocusModalOpen(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-amber-500/15 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 shadow-sm transition-all cursor-pointer"
-            title="Sincronizar coeficientes de rotura desde DoFocus (Draconiros)"
+            title={`Sincronizar coeficientes de rotura desde DoFocus (${activeProfile?.name || 'Servidor Activo'})`}
           >
             <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
             <span>Sincronizar DoFocus</span>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
-              Draconiros
+              {activeProfile?.name || 'Servidor'}
             </span>
           </button>
 
