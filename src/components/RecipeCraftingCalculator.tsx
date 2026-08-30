@@ -37,6 +37,12 @@ import {
   Map as MapIcon,
   Vault,
   BarChart2,
+  FolderOpen,
+  FolderClosed,
+  GitBranch,
+  CornerDownRight,
+  Hammer,
+  CheckCircle2,
 } from "lucide-react";
 import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
 import {
@@ -183,6 +189,10 @@ export const RecipeCraftingCalculator: React.FC<{
   const [salePriceDraft, setSalePriceDraft] = useState<string>("");
   const [salePriceSavedFeedback, setSalePriceSavedFeedback] = useState<boolean>(false);
   const [addedToListNotice, setAddedToListNotice] = useState<boolean>(false);
+  const [treeExpandTrigger, setTreeExpandTrigger] = useState<{ trigger: number; expand: boolean }>({
+    trigger: 0,
+    expand: false,
+  });
   const saleDebounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Sales Volume Map (24h, 7d, 30d records)
@@ -904,6 +914,30 @@ export const RecipeCraftingCalculator: React.FC<{
                   </span>
                 )}
               </div>
+
+              {/* Quick Tree Expand / Collapse Controls */}
+              {recipeTree?.subIngredients && recipeTree.subIngredients.some((s) => s.isCraftable && s.subIngredients && s.subIngredients.length > 0) && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTreeExpandTrigger({ trigger: Date.now(), expand: true })}
+                    className="px-2.5 py-1 rounded-xl bg-slate-950 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    title="Desplegar todos los sub-árboles de crafteo de la receta"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Desplegar todo el árbol</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTreeExpandTrigger({ trigger: Date.now(), expand: false })}
+                    className="px-2.5 py-1 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    title="Plegar todos los sub-árboles"
+                  >
+                    <FolderClosed className="w-3.5 h-3.5" />
+                    <span>Plegar todo</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {loadingTree ? (
@@ -925,6 +959,8 @@ export const RecipeCraftingCalculator: React.FC<{
                     priceUpdatedAt={priceUpdatedAt}
                     onPriceChange={handlePriceChange}
                     onOpenHistory={(item) => setItemForHistory(item)}
+                    forceExpandTrigger={treeExpandTrigger.trigger}
+                    forceExpandValue={treeExpandTrigger.expand}
                   />
                 ))}
               </div>
@@ -1365,6 +1401,8 @@ interface HorizontalIngredientCardProps {
   priceUpdatedAt: Record<number, number>;
   onPriceChange: (itemId: number, newPrice: number) => void;
   onOpenHistory?: (item: DofusItem) => void;
+  forceExpandTrigger?: number;
+  forceExpandValue?: boolean;
 }
 
 const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
@@ -1373,11 +1411,20 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
   priceUpdatedAt,
   onPriceChange,
   onOpenHistory,
+  forceExpandTrigger = 0,
+  forceExpandValue = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[node.itemId] || node.marketPrice || 0;
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync with global expand/collapse buttons
+  useEffect(() => {
+    if (forceExpandTrigger > 0) {
+      setIsExpanded(forceExpandValue);
+    }
+  }, [forceExpandTrigger, forceExpandValue]);
 
   const isByc = isBycResource(node.itemId);
   const bycAnalysis = isByc ? analyzeBycResourceCost(node.itemId, marketPrices) : null;
@@ -1403,7 +1450,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
     ? calculateTreeCraftCost(node, "auto_optimal", marketPrices)
     : directBuyCost;
 
-  const isSubcraftCheaper = hasSubCraft && subCraftCost < directBuyCost;
+  const isSubcraftCheaper = hasSubCraft && currentPrice > 0 && subCraftCost < directBuyCost;
   const savings = Math.abs(directBuyCost - subCraftCost);
 
   const handleInputChange = (val: string) => {
@@ -1438,8 +1485,16 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
     }
   };
 
+  const itemName = getItemName(node.item);
+
   return (
-    <div className="bg-slate-950 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-3.5 text-xs shadow-lg flex flex-col justify-between">
+    <div
+      className={`bg-slate-950 border rounded-2xl p-4 space-y-3.5 text-xs shadow-lg flex flex-col justify-between transition-colors ${
+        isExpanded
+          ? "border-amber-500/60 ring-1 ring-amber-500/20"
+          : "border-slate-800 hover:border-amber-500/40"
+      }`}
+    >
       <div className="space-y-3">
         {/* Header with Icon, Quantity and Name */}
         <div className="flex items-start justify-between gap-2.5">
@@ -1448,7 +1503,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               {getItemIconUrl(node.item) ? (
                 <img
                   src={getItemIconUrl(node.item)}
-                  alt={getItemName(node.item)}
+                  alt={itemName}
                   className="w-9 h-9 object-contain"
                   onError={(e) => {
                     const fallback = getItemFallbackIconUrl(node.item);
@@ -1471,8 +1526,20 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
 
             <div className="min-w-0">
               <span className="font-black text-white text-sm block truncate leading-tight">
-                {getItemName(node.item)}
+                {itemName}
               </span>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                {hasSubCraft ? (
+                  <span className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <Wrench className="w-2.5 h-2.5" />
+                    Sub-receta ({node.subIngredients?.length})
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.2 text-[10px] font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700">
+                    Recurso base
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1490,7 +1557,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenHistory(node.item)}
-                  className="p-1 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors"
+                  className="p-1 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors cursor-pointer"
                   title="Ver historial de precios"
                 >
                   <History className="w-3 h-3" />
@@ -1535,7 +1602,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                 addOrUpdateBankItem(node.item.id, node.quantity);
                 window.dispatchEvent(new CustomEvent("dofus_bank_inventory_updated"));
               }}
-              className="px-1.5 py-0.5 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors text-[10px] font-sans flex items-center gap-1"
+              className="px-1.5 py-0.5 rounded bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors text-[10px] font-sans flex items-center gap-1 cursor-pointer"
               title="Guardar esta cantidad en Mi Banco"
             >
               <Vault className="w-3 h-3 text-amber-400" />
@@ -1567,7 +1634,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               <button
                 type="button"
                 onClick={() => handleApplyBycMethod("direct")}
-                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center cursor-pointer ${
                   selectedBycMethod === "direct"
                     ? "bg-amber-500/20 border-amber-500/60 text-amber-200 font-bold shadow-sm"
                     : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
@@ -1583,7 +1650,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               <button
                 type="button"
                 onClick={() => handleApplyBycMethod("fragments")}
-                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center cursor-pointer ${
                   selectedBycMethod === "fragments"
                     ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold shadow-sm"
                     : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
@@ -1602,7 +1669,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               <button
                 type="button"
                 onClick={() => handleApplyBycMethod("map")}
-                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center ${
+                className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center cursor-pointer ${
                   selectedBycMethod === "map"
                     ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-200 font-bold shadow-sm"
                     : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
@@ -1620,27 +1687,26 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
           </div>
         )}
 
-        {/* Sub-crafting comparison & Toggle */}
+        {/* Sub-crafting comparison & Toggle Tree */}
         {hasSubCraft && (
-          <div className="pt-1.5 space-y-2">
-            {/* Explicit comparison box showing both options */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+          <div className="pt-1.5 space-y-2.5">
+            {/* Explicit comparison box */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 space-y-2">
               <div className="flex items-center justify-between text-xs font-bold">
                 {currentPrice > 0 ? (
-                  subCraftCost < directBuyCost ? (
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-[11px] font-mono">
-                      Craftear (-
-                      {(directBuyCost - subCraftCost).toLocaleString()} K)
+                  isSubcraftCheaper ? (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-[11px] font-mono flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      Más rentable craftear (-{(directBuyCost - subCraftCost).toLocaleString()} K)
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-500/40 text-sky-300 font-black text-[11px] font-mono">
-                      Comprar Directo{" "}
-                      {savings > 0 ? `(-${savings.toLocaleString()} K)` : ""}
+                      Más rentable comprar listo {savings > 0 ? `(-${savings.toLocaleString()} K)` : ""}
                     </span>
                   )
                 ) : (
                   <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black text-[11px] font-mono">
-                    Crafteo: {subCraftCost.toLocaleString()} K
+                    Crafteo estimado: {subCraftCost.toLocaleString()} K
                   </span>
                 )}
               </div>
@@ -1679,34 +1745,70 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
               </div>
             </div>
 
+            {/* Tree Branch Accordion Button */}
             <button
+              type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-white text-xs font-bold flex items-center justify-between transition-colors"
+              className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer shadow-sm ${
+                isExpanded
+                  ? "bg-amber-500/20 border-amber-500/50 text-amber-200 shadow-amber-500/10"
+                  : "bg-slate-900 hover:bg-slate-850 border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-white"
+              }`}
             >
-              <span className="flex items-center gap-1.5">
-                <Wrench className="w-3.5 h-3.5 text-amber-400" />
+              <span className="flex items-center gap-2">
+                <GitBranch className={`w-3.5 h-3.5 ${isExpanded ? "text-amber-400" : "text-slate-400"}`} />
                 <span>
-                  Desglose de Sub-receta ({node.subIngredients?.length})
+                  {isExpanded
+                    ? `Plegar sub-receta (${node.subIngredients?.length})`
+                    : `Desplegar sub-receta (${node.subIngredients?.length})`}
                 </span>
               </span>
-              {isExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
-              )}
+              <div className="flex items-center gap-1.5">
+                {currentPrice > 0 && isSubcraftCheaper && !isExpanded && (
+                  <span className="text-[10px] text-emerald-300 font-mono font-bold bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                    Ahorras {savings.toLocaleString()} K
+                  </span>
+                )}
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-amber-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                )}
+              </div>
             </button>
 
+            {/* Tree Sub-Ingredients Node Container */}
             {isExpanded && node.subIngredients && (
-              <div className="mt-2 space-y-2 pl-1 border-l-2 border-amber-500/30">
-                {node.subIngredients.map((sub) => (
-                  <SubIngredientRow
-                    key={sub.itemId}
-                    sub={sub}
-                    marketPrices={marketPrices}
-                    onPriceChange={onPriceChange}
-                    onOpenHistory={onOpenHistory}
-                  />
-                ))}
+              <div className="space-y-2 pt-1 animate-fadeIn">
+                {/* Visual Branch Header */}
+                <div className="bg-amber-950/40 border border-amber-500/30 rounded-xl px-2.5 py-1.5 flex items-center justify-between text-xs text-amber-300 font-bold">
+                  <span className="flex items-center gap-1.5 truncate">
+                    <CornerDownRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="truncate">
+                      Ingredientes para fabricar <strong>{itemName}</strong>:
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-400/80 shrink-0 ml-1">
+                    x{node.quantity}
+                  </span>
+                </div>
+
+                {/* Vertical Tree Connector Guideline */}
+                <div className="space-y-2 pl-2.5 border-l-2 border-amber-500/40 ml-1.5">
+                  {node.subIngredients.map((sub) => (
+                    <SubIngredientRow
+                      key={sub.itemId}
+                      sub={sub}
+                      level={1}
+                      parentName={itemName}
+                      marketPrices={marketPrices}
+                      onPriceChange={onPriceChange}
+                      onOpenHistory={onOpenHistory}
+                      forceExpandTrigger={forceExpandTrigger}
+                      forceExpandValue={forceExpandValue}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -1721,20 +1823,35 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
 // -----------------------------------------------------------------------------
 interface SubIngredientRowProps {
   sub: RecipeTreeNode;
+  level?: number;
+  parentName?: string;
   marketPrices: MarketPriceMap;
   onPriceChange: (itemId: number, newPrice: number) => void;
   onOpenHistory?: (item: DofusItem) => void;
+  forceExpandTrigger?: number;
+  forceExpandValue?: boolean;
 }
 
 const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
   sub,
+  level = 1,
+  parentName,
   marketPrices,
   onPriceChange,
   onOpenHistory,
+  forceExpandTrigger = 0,
+  forceExpandValue = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[sub.itemId] || sub.marketPrice || 0;
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
+
+  // Sync with global expand/collapse buttons
+  useEffect(() => {
+    if (forceExpandTrigger > 0) {
+      setIsExpanded(forceExpandValue);
+    }
+  }, [forceExpandTrigger, forceExpandValue]);
 
   const displayPrice =
     draftPrice !== null ? draftPrice : currentPrice > 0 ? currentPrice : "";
@@ -1753,48 +1870,102 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
       ? Math.abs(directBuyCost - subCraftCost)
       : 0;
 
+  const subName = getItemName(sub.item);
+
+  // Level theme palette
+  const levelThemes = [
+    {
+      bg: "bg-slate-900/95",
+      border: "border-amber-500/40 hover:border-amber-500/60",
+      accent: "text-amber-400",
+      badgeBg: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      line: "border-l-2 border-amber-500/50",
+      pill: "bg-amber-950/40 border-amber-500/30 text-amber-300",
+    },
+    {
+      bg: "bg-slate-950/95",
+      border: "border-indigo-500/40 hover:border-indigo-500/60",
+      accent: "text-indigo-400",
+      badgeBg: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+      line: "border-l-2 border-indigo-500/50",
+      pill: "bg-indigo-950/40 border-indigo-500/30 text-indigo-300",
+    },
+    {
+      bg: "bg-slate-950/95",
+      border: "border-sky-500/40 hover:border-sky-500/60",
+      accent: "text-sky-400",
+      badgeBg: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+      line: "border-l-2 border-sky-500/50",
+      pill: "bg-sky-950/40 border-sky-500/30 text-sky-300",
+    },
+  ];
+  const theme = levelThemes[Math.min(level - 1, levelThemes.length - 1)];
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-2 shadow-sm">
+    <div
+      className={`rounded-2xl p-3.5 space-y-2.5 shadow-lg transition-all border ${theme.bg} ${theme.border}`}
+    >
+      {/* Context Badge: Explains exactly which parent item this belongs to */}
+      {parentName && (
+        <div className="flex items-center gap-1 text-[10px] text-slate-400 font-semibold bg-slate-950/60 px-2 py-0.5 rounded-md border border-slate-800/80 w-fit max-w-full truncate">
+          <CornerDownRight className={`w-3 h-3 ${theme.accent} shrink-0`} />
+          <span className="text-slate-500">Ingrediente de:</span>
+          <span className="font-bold text-slate-300 truncate">{parentName}</span>
+        </div>
+      )}
+
+      {/* Header: Branch Icon, Item Thumbnail, Name & Quantity */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-slate-950 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-slate-950 border border-slate-800 p-0.5 flex items-center justify-center shrink-0 shadow-inner">
             {getItemIconUrl(sub.item) ? (
               <img
                 src={getItemIconUrl(sub.item)}
-                alt={getItemName(sub.item)}
-                className="w-5 h-5 object-contain"
+                alt={subName}
+                className="w-6 h-6 object-contain"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = "none";
                 }}
               />
             ) : (
-              <span className="text-[10px] text-amber-400 font-mono font-bold">
+              <span className={`text-[10px] ${theme.accent} font-mono font-bold`}>
                 x{sub.quantity}
               </span>
             )}
           </div>
           <div className="min-w-0">
-            <span className="text-xs font-bold text-white block truncate">
-              {getItemName(sub.item)}
+            <span className="text-xs font-black text-white block truncate leading-tight">
+              {subName}
             </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {hasSubSubCraft ? (
+                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border flex items-center gap-1 ${theme.badgeBg}`}>
+                  <Wrench className="w-2.5 h-2.5" />
+                  Sub-crafteo ({sub.subIngredients?.length})
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-semibold">Recurso</span>
+              )}
+            </div>
           </div>
         </div>
-        <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold font-mono text-xs shrink-0">
+        <span className={`px-2.5 py-0.5 rounded-lg border font-black font-mono text-xs shrink-0 ${theme.badgeBg}`}>
           x{sub.quantity}
         </span>
       </div>
 
-      <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 flex items-center justify-between gap-2 text-xs font-mono">
+      {/* Price Input Row */}
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex items-center justify-between gap-2 text-xs font-mono">
         <div className="flex items-center gap-1">
           <span className="text-slate-400 text-[11px] font-bold">Precio U.:</span>
           {onOpenHistory && (
             <button
               type="button"
               onClick={() => onOpenHistory(sub.item)}
-              className="p-0.5 rounded bg-slate-900 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors"
+              className="p-1 rounded bg-slate-900 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors cursor-pointer"
               title="Ver historial de precios"
             >
-              <History className="w-2.5 h-2.5" />
+              <History className="w-3 h-3" />
             </button>
           )}
         </div>
@@ -1825,6 +1996,7 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
         </div>
       </div>
 
+      {/* Subtotal line */}
       <div className="flex items-center justify-between text-[11px] font-mono px-0.5">
         <span className="text-slate-400 font-bold">Total ({sub.quantity}x):</span>
         {currentPrice > 0 ? (
@@ -1838,8 +2010,9 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
         )}
       </div>
 
+      {/* Nested Sub-Sub Crafting Tree */}
       {hasSubSubCraft && (
-        <div className="pt-1.5 border-t border-slate-800 space-y-1.5">
+        <div className="pt-2 border-t border-slate-800 space-y-2">
           <div className="flex items-center justify-between text-[11px] font-mono">
             <span className="text-slate-400 font-bold">Crafteo de Sub-receta:</span>
             <span className="text-emerald-400 font-black">
@@ -1850,39 +2023,67 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
           {currentPrice > 0 && (
             <div className="text-[10px] font-mono font-bold">
               {isSubCraftCheaper ? (
-                <span className="text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 px-1.5 py-0.5 rounded block text-center">
-                  Más rentable craftear (-{subSavings.toLocaleString()} K)
+                <span className="text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 px-2 py-1 rounded-lg block text-center">
+                  ✓ Más rentable craftear (-{subSavings.toLocaleString()} K)
                 </span>
               ) : (
-                <span className="text-sky-300 bg-sky-500/20 border border-sky-500/30 px-1.5 py-0.5 rounded block text-center">
+                <span className="text-sky-300 bg-sky-500/20 border border-sky-500/30 px-2 py-1 rounded-lg block text-center">
                   Más rentable comprar listo (-{subSavings.toLocaleString()} K)
                 </span>
               )}
             </div>
           )}
 
+          {/* Toggle Nested Level */}
           <button
+            type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full py-1 px-2 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 text-[10px] font-bold flex items-center justify-between transition-colors"
+            className={`w-full py-1.5 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-all border cursor-pointer ${
+              isExpanded
+                ? `${theme.badgeBg} shadow-sm`
+                : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-300"
+            }`}
           >
-            <span>Sub-ingredientes ({sub.subIngredients?.length})</span>
+            <span className="flex items-center gap-1.5">
+              <GitBranch className={`w-3.5 h-3.5 ${theme.accent}`} />
+              <span>
+                {isExpanded
+                  ? `Plegar sub-árbol (${sub.subIngredients?.length} ingredientes)`
+                  : `Desplegar sub-árbol (${sub.subIngredients?.length} ingredientes)`}
+              </span>
+            </span>
             {isExpanded ? (
-              <ChevronDown className="w-3 h-3 text-amber-400" />
+              <ChevronDown className={`w-3.5 h-3.5 ${theme.accent}`} />
             ) : (
-              <ChevronRight className="w-3 h-3 text-amber-400" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             )}
           </button>
+
           {isExpanded && sub.subIngredients && (
-            <div className="mt-2 space-y-2 pl-1 border-l-2 border-amber-500/30">
-              {sub.subIngredients.map((childSub) => (
-                <SubIngredientRow
-                  key={childSub.itemId}
-                  sub={childSub}
-                  marketPrices={marketPrices}
-                  onPriceChange={onPriceChange}
-                  onOpenHistory={onOpenHistory}
-                />
-              ))}
+            <div className="space-y-2 pt-1 animate-fadeIn">
+              <div className={`border rounded-xl px-2.5 py-1.5 flex items-center justify-between text-[11px] font-bold ${theme.pill}`}>
+                <span className="flex items-center gap-1 truncate">
+                  <CornerDownRight className={`w-3 h-3 ${theme.accent} shrink-0`} />
+                  <span className="truncate">Ingredientes para fabricar <strong>{subName}</strong>:</span>
+                </span>
+                <span className="font-mono text-xs shrink-0 ml-1">x{sub.quantity}</span>
+              </div>
+
+              <div className={`space-y-2.5 pl-2.5 ${theme.line} ml-1.5`}>
+                {sub.subIngredients.map((childSub) => (
+                  <SubIngredientRow
+                    key={childSub.itemId}
+                    sub={childSub}
+                    level={level + 1}
+                    parentName={subName}
+                    marketPrices={marketPrices}
+                    onPriceChange={onPriceChange}
+                    onOpenHistory={onOpenHistory}
+                    forceExpandTrigger={forceExpandTrigger}
+                    forceExpandValue={forceExpandValue}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>

@@ -31,6 +31,11 @@ import {
   CheckCheck,
   X,
   FilePlus,
+  Filter,
+  CheckSquare,
+  Square,
+  FolderOpen,
+  FolderClosed,
 } from 'lucide-react';
 import {
   DofusbookBuildAnalysis,
@@ -68,6 +73,8 @@ interface DofusbookSavedSession {
   activeTabSection: 'comparison' | 'materials';
   showOnlyCraftable: boolean;
   filterStatus: 'all' | 'needed' | 'owned' | 'removed';
+  obtainedMaterialIds?: Record<number, boolean>;
+  materialsFilter?: 'needed' | 'obtained' | 'all';
 }
 
 function loadSavedDofusbookSession(): DofusbookSavedSession | null {
@@ -119,6 +126,14 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     () => savedSession?.removedItemKeys ?? {}
   );
 
+  // Materials obtained state (temporary per set session)
+  const [obtainedMaterialIds, setObtainedMaterialIds] = useState<Record<number, boolean>>(
+    () => savedSession?.obtainedMaterialIds ?? {}
+  );
+  const [materialsFilter, setMaterialsFilter] = useState<'needed' | 'obtained' | 'all'>(
+    () => savedSession?.materialsFilter ?? 'needed'
+  );
+
   // Sync to localStorage on any state change
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -134,6 +149,8 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
           activeTabSection,
           showOnlyCraftable,
           filterStatus,
+          obtainedMaterialIds,
+          materialsFilter,
         };
         localStorage.setItem(DOFUSBOOK_SESSION_STORAGE_KEY, JSON.stringify(stateToSave));
       } else {
@@ -152,6 +169,8 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     activeTabSection,
     showOnlyCraftable,
     filterStatus,
+    obtainedMaterialIds,
+    materialsFilter,
   ]);
 
   useEffect(() => {
@@ -203,6 +222,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
       // Reset item custom statuses on new build
       setOwnedItemKeys({});
       setRemovedItemKeys({});
+      setObtainedMaterialIds({});
       if (overrideUrl) {
         setUrlInput(overrideUrl);
       }
@@ -263,6 +283,21 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     }));
   };
 
+  const expandAllRecipes = () => {
+    const next: Record<string, boolean> = {};
+    filteredItems.forEach((it, idx) => {
+      const itemKey = it.key || `${it.slotName}-${it.id || idx}`;
+      if (it.ingredientsBreakdown.length > 0) {
+        next[itemKey] = true;
+      }
+    });
+    setExpandedItems(next);
+  };
+
+  const collapseAllRecipes = () => {
+    setExpandedItems({});
+  };
+
   // Ownership & Removal actions
   const toggleItemOwned = (key: string) => {
     setOwnedItemKeys((prev) => {
@@ -320,6 +355,21 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     setRemovedItemKeys({});
   };
 
+  const removeOwnedItems = () => {
+    if (!analysis) return;
+    const newRemoved = { ...removedItemKeys };
+    const newOwned = { ...ownedItemKeys };
+    analysis.items.forEach((it, idx) => {
+      const key = `${it.slotName}-${it.id || idx}`;
+      if (ownedItemKeys[key]) {
+        newRemoved[key] = true;
+        delete newOwned[key];
+      }
+    });
+    setRemovedItemKeys(newRemoved);
+    setOwnedItemKeys(newOwned);
+  };
+
   const markAllAsOwned = () => {
     if (!analysis) return;
     const newOwned: Record<string, boolean> = {};
@@ -335,6 +385,32 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
   const resetAllStatuses = () => {
     setOwnedItemKeys({});
     setRemovedItemKeys({});
+    setObtainedMaterialIds({});
+  };
+
+  const toggleMaterialObtained = (itemId: number) => {
+    setObtainedMaterialIds((prev) => {
+      const next = { ...prev };
+      if (next[itemId]) {
+        delete next[itemId];
+      } else {
+        next[itemId] = true;
+      }
+      return next;
+    });
+  };
+
+  const markAllMaterialsAsObtained = () => {
+    if (!analysis) return;
+    const next: Record<number, boolean> = {};
+    computedData.consolidatedIngredients.forEach((mat) => {
+      next[mat.itemId] = true;
+    });
+    setObtainedMaterialIds(next);
+  };
+
+  const resetObtainedMaterials = () => {
+    setObtainedMaterialIds({});
   };
 
   const handleClearSet = () => {
@@ -342,6 +418,8 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     setUrlInput('');
     setOwnedItemKeys({});
     setRemovedItemKeys({});
+    setObtainedMaterialIds({});
+    setMaterialsFilter('needed');
     setError(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem(DOFUSBOOK_SESSION_STORAGE_KEY);
@@ -436,7 +514,13 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
           excludedTrophiesCount: 0,
           totalPieces: 0,
         },
-        consolidatedIngredients: [] as ConsolidatedIngredient[],
+        consolidatedIngredients: [] as (ConsolidatedIngredient & { isObtained?: boolean })[],
+        neededIngredients: [] as (ConsolidatedIngredient & { isObtained?: boolean })[],
+        obtainedIngredients: [] as (ConsolidatedIngredient & { isObtained?: boolean })[],
+        totalAllMaterialsCost: 0,
+        totalNeededMaterialsCost: 0,
+        totalObtainedMaterialsCost: 0,
+        materialsProgressPercent: 0,
         ownedCount: 0,
         removedCount: 0,
         neededCount: 0,
@@ -528,9 +612,23 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     const activePiecesCount = analysis.items.length - removedCount;
     const progressPercent = activePiecesCount > 0 ? Math.round((ownedCount / activePiecesCount) * 100) : 0;
 
-    const consolidatedIngredients = Array.from(activeConsolidatedMap.values()).sort(
-      (a, b) => b.totalPrice - a.totalPrice
-    );
+    const consolidatedIngredients = Array.from(activeConsolidatedMap.values())
+      .map((mat) => ({
+        ...mat,
+        isObtained: !!obtainedMaterialIds[mat.itemId],
+      }))
+      .sort((a, b) => b.totalPrice - a.totalPrice);
+
+    const neededIngredients = consolidatedIngredients.filter((mat) => !mat.isObtained);
+    const obtainedIngredients = consolidatedIngredients.filter((mat) => mat.isObtained);
+
+    const totalAllMaterialsCost = consolidatedIngredients.reduce((sum, m) => sum + m.totalPrice, 0);
+    const totalNeededMaterialsCost = neededIngredients.reduce((sum, m) => sum + m.totalPrice, 0);
+    const totalObtainedMaterialsCost = obtainedIngredients.reduce((sum, m) => sum + m.totalPrice, 0);
+    const materialsProgressPercent =
+      consolidatedIngredients.length > 0
+        ? Math.round((obtainedIngredients.length / consolidatedIngredients.length) * 100)
+        : 0;
 
     return {
       items: processedItems,
@@ -545,13 +643,19 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
         totalPieces: analysis.items.length,
       },
       consolidatedIngredients,
+      neededIngredients,
+      obtainedIngredients,
+      totalAllMaterialsCost,
+      totalNeededMaterialsCost,
+      totalObtainedMaterialsCost,
+      materialsProgressPercent,
       ownedCount,
       removedCount,
       neededCount,
       activePiecesCount,
       progressPercent,
     };
-  }, [analysis, ownedItemKeys, removedItemKeys, excludeDofus, excludeTrophies]);
+  }, [analysis, ownedItemKeys, removedItemKeys, obtainedMaterialIds, excludeDofus, excludeTrophies]);
 
   const handleSendToShoppingList = () => {
     if (!analysis) return;
@@ -651,8 +755,8 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
     if (filterStatus === 'removed') {
       return it.isRemoved;
     }
-    // 'all'
-    return true;
+    // 'all': Show only active pieces
+    return !it.isRemoved;
   });
 
   return (
@@ -840,6 +944,18 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                   <span>Nuevo Set</span>
                 </button>
 
+                {computedData.ownedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={removeOwnedItems}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700 cursor-pointer"
+                    title="Eliminar de la sección todas las piezas ya obtenidas"
+                  >
+                    <Trash2 className="w-3 h-3 text-rose-400" />
+                    <span>Eliminar obtenidas ({computedData.ownedCount})</span>
+                  </button>
+                )}
+
                 {computedData.ownedCount > 0 || computedData.removedCount > 0 ? (
                   <button
                     type="button"
@@ -932,6 +1048,38 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 ></div>
               </div>
             </div>
+
+            {/* Set Completed Banner */}
+            {computedData.activePiecesCount > 0 && computedData.neededCount === 0 && (
+              <div className="bg-emerald-950/40 border border-emerald-500/50 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-emerald-950/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-white flex items-center gap-2">
+                      ¡Set Completado al 100%!
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-normal">
+                        Todas las piezas obtenidas
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-300">
+                      Has terminado de conseguir todo lo necesario para este set. Puedes limpiar la sección para comenzar con otro set.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleClearSet}
+                    className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Limpiar Sección y Cargar Nuevo Set</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Toast Notification */}
@@ -1064,7 +1212,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 }`}
               >
                 <Layers className="w-4 h-4" />
-                <span>Desglose por Pieza ({computedData.items.length})</span>
+                <span>Desglose por Pieza ({computedData.activePiecesCount})</span>
               </button>
 
               <button
@@ -1095,7 +1243,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    Todos ({computedData.items.length})
+                    Todos ({computedData.activePiecesCount})
                   </button>
 
                   <button
@@ -1165,7 +1313,7 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
               <div className="flex items-center gap-2">
                 <Trash2 className="w-3.5 h-3.5 text-slate-500" />
                 <span>
-                  Hay <strong>{computedData.removedCount} pieza(s)</strong> descartadas del cálculo del set.
+                  Hay <strong>{computedData.removedCount} pieza(s)</strong> eliminadas/descartadas de la sección.
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -1192,6 +1340,36 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
           {/* TAB 1: Comparison Table */}
           {activeTabSection === 'comparison' && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              {/* Quick Table Subheader Controls */}
+              {filteredItems.some((it) => it.ingredientsBreakdown.length > 0) && (
+                <div className="bg-slate-950/90 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="text-slate-400 flex items-center gap-1.5 font-medium">
+                    <Layers className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Recetas de fabricación del set:</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={expandAllRecipes}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Desplegar todas las listas de materiales de cada objeto"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Desplegar todas las recetas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={collapseAllRecipes}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Plegar todas las recetas"
+                    >
+                      <FolderClosed className="w-3.5 h-3.5" />
+                      <span>Plegar todas</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs sm:text-sm border-collapse">
                   <thead>
@@ -1209,7 +1387,26 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                     {filteredItems.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-12 text-center text-slate-500 text-xs">
-                          No hay piezas que coincidan con el filtro seleccionado.
+                          <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto py-2">
+                            <PackageCheck className="w-8 h-8 text-slate-600" />
+                            <p className="font-semibold text-slate-300 text-sm">
+                              {computedData.activePiecesCount === 0
+                                ? 'Has eliminado o descartado todas las piezas de este set.'
+                                : filterStatus === 'needed' && computedData.neededCount === 0
+                                ? '¡Felicidades! Ya has obtenido todas las piezas activas del set.'
+                                : 'No hay piezas que coincidan con el filtro seleccionado.'}
+                            </p>
+                            {computedData.removedCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={restoreAllRemoved}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 mt-2 cursor-pointer border border-slate-700"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Restaurar {computedData.removedCount} piezas descartadas</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ) : (
@@ -1532,11 +1729,16 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                                       {it.ingredientsBreakdown.map((ing) => {
                                         const isEditingThisIng = editingPriceItemId === ing.id;
+                                        const isIngObtained = !!obtainedMaterialIds[ing.id];
 
                                         return (
                                           <div
                                             key={ing.id}
-                                            className="bg-slate-900 border border-slate-800 rounded-xl p-2 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors"
+                                            className={`rounded-xl p-2 flex items-center justify-between gap-2 transition-colors border ${
+                                              isIngObtained
+                                                ? 'bg-emerald-950/30 border-emerald-500/30 hover:border-emerald-500/50'
+                                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                            }`}
                                           >
                                             <div className="flex items-center gap-2 min-w-0">
                                               <div className="w-7 h-7 rounded-lg bg-slate-950 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
@@ -1548,8 +1750,13 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                                                 />
                                               </div>
                                               <div className="min-w-0">
-                                                <div className="font-semibold text-slate-200 text-xs truncate">
-                                                  {ing.name}
+                                                <div className="font-semibold text-slate-200 text-xs truncate flex items-center gap-1">
+                                                  <span className="truncate">{ing.name}</span>
+                                                  {isIngObtained && (
+                                                    <span className="text-[9px] text-emerald-400 font-bold px-1 rounded bg-emerald-500/20 shrink-0">
+                                                      ✓ Tengo
+                                                    </span>
+                                                  )}
                                                 </div>
                                                 <div className="text-[10px] text-slate-400">
                                                   Cant: <strong className="text-amber-300 font-mono">x{ing.quantity}</strong>
@@ -1557,52 +1764,75 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                                               </div>
                                             </div>
 
-                                            <div className="text-right font-mono shrink-0">
-                                              {isEditingThisIng ? (
-                                                <div className="flex items-center gap-1">
-                                                  <input
-                                                    type="number"
-                                                    value={tempPriceInput}
-                                                    onChange={(e) => setTempPriceInput(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter') {
-                                                        handleSavePrice(ing.id, Number(tempPriceInput) || 0);
-                                                      } else if (e.key === 'Escape') {
-                                                        setEditingPriceItemId(null);
-                                                      }
-                                                    }}
-                                                    autoFocus
-                                                    placeholder="Precio u."
-                                                    className="w-16 px-1 py-0.5 bg-slate-950 border border-amber-500 text-right text-[11px] rounded text-amber-300 font-mono outline-none"
-                                                  />
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() => toggleMaterialObtained(ing.id)}
+                                                className={`p-1 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors border ${
+                                                  isIngObtained
+                                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/30'
+                                                }`}
+                                                title={
+                                                  isIngObtained
+                                                    ? 'Material marcado como obtenido (Clic para desmarcar)'
+                                                    : 'Marcar recurso como ya obtenido'
+                                                }
+                                              >
+                                                <CheckCircle2 className="w-3 h-3" />
+                                              </button>
+
+                                              <div className="text-right font-mono">
+                                                {isEditingThisIng ? (
+                                                  <div className="flex items-center gap-1">
+                                                    <input
+                                                      type="number"
+                                                      value={tempPriceInput}
+                                                      onChange={(e) => setTempPriceInput(e.target.value)}
+                                                      onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                          handleSavePrice(ing.id, Number(tempPriceInput) || 0);
+                                                        } else if (e.key === 'Escape') {
+                                                          setEditingPriceItemId(null);
+                                                        }
+                                                      }}
+                                                      autoFocus
+                                                      placeholder="Precio u."
+                                                      className="w-16 px-1 py-0.5 bg-slate-950 border border-amber-500 text-right text-[11px] rounded text-amber-300 font-mono outline-none"
+                                                    />
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleSavePrice(ing.id, Number(tempPriceInput) || 0)}
+                                                      className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
+                                                      title="Guardar precio"
+                                                    >
+                                                      <Check className="w-2.5 h-2.5" />
+                                                    </button>
+                                                  </div>
+                                                ) : (
                                                   <button
                                                     type="button"
-                                                    onClick={() => handleSavePrice(ing.id, Number(tempPriceInput) || 0)}
-                                                    className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
-                                                    title="Guardar precio"
+                                                    onClick={() => {
+                                                      setEditingPriceItemId(ing.id);
+                                                      setTempPriceInput(String(ing.unitPrice || ''));
+                                                    }}
+                                                    className="group/ingprice text-right block cursor-pointer"
+                                                    title="Haz clic para editar el precio de este recurso"
                                                   >
-                                                    <Check className="w-2.5 h-2.5" />
+                                                    <div className={`text-xs font-bold ${
+                                                      isIngObtained
+                                                        ? 'text-emerald-400/90 line-through group-hover/ingprice:text-emerald-300'
+                                                        : 'text-slate-300 group-hover/ingprice:text-amber-300'
+                                                    }`}>
+                                                      {ing.totalPrice > 0 ? formatKamas(ing.totalPrice) : '-'}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 group-hover/ingprice:text-amber-400 flex items-center justify-end gap-0.5">
+                                                      <span>{ing.unitPrice > 0 ? `${formatKamas(ing.unitPrice)} u.` : 'Sin precio'}</span>
+                                                      <Tag className="w-2 h-2 opacity-0 group-hover/ingprice:opacity-100" />
+                                                    </div>
                                                   </button>
-                                                </div>
-                                              ) : (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setEditingPriceItemId(ing.id);
-                                                    setTempPriceInput(String(ing.unitPrice || ''));
-                                                  }}
-                                                  className="group/ingprice text-right block cursor-pointer"
-                                                  title="Haz clic para editar el precio de este recurso"
-                                                >
-                                                  <div className="text-xs font-bold text-slate-300 group-hover/ingprice:text-amber-300">
-                                                    {ing.totalPrice > 0 ? formatKamas(ing.totalPrice) : '-'}
-                                                  </div>
-                                                  <div className="text-[10px] text-slate-500 group-hover/ingprice:text-amber-400 flex items-center justify-end gap-0.5">
-                                                    <span>{ing.unitPrice > 0 ? `${formatKamas(ing.unitPrice)} u.` : 'Sin precio'}</span>
-                                                    <Tag className="w-2 h-2 opacity-0 group-hover/ingprice:opacity-100" />
-                                                  </div>
-                                                </button>
-                                              )}
+                                                )}
+                                              </div>
                                             </div>
                                           </div>
                                         );
@@ -1624,28 +1854,139 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
 
           {/* TAB 2: Consolidated Ingredients Shopping List */}
           {activeTabSection === 'materials' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                 <div>
                   <h4 className="text-base font-black text-white flex items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-amber-400" />
                     Lista de Materiales Requeridos ({computedData.consolidatedIngredients.length} recursos)
                   </h4>
-                  <p className="text-xs text-slate-400">
-                    Suma total de materiales requeridos únicamente para las piezas <strong>pendientes de fabricar</strong> (los objetos ya obtenidos o descartados se excluyen automáticamente).
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Marca los recursos que ya tienes para restar su coste del total requerido y mantener el foco en lo que realmente te falta.
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSendToShoppingList}
-                  disabled={computedData.consolidatedIngredients.length === 0}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-                >
-                  <ShoppingCart className="w-3.5 h-3.5" />
-                  <span>Enviar a Planificador de Compras</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  {computedData.obtainedIngredients.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={resetObtainedMaterials}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border border-slate-700 cursor-pointer"
+                      title="Desmarcar todos los recursos obtenidos"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Limpiar Obtenidos</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSendToShoppingList}
+                    disabled={computedData.neededIngredients.length === 0}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>Enviar Faltantes a Compras</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Materials Progress & Filter Subtabs */}
+              {computedData.consolidatedIngredients.length > 0 && (
+                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-slate-400">Ver:</span>
+                      <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setMaterialsFilter('needed')}
+                          className={`px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                            materialsFilter === 'needed'
+                              ? 'bg-amber-500 text-slate-950 shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span>Faltantes</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                            materialsFilter === 'needed' ? 'bg-amber-600/40 text-slate-950' : 'bg-slate-800 text-amber-400'
+                          }`}>
+                            {computedData.neededIngredients.length}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setMaterialsFilter('obtained')}
+                          className={`px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                            materialsFilter === 'obtained'
+                              ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span>Ya Obtenidos</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                            materialsFilter === 'obtained' ? 'bg-emerald-600/40 text-slate-950' : 'bg-slate-800 text-emerald-400'
+                          }`}>
+                            {computedData.obtainedIngredients.length}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setMaterialsFilter('all')}
+                          className={`px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                            materialsFilter === 'all'
+                              ? 'bg-slate-700 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span>Todos</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                            materialsFilter === 'all' ? 'bg-slate-800 text-slate-200' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {computedData.consolidatedIngredients.length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Cost summary badges */}
+                    <div className="flex items-center gap-3 text-xs">
+                      <div className="bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg">
+                        <span className="text-slate-400 mr-1.5">Gasto restante:</span>
+                        <strong className="text-amber-400 font-mono font-bold">
+                          {formatKamas(computedData.totalNeededMaterialsCost)}
+                        </strong>
+                      </div>
+                      {computedData.obtainedIngredients.length > 0 && (
+                        <div className="bg-slate-900 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                          <span className="text-slate-400 mr-1.5">Ahorrado (tienes):</span>
+                          <strong className="text-emerald-400 font-mono font-bold">
+                            {formatKamas(computedData.totalObtainedMaterialsCost)}
+                          </strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] text-slate-400 font-medium">
+                      <span>Progreso de recolección de materiales</span>
+                      <span className="text-emerald-400 font-bold font-mono">
+                        {computedData.obtainedIngredients.length} de {computedData.consolidatedIngredients.length} ({computedData.materialsProgressPercent}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+                      <div
+                        className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
+                        style={{ width: `${computedData.materialsProgressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {computedData.consolidatedIngredients.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 text-xs">
@@ -1660,89 +2001,150 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                  {computedData.consolidatedIngredients.map((mat) => {
-                    const isEditingThisMat = editingPriceItemId === mat.itemId;
+                (() => {
+                  const displayList =
+                    materialsFilter === 'needed'
+                      ? computedData.neededIngredients
+                      : materialsFilter === 'obtained'
+                      ? computedData.obtainedIngredients
+                      : computedData.consolidatedIngredients;
 
+                  if (displayList.length === 0) {
                     return (
-                      <div
-                        key={mat.itemId}
-                        className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
-                            {mat.item ? (
-                              <SafeImage
-                                src={getItemIconUrl(mat.item)}
-                                fallbackSrc={getItemFallbackIconUrl(mat.item)}
-                                alt={mat.item.name?.es || `Ingrediente #${mat.itemId}`}
-                                className="w-7 h-7 object-contain"
-                              />
-                            ) : (
-                              <Package className="w-3.5 h-3.5 text-slate-500" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-200 text-xs truncate">
-                              {mat.item?.name?.es || `Ingrediente #${mat.itemId}`}
-                            </div>
-                            <div className="text-[11px] text-slate-400">
-                              Total: <strong className="text-amber-300 font-mono">x{mat.totalQuantityRequired.toLocaleString()}</strong>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-right font-mono shrink-0">
-                          {isEditingThisMat ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={tempPriceInput}
-                                onChange={(e) => setTempPriceInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleSavePrice(mat.itemId, Number(tempPriceInput) || 0);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingPriceItemId(null);
-                                  }
-                                }}
-                                autoFocus
-                                placeholder="Precio u."
-                                className="w-18 px-1.5 py-0.5 bg-slate-900 border border-amber-500 text-right text-xs rounded text-amber-300 font-mono outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSavePrice(mat.itemId, Number(tempPriceInput) || 0)}
-                                className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
-                                title="Guardar precio"
-                              >
-                                <Check className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingPriceItemId(mat.itemId);
-                                setTempPriceInput(String(mat.unitPrice || ''));
-                              }}
-                              className="group/matprice text-right block cursor-pointer"
-                              title="Haz clic para editar el precio de este recurso"
-                            >
-                              <div className="text-xs font-black text-amber-400 group-hover/matprice:text-amber-300">
-                                {mat.totalPrice > 0 ? formatKamas(mat.totalPrice) : '-'}
-                              </div>
-                              <div className="text-[10px] text-slate-500 group-hover/matprice:text-amber-400 flex items-center justify-end gap-1">
-                                <span>{mat.unitPrice > 0 ? `${formatKamas(mat.unitPrice)} u.` : 'Sin precio'}</span>
-                                <Tag className="w-2.5 h-2.5 opacity-0 group-hover/matprice:opacity-100 text-slate-500" />
-                              </div>
-                            </button>
-                          )}
-                        </div>
+                      <div className="text-center py-10 bg-slate-950/40 rounded-xl border border-slate-800 text-slate-400 text-xs space-y-2">
+                        {materialsFilter === 'needed' ? (
+                          <>
+                            <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
+                            <p className="font-bold text-emerald-300">¡Has marcado todos los recursos como obtenidos!</p>
+                            <p className="text-slate-500">No te falta ningún material de las piezas pendientes.</p>
+                          </>
+                        ) : materialsFilter === 'obtained' ? (
+                          <>
+                            <Package className="w-7 h-7 text-slate-600 mx-auto" />
+                            <p className="font-semibold text-slate-400">No has marcado ningún material como obtenido aún.</p>
+                            <p className="text-slate-500">Haz clic en el botón de check "✓" de los materiales que ya tengas.</p>
+                          </>
+                        ) : (
+                          <p>No hay materiales disponibles.</p>
+                        )}
                       </div>
                     );
-                  })}
-                </div>
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                      {displayList.map((mat) => {
+                        const isEditingThisMat = editingPriceItemId === mat.itemId;
+                        const isMatObtained = !!mat.isObtained;
+
+                        return (
+                          <div
+                            key={mat.itemId}
+                            className={`border rounded-xl p-2.5 flex items-center justify-between gap-2 transition-all ${
+                              isMatObtained
+                                ? 'bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50'
+                                : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 p-0.5 flex items-center justify-center shrink-0">
+                                {mat.item ? (
+                                  <SafeImage
+                                    src={getItemIconUrl(mat.item)}
+                                    fallbackSrc={getItemFallbackIconUrl(mat.item)}
+                                    alt={mat.item.name?.es || `Ingrediente #${mat.itemId}`}
+                                    className="w-7 h-7 object-contain"
+                                  />
+                                ) : (
+                                  <Package className="w-3.5 h-3.5 text-slate-500" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-200 text-xs truncate flex items-center gap-1">
+                                  <span className="truncate">{mat.item?.name?.es || `Ingrediente #${mat.itemId}`}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-400">
+                                  Total: <strong className="text-amber-300 font-mono">x{mat.totalQuantityRequired.toLocaleString()}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleMaterialObtained(mat.itemId)}
+                                className={`p-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-all border ${
+                                  isMatObtained
+                                    ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/35'
+                                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/30'
+                                }`}
+                                title={
+                                  isMatObtained
+                                    ? 'Material obtenido (Clic para mover a pendientes)'
+                                    : 'Marcar como ya obtenido (resta del cálculo)'
+                                }
+                              >
+                                <CheckCircle2 className={`w-3.5 h-3.5 ${isMatObtained ? 'text-emerald-400' : 'text-slate-500'}`} />
+                              </button>
+
+                              <div className="text-right font-mono">
+                                {isEditingThisMat ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={tempPriceInput}
+                                      onChange={(e) => setTempPriceInput(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSavePrice(mat.itemId, Number(tempPriceInput) || 0);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingPriceItemId(null);
+                                        }
+                                      }}
+                                      autoFocus
+                                      placeholder="Precio u."
+                                      className="w-18 px-1.5 py-0.5 bg-slate-900 border border-amber-500 text-right text-xs rounded text-amber-300 font-mono outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSavePrice(mat.itemId, Number(tempPriceInput) || 0)}
+                                      className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 cursor-pointer"
+                                      title="Guardar precio"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingPriceItemId(mat.itemId);
+                                      setTempPriceInput(String(mat.unitPrice || ''));
+                                    }}
+                                    className="group/matprice text-right block cursor-pointer"
+                                    title="Haz clic para editar el precio de este recurso"
+                                  >
+                                    <div className={`text-xs font-black ${
+                                      isMatObtained
+                                        ? 'text-emerald-400/80 line-through group-hover/matprice:text-emerald-300'
+                                        : 'text-amber-400 group-hover/matprice:text-amber-300'
+                                    }`}>
+                                      {mat.totalPrice > 0 ? formatKamas(mat.totalPrice) : '-'}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 group-hover/matprice:text-amber-400 flex items-center justify-end gap-1">
+                                      <span>{mat.unitPrice > 0 ? `${formatKamas(mat.unitPrice)} u.` : 'Sin precio'}</span>
+                                      <Tag className="w-2.5 h-2.5 opacity-0 group-hover/matprice:opacity-100 text-slate-500" />
+                                    </div>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
               )}
             </div>
           )}

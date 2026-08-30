@@ -671,6 +671,30 @@ export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
         };
       }
     }
+    // Tablette de Totankama & pieces
+    res[15391] = {
+      id: 15391,
+      name: { es: "Tabla de Totankama", fr: "Tablette de Totankama", en: "Totankama Tablet" },
+      iconId: 126026,
+      level: 130,
+      typeId: 174,
+      type: { id: 174, superCategoryId: 0, name: { es: "Tabla", fr: "Tablette", en: "Tablet" } },
+    };
+    for (let i = 1; i <= 5; i++) {
+      const pieceId = 15393 + i;
+      res[pieceId] = {
+        id: pieceId,
+        name: {
+          es: `Trozo de la tabla de Totankama ${i}/5`,
+          fr: `Morceau de tablette de Totankama ${i}/5`,
+          en: `Piece of Totankama Tablet ${i}/5`,
+        },
+        iconId: 126027,
+        level: 130,
+        typeId: 175,
+        type: { id: 175, superCategoryId: 0, name: { es: "Trozo de tabla", fr: "Morceau de tablette", en: "Tablet piece" } },
+      };
+    }
     return res;
   })(),
 };
@@ -786,7 +810,7 @@ export function getItemIconUrl(item: unknown): string {
       ) {
         return "https://api.dofusdb.fr/img/items/77042.png";
       }
-      if (name.startsWith("mapa de") || name.startsWith("mapa del") || name.startsWith("tabla de") || name.startsWith("tarjeta de") || typeId === 174) {
+      if (name.startsWith("mapa de") || name.startsWith("mapa del") || name.startsWith("tarjeta de") || (typeId === 174 && !name.includes("tabla"))) {
         return "https://api.dofusdb.fr/img/items/77041.png";
       }
       const iconId = found.iconId || (found as any).icon_id || item;
@@ -819,18 +843,17 @@ export function getItemIconUrl(item: unknown): string {
     nameStr.includes("fragmento de mapa") ||
     nameStr.includes("fragment de carte") ||
     nameStr.includes("map fragment") ||
-    itemTypeId === 175
+    (itemTypeId === 175 && !nameStr.includes("tabla"))
   ) {
     return "https://api.dofusdb.fr/img/items/77042.png";
   }
   if (
     nameStr.startsWith("mapa de") ||
     nameStr.startsWith("mapa del") ||
-    nameStr.startsWith("tabla de") ||
     nameStr.startsWith("tarjeta de") ||
     nameStr.startsWith("carte du") ||
     nameStr.startsWith("carte d'") ||
-    itemTypeId === 174
+    (itemTypeId === 174 && !nameStr.includes("tabla"))
   ) {
     return "https://api.dofusdb.fr/img/items/77041.png";
   }
