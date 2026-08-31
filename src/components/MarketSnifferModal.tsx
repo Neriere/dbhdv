@@ -265,6 +265,160 @@ if __name__ == "__main__":
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadBat = () => {
+    const batContent = `@echo off
+setlocal EnableDelayedExpansion
+title Dofus Unity - Sincronizador de Mercadillo (HDV)
+
+:: Auto-elevacion a Administrador si no tiene permisos
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo Solicitando permisos de Administrador...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+
+cd /d "%~dp0"
+cls
+echo =====================================================================
+echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (${serverName.toUpperCase()})
+echo =====================================================================
+echo.
+
+python --version >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [ERROR] Python no esta instalado o no se anadio al PATH de Windows.
+    echo Descargalo desde: https://www.python.org/downloads/
+    echo Recuerda marcar 'Add Python to PATH' durante la instalacion.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Verificando librerias de Python (scapy, requests)...
+python -c "import scapy, requests" >nul 2>&1
+if %errorLevel% neq 0 (
+    echo Instalando librerias scapy y requests automaticamente...
+    pip install scapy requests
+    echo.
+)
+
+if not exist "sniffer_standalone.py" (
+    echo Creando sniffer_standalone.py en este directorio...
+)
+
+python -c "
+import sys, re, json, time, requests
+from datetime import datetime
+
+try:
+    from scapy.all import sniff, TCP, Raw
+except ImportError:
+    print('[ERROR] Falta Scapy o Npcap en Windows.')
+    print('Descarga Npcap desde: https://npcap.com/#download')
+    sys.exit(1)
+
+VERCEL_API_URL = '${apiUrl}'
+API_SECRET_KEY = '${apiSecret}'
+SERVER_NAME = '${serverName}'
+DOFUS_PORTS = 'tcp port 5555'
+
+print('=================================================================')
+print('  DOFUS UNITY -> MERCADILLO AUTO-SYNC')
+print(f'  Destino API : {VERCEL_API_URL}')
+print(f'  Servidor    : {SERVER_NAME}')
+print('=================================================================')
+print('🟢 Escuchando mercadillo en segundo plano...')
+print('💡 Haz clic en los objetos del mercadillo en Dofus para sincronizar.')
+print('Presiona Ctrl+C para detener.\\n')
+
+def clean_text(raw_bytes):
+    try:
+        return raw_bytes.decode('utf-8', errors='ignore')
+    except Exception:
+        return ''
+
+def handle_packet(packet):
+    if not packet.haslayer(Raw):
+        return
+    payload = packet[Raw].load
+    text = clean_text(payload)
+    if not text:
+        return
+
+    if 'prices' in text or 'quantities' in text or 'objects' in text:
+        match_resource = re.search(r'\"(?:itemId|objectGID|id)\":\\s*(\\d+).*?\"prices\":\\s*\\[(.*?)\\]', text)
+        if match_resource:
+            item_id = int(match_resource.group(1))
+            prices_str = match_resource.group(2)
+            prices_list = [int(p.strip()) for p in prices_str.split(',') if p.strip().isdigit()]
+            if prices_list:
+                lot_map = {}
+                lots = ['1', '10', '100', '1000']
+                for idx, price in enumerate(prices_list[:4]):
+                    if price > 0:
+                        lot_map[lots[idx]] = price
+                if lot_map:
+                    send_price_update(item_id, f'Objeto #{item_id}', 'recurso', lot_map)
+                    return
+
+    match_equip = re.search(r'\"(?:itemId|objectGID|id)\":\\s*(\\d+).*?\"offers\":\\s*\\[(.*?)\\]', text)
+    if match_equip:
+        item_id = int(match_equip.group(1))
+        offers_str = match_equip.group(2)
+        price_matches = re.findall(r'\"price\":\\s*(\\d+)', offers_str)
+        if price_matches:
+            numeric_prices = [int(p) for p in price_matches if int(p) > 0]
+            if numeric_prices:
+                send_price_update(item_id, f'Objeto #{item_id}', 'equipable', numeric_prices)
+                return
+
+def send_price_update(item_id, item_name, p_type, precios):
+    body = {
+        'item_id': item_id,
+        'item_name': item_name,
+        'type': p_type,
+        'server': SERVER_NAME,
+        'precios': precios,
+        'source': 'sniffer-bat'
+    }
+    headers = {'Content-Type': 'application/json'}
+    if API_SECRET_KEY:
+        headers['x-market-secret'] = API_SECRET_KEY
+    try:
+        res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=5)
+        now_str = datetime.now().strftime('%H:%M:%S')
+        if res.status_code == 200:
+            data = res.json()
+            p_calc = data.get('calculated_price', 0)
+            name = data.get('name', item_name)
+            t_label = 'RECURSO' if p_type == 'recurso' else 'EQUIPABLE'
+            print(f'[{now_str}]  [{t_label}] {name} (#{item_id}) -> Guardado en Turso: {p_calc:,} k ({SERVER_NAME})')
+        else:
+            print(f'[{now_str}] ⚠️ Error {res.status_code}: {res.text}')
+    except Exception as e:
+        print(f'[{datetime.now().strftime(\"%H:%M:%S\")}] ❌ Error de conexion: {e}')
+
+try:
+    sniff(filter=DOFUS_PORTS, prn=handle_packet, store=0)
+except KeyboardInterrupt:
+    print('\\nSincronizador detenido.')
+except Exception as e:
+    print(f'\\nError de captura: {e}')
+"
+pause
+`;
+    const blob = new Blob([batContent], { type: 'application/x-bat' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sincronizar_mercadillo_${serverName.toLowerCase()}.bat`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleSimulate = async () => {
     setIsSimulating(true);
     setSimError(null);
@@ -445,30 +599,41 @@ if __name__ == "__main__":
 
               {/* Step by step guide */}
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">
-                  Pasos para ejecutar el sniffer en tu ordenador:
-                </h4>
-                <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300">
-                  <li>
-                    Instala las dependencias en tu terminal de Python:{' '}
-                    <code className="bg-slate-900 px-2 py-0.5 rounded text-amber-300 font-mono">
-                      pip install scapy requests
-                    </code>
-                  </li>
-                  <li>
-                    Descarga o copia el script <strong className="text-white">sniffer_standalone.py</strong> de la pestaña siguiente.
-                  </li>
-                  <li>
-                    Abre la terminal en Windows como <strong className="text-white">Administrador</strong> (Scapy requiere permisos de red para escuchar paquetes) y ejecuta:{' '}
-                    <code className="bg-slate-900 px-2 py-0.5 rounded text-amber-300 font-mono">
-                      python sniffer_standalone.py
-                    </code>
-                  </li>
-                  <li>
-                    ¡Listo! Cada vez que abras el mercadillo en Dofus Unity e inspecciones objetos, los precios se enviarán
-                    inmediatamente a tu Turso DB y quedarán guardados en tu web.
-                  </li>
-                </ol>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-white text-xs uppercase tracking-wider">
+                    ¿Cómo ejecutarlo o pasárselo a un amigo? (2 Opciones)
+                  </h4>
+                  <button
+                    onClick={handleDownloadBat}
+                    className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition-colors shadow-md shadow-amber-500/20"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Descargar Lanzador .bat
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div className="bg-slate-900/90 border border-amber-500/20 rounded-xl p-3 space-y-2">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                      ⚡ Opción A: Archivo .BAT (1 Clic)
+                    </span>
+                    <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300">
+                      <li>Tener instalado <strong>Python</strong> y <strong>Npcap</strong> en Windows.</li>
+                      <li>Descarga el archivo <strong>.bat</strong> y hazle doble clic.</li>
+                      <li>Pide permisos de Administrador e instala librerías solo.</li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      🐍 Opción B: Script Python (.py)
+                    </span>
+                    <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300">
+                      <li>Ejecuta: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">pip install scapy requests</code></li>
+                      <li>Abre PowerShell/CMD como <strong>Administrador</strong>.</li>
+                      <li>Ejecuta: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">python sniffer_standalone.py</code></li>
+                    </ol>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -489,10 +654,18 @@ if __name__ == "__main__":
                   </button>
                   <button
                     onClick={handleDownloadScript}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/20"
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Descargar .py
+                  </button>
+                  <button
+                    onClick={handleDownloadBat}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/20"
+                    title="Doble clic y listo para Windows (Auto-elevación a Administrador e instalación de librerías)"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Descargar Lanzador (.bat)
                   </button>
                 </div>
               </div>
