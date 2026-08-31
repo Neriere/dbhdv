@@ -2213,6 +2213,200 @@ export async function bulkSaveProfileCoefficients(
   return await getProfileCoefficients(pid);
 }
 
+export interface IngestMarketPricePayload {
+  item_id: number;
+  item_name?: string;
+  type?: 'recurso' | 'equipable' | string;
+  precios: Record<string, number | string> | Array<number | string>;
+  server?: string;
+  source?: string;
+}
+
+export interface IngestMarketPriceResult {
+  success: boolean;
+  item_id: number;
+  name: string;
+  type: string;
+  calculated_price: number;
+  min_price: number;
+  max_price: number;
+  raw_average: number;
+  offers_count: number;
+  server: string;
+  profile_id: number;
+  updated_at: number;
+}
+
+export async function getProfileIdByServerNameOrSlug(serverNameOrSlug?: string): Promise<{ profileId: number; profileName: string }> {
+  const profiles = await getPriceProfiles();
+  const activePid = await getActivePriceProfileId();
+  const activeProfile = profiles.find((p) => p.id === activePid) || profiles[0];
+
+  if (!serverNameOrSlug || typeof serverNameOrSlug !== "string" || !serverNameOrSlug.trim()) {
+    return { profileId: activeProfile?.id || 1, profileName: activeProfile?.name || "Draconiros" };
+  }
+
+  const clean = serverNameOrSlug.trim().toLowerCase().replace(/[\s\-_]/g, "");
+  const match = profiles.find((p) => {
+    const pSlug = p.slug.toLowerCase().replace(/[\s\-_]/g, "");
+    const pName = p.name.toLowerCase().replace(/[\s\-_]/g, "");
+    return pSlug === clean || pName === clean || pSlug.includes(clean) || clean.includes(pSlug);
+  });
+
+  if (match) {
+    return { profileId: match.id, profileName: match.name };
+  }
+
+  return { profileId: activeProfile?.id || 1, profileName: activeProfile?.name || "Draconiros" };
+}
+
+export async function processAndIngestMarketPrice(
+  payload: IngestMarketPricePayload,
+): Promise<IngestMarketPriceResult> {
+  const itemId = Number(payload.item_id);
+  if (!itemId || Number.isNaN(itemId) || itemId <= 0) {
+    throw new Error("El campo 'item_id' es obligatorio y debe ser un número positivo.");
+  }
+
+  const { profileId, profileName } = await getProfileIdByServerNameOrSlug(payload.server);
+  const precios = payload.precios;
+  let resolvedType = (payload.type || '').toLowerCase();
+
+  // Detect type if not explicitly supplied
+  if (!resolvedType) {
+    if (Array.isArray(precios) && precios.length > 4) {
+      resolvedType = 'equipable';
+    } else if (precios && typeof precios === 'object' && !Array.isArray(precios)) {
+      const keys = Object.keys(precios);
+      if (keys.some(k => ['1', '10', '100', '1000'].includes(k))) {
+        resolvedType = 'recurso';
+      }
+    }
+  }
+
+  let finalPrice = 0;
+  let minPrice = 0;
+  let maxPrice = 0;
+  let rawAvg = 0;
+  let offersCount = 0;
+
+  // 1. RECURSOS / INGREDIENTES: Media de lotes (x1, x10, x100, x1000) calculados a precio unitario
+  if (resolvedType === 'recurso' || (precios && typeof precios === 'object' && !Array.isArray(precios) && Object.keys(precios).some(k => ['1', '10', '100', '1000'].includes(k)))) {
+    resolvedType = 'recurso';
+    const rawObj = (precios && typeof precios === 'object' && !Array.isArray(precios))
+      ? (precios as Record<string, number | string>)
+      : {};
+
+    const p1 = Number(rawObj['1'] ?? rawObj[1] ?? 0);
+    const p10 = Number(rawObj['10'] ?? rawObj[10] ?? 0);
+    const p100 = Number(rawObj['100'] ?? rawObj[100] ?? 0);
+    const p1000 = Number(rawObj['1000'] ?? rawObj[1000] ?? 0);
+
+    const unitPrices: number[] = [];
+    if (p1 > 0) unitPrices.push(p1);
+    if (p10 > 0) unitPrices.push(Math.round(p10 / 10));
+    if (p100 > 0) unitPrices.push(Math.round(p100 / 100));
+    if (p1000 > 0) unitPrices.push(Math.round(p1000 / 1000));
+
+    if (unitPrices.length > 0) {
+      offersCount = unitPrices.length;
+      minPrice = Math.min(...unitPrices);
+      maxPrice = Math.max(...unitPrices);
+      const sum = unitPrices.reduce((acc, val) => acc + val, 0);
+      rawAvg = Math.round(sum / unitPrices.length);
+      finalPrice = rawAvg; // Media aritmética unitaria de lotes disponibles
+    }
+  }
+  // 2. EQUIPABLES / OFERTAS INDIVIDUALES: Filtro de sobremagueos combinando precio mínimo y media
+  else {
+    resolvedType = 'equipable';
+    let numericPrices: number[] = [];
+    if (Array.isArray(precios)) {
+      numericPrices = precios.map(Number).filter(n => !Number.isNaN(n) && n > 0);
+    } else if (precios && typeof precios === 'object') {
+      numericPrices = Object.values(precios).map(Number).filter(n => !Number.isNaN(n) && n > 0);
+    }
+
+    if (numericPrices.length > 0) {
+      const sorted = [...numericPrices].sort((a, b) => a - b);
+      offersCount = sorted.length;
+      minPrice = sorted[0];
+      maxPrice = sorted[sorted.length - 1];
+
+      const sum = sorted.reduce((acc, val) => acc + val, 0);
+      rawAvg = Math.round(sum / sorted.length);
+
+      // FÓRMULA SOLICITADA PARA EQUIPABLES:
+      // Para evitar que objetos con precios astronómicos distorsionen el precio real,
+      // se toma el precio mínimo (p_min) y se promedia con la media general de ofertas (rawAvg).
+      // Si solo hay 1 oferta, se usa directamente el precio mínimo.
+      finalPrice = sorted.length === 1 ? minPrice : Math.round((minPrice + rawAvg) / 2);
+    }
+  }
+
+  // 3. Resolución o inserción del nombre del objeto si no viene o falta en la base local
+  let resolvedName = (payload.item_name || '').trim();
+  if (!resolvedName || resolvedName.startsWith('Item #') || resolvedName.startsWith('Objeto #')) {
+    try {
+      const itemRecord = await getOrFetchItemById(itemId);
+      if (itemRecord?.name?.es) {
+        resolvedName = itemRecord.name.es;
+      }
+    } catch {
+      // Ignored fallback
+    }
+    if (!resolvedName) {
+      resolvedName = `Objeto #${itemId}`;
+    }
+  }
+
+  const now = Date.now();
+  // 4. Guardar en profile_prices y registrar en price_history con source='sniffer'
+  if (finalPrice > 0) {
+    await upsertPrice(profileId, itemId, finalPrice, payload.source || 'sniffer');
+    invalidateServerBootstrapCache();
+  }
+
+  return {
+    success: true,
+    item_id: itemId,
+    name: resolvedName,
+    type: resolvedType,
+    calculated_price: finalPrice,
+    min_price: minPrice,
+    max_price: maxPrice,
+    raw_average: rawAvg,
+    offers_count: offersCount,
+    server: profileName,
+    profile_id: profileId,
+    updated_at: now,
+  };
+}
+
+export async function processAndIngestMarketPricesBatch(
+  items: IngestMarketPricePayload[],
+): Promise<{ success: boolean; total_processed: number; results: IngestMarketPriceResult[] }> {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: true, total_processed: 0, results: [] };
+  }
+
+  const results: IngestMarketPriceResult[] = [];
+  for (const item of items) {
+    try {
+      const res = await processAndIngestMarketPrice(item);
+      results.push(res);
+    } catch (e) {
+      console.warn(`[Sniffer Batch Ingestion] Failed for item ${item.item_id}:`, e);
+    }
+  }
+
+  return {
+    success: true,
+    total_processed: results.length,
+    results,
+  };
+}
+
 export async function getPriceProfileState() {
   const pid = await getActivePriceProfileId();
   return {

@@ -26,6 +26,7 @@ import {
   History,
   Clock,
   X,
+  Radio,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -53,6 +54,7 @@ import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
 import { GlobalPriceHistoryModal } from './GlobalPriceHistoryModal';
 import { ItemPriceHistoryModal } from './ItemPriceHistoryModal';
+import { MarketSnifferModal } from './MarketSnifferModal';
 import { groupPriceProfilesByCategory } from '../utils/serverUtils';
 
 type PriceFilterCategory =
@@ -89,6 +91,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
   const [isGlobalHistoryOpen, setIsGlobalHistoryOpen] = useState<boolean>(false);
+  const [isSnifferModalOpen, setIsSnifferModalOpen] = useState<boolean>(false);
   const [itemForHistory, setItemForHistory] = useState<DofusItem | null>(null);
 
   // Reset page whenever search or category changes
@@ -476,6 +479,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setIsSnifferModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-500/5"
+              title="Configurar y probar Sniffer Automático de Mercadillo en segundo plano"
+            >
+              <Radio className="w-4 h-4 text-amber-400 animate-pulse" />
+              Auto Sniffer (Python)
+            </button>
             <button
               onClick={() => setIsGlobalHistoryOpen(true)}
               className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
@@ -925,6 +936,23 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
               [itemForHistory.id]: p ? String(p) : '',
             }));
           }
+        }}
+      />
+
+      {/* Standalone Sniffer Sync Modal */}
+      <MarketSnifferModal
+        isOpen={isSnifferModalOpen}
+        onClose={() => setIsSnifferModalOpen(false)}
+        activeProfile={priceProfiles.find((profile) => profile.id === activePriceProfileId)}
+        onPriceUpdated={() => {
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices(updatedPrices);
+          setPriceUpdatedAt(getStoredPriceUpdatedAt());
+          const newDrafts: Record<number, string> = {};
+          for (const [id, price] of Object.entries(updatedPrices)) {
+            if (Number(price) > 0) newDrafts[Number(id)] = String(price);
+          }
+          setPriceDrafts(newDrafts);
         }}
       />
     </div>
