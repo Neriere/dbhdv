@@ -6,16 +6,14 @@ import {
   Check,
   Download,
   Terminal,
-  Zap,
   ShieldCheck,
-  RefreshCw,
-  Send,
   CheckCircle2,
   AlertCircle,
   HelpCircle,
   Server,
   Layers,
-  Sparkles,
+  FileCode,
+  ExternalLink,
 } from 'lucide-react';
 import { PriceProfile } from '../types';
 
@@ -34,20 +32,9 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
 }) => {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
-  const [activeTab, setActiveTab] = useState<'instructions' | 'script' | 'simulator'>('instructions');
-
-  // Simulator state
-  const [testType, setTestType] = useState<'recurso' | 'equipable'>('recurso');
-  const [testItemId, setTestItemId] = useState<number>(289); // Trigo
-  const [testItemName, setTestItemName] = useState<string>('Trigo');
-  const [testP1, setTestP1] = useState<number>(150);
-  const [testP10, setTestP10] = useState<number>(1400);
-  const [testP100, setTestP100] = useState<number>(12000);
-  const [testP1000, setTestP1000] = useState<number>(110000);
-  const [testEquipPrices, setTestEquipPrices] = useState<string>('450000, 480000, 520000, 2500000');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simResult, setSimResult] = useState<any>(null);
-  const [simError, setSimError] = useState<string | null>(null);
+  const [copiedBat, setCopiedBat] = useState(false);
+  const [activeTab, setActiveTab] = useState<'instructions' | 'bat' | 'script'>('instructions');
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -60,10 +47,10 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
 ===============================================================================
   DOFUS UNITY -> MERCADILLO LIVE SYNC (AUTOMATIC PACKET SNIFFER)
 ===============================================================================
-  Instalación:
+  Instalación inicial de requisitos (Solo 1 vez en tu PC):
     pip install scapy requests
 
-  Ejecución (en Windows abrir terminal como Administrador):
+  Ejecución (abrir terminal o CMD como Administrador):
     python sniffer_standalone.py
 ===============================================================================
 """
@@ -75,12 +62,14 @@ from datetime import datetime
 try:
     from scapy.all import sniff, TCP, Raw
 except ImportError:
-    print("[ERROR] Falta la librería 'scapy'. Instálala ejecutando: pip install scapy requests")
+    print("[ERROR] Falta la librería 'scapy' o Npcap en Windows.")
+    print("Instala las dependencias ejecutando: pip install scapy requests")
+    print("Descarga el driver Npcap desde: https://npcap.com/#download")
     sys.exit(1)
 
 # ==================== CONFIGURACIÓN ====================
 VERCEL_API_URL = "${apiUrl}"
-API_SECRET_KEY = ""  # Pon tu MARKET_SNIFFER_SECRET si configuraste una clave
+API_SECRET_KEY = ""  # Opcional
 SERVER_NAME = "${serverName}"
 DOFUS_PORTS = "tcp port 5555"
 # =======================================================
@@ -94,12 +83,10 @@ def get_item_name(item_id):
         r = requests.get(f"https://api.dofusdb.fr/items/{item_id}?$select[]=name", timeout=2.0)
         if r.status_code == 200:
             data = r.json()
-            name = (
-                data.get("name", {}).get("es")
-                or data.get("name", {}).get("fr")
-                or data.get("name", {}).get("en")
-                or f"Item #{item_id}"
-            )
+            name = (data.get("name", {}).get("es") or 
+                    data.get("name", {}).get("fr") or 
+                    data.get("name", {}).get("en") or 
+                    f"Item #{item_id}")
             NAME_CACHE[item_id] = name
             return name
     except Exception:
@@ -118,14 +105,17 @@ def decode_varint(buf, off):
     return val, read
 
 def parse_kbt(buf):
+    """
+    Decodifica el mensaje protobuf de mercadillo (type.ankama.com/kbt...)
+    """
     try:
-        idx = buf.find(b"type.ankama.com/kbt")
+        idx = buf.find(b'type.ankama.com/kbt')
         if idx == -1:
-            idx = buf.find(b"kbt")
+            idx = buf.find(b'kbt')
             if idx == -1:
                 return None, []
             idx = idx - 16
-
+        
         off = idx + 19
         if off < len(buf) and buf[off] == 0x12:
             off += 1
@@ -187,20 +177,20 @@ def parse_kbt(buf):
 def process_packet(pkt):
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
         return
-    payload = bytes(pkt[Raw].load)
 
-    if b"kbt" in payload or b"type.ankama.com/kbt" in payload:
+    payload = bytes(pkt[Raw].load)
+    if b'kbt' in payload or b'type.ankama.com/kbt' in payload:
         item_id, prices = parse_kbt(payload)
         if item_id and prices:
             name = get_item_name(item_id)
             is_equipment = len(prices) > 4
-
+            
             body = {
                 "item_id": item_id,
                 "item_name": name,
                 "type": "equipable" if is_equipment else "recurso",
                 "server": SERVER_NAME,
-                "source": "sniffer",
+                "source": "sniffer"
             }
 
             if is_equipment:
@@ -215,30 +205,213 @@ def process_packet(pkt):
 
             headers = {"Content-Type": "application/json"}
             if API_SECRET_KEY:
-                headers["x-api-key"] = API_SECRET_KEY
+                headers["x-market-secret"] = API_SECRET_KEY
 
             try:
-                res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=3.0)
+                res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=4.0)
                 now_str = datetime.now().strftime("%H:%M:%S")
                 if res.status_code == 200:
                     data = res.json()
-                    calc_price = data.get("calculated_price", 0)
-                    item_type = data.get("type", body["type"])
-                    print(f"[{now_str}]  [{item_type.upper()}] {name} (#{item_id}) -> Guardado en Turso: {calc_price:,} k (Servidor: {SERVER_NAME})")
+                    calc_price = data.get('calculated_price', 0)
+                    item_type = data.get('type', body['type'])
+                    print(f"[{now_str}]  [{item_type.upper()}] {name} (#{item_id}) -> Guardado en Turso: {calc_price:,} k ({SERVER_NAME})")
                 else:
-                    print(f"[{now_str}] [Error {res.status_code}] {res.text}")
+                    print(f"[{now_str}] ⚠️ Error {res.status_code}: {res.text}")
             except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [Error de conexión]: {e}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Error enviando precio: {e}")
 
 if __name__ == "__main__":
     print("=" * 65)
-    print("  DOFUS UNITY -> MERCADILLO AUTO-SYNC")
+    print("  DOFUS UNITY -> MERCADILLO LIVE SYNC")
     print(f"  Destino API : {VERCEL_API_URL}")
     print(f"  Servidor    : {SERVER_NAME}")
     print("=" * 65)
     print("🟢 Escuchando mercadillo en segundo plano...")
     print("💡 Haz clic en los objetos del mercadillo en Dofus para actualizar precios.")
     sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
+`;
+
+  const batContent = `@echo off
+setlocal EnableDelayedExpansion
+title Dofus Unity - Sincronizador de Mercadillo (${serverName})
+
+:: Auto-elevacion a Administrador si no tiene permisos
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo Solicitando permisos de Administrador para capturar paquetes...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+
+cd /d "%~dp0"
+cls
+echo =====================================================================
+echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (${serverName.toUpperCase()})
+echo =====================================================================
+echo.
+
+python -c "
+import sys, requests
+from datetime import datetime
+
+try:
+    from scapy.all import sniff, TCP, Raw
+except ImportError:
+    print('[ERROR] Falta Scapy o Npcap en Windows.')
+    print('1. Asegurate de haber instalado las dependencias: pip install scapy requests')
+    print('2. Descarga e instala Npcap desde: https://npcap.com/#download')
+    sys.exit(1)
+
+VERCEL_API_URL = '${apiUrl}'
+API_SECRET_KEY = ''
+SERVER_NAME = '${serverName}'
+DOFUS_PORTS = 'tcp port 5555'
+
+print('=================================================================')
+print('  DOFUS UNITY -> MERCADILLO AUTO-SYNC')
+print(f'  Destino API : {VERCEL_API_URL}')
+print(f'  Servidor    : {SERVER_NAME}')
+print('=================================================================')
+print('🟢 Escuchando mercadillo en segundo plano...')
+print('💡 Haz clic en los objetos del mercadillo en Dofus para sincronizar.')
+print('Presiona Ctrl+C para detener.\\n')
+
+NAME_CACHE = {}
+
+def get_item_name(item_id):
+    if item_id in NAME_CACHE:
+        return NAME_CACHE[item_id]
+    try:
+        r = requests.get(f'https://api.dofusdb.fr/items/{item_id}?$select[]=name', timeout=2.0)
+        if r.status_code == 200:
+            data = r.json()
+            name = (data.get('name', {}).get('es') or data.get('name', {}).get('fr') or data.get('name', {}).get('en') or f'Item #{item_id}')
+            NAME_CACHE[item_id] = name
+            return name
+    except Exception:
+        pass
+    return f'Item #{item_id}'
+
+def decode_varint(buf, off):
+    val, shift, read = 0, 0, 0
+    while off + read < len(buf):
+        b = buf[off + read]
+        read += 1
+        val |= (b & 0x7F) << shift
+        if (b & 0x80) == 0:
+            break
+        shift += 7
+    return val, read
+
+def parse_kbt(buf):
+    try:
+        idx = buf.find(b'type.ankama.com/kbt')
+        if idx == -1:
+            idx = buf.find(b'kbt')
+            if idx == -1:
+                return None, []
+            idx = idx - 16
+        off = idx + 19
+        if off < len(buf) and buf[off] == 0x12:
+            off += 1
+            payload_len, br = decode_varint(buf, off)
+            off += br
+            payload = buf[off:off + payload_len]
+            p_off = 0
+            item_id = 0
+            prices = []
+            while p_off < len(payload):
+                tag = payload[p_off]
+                p_off += 1
+                field = tag >> 3
+                wire = tag & 7
+                if wire == 0:
+                    val, br = decode_varint(payload, p_off)
+                    p_off += br
+                    if field == 2:
+                        item_id = val
+                elif wire == 2:
+                    sub_len, br = decode_varint(payload, p_off)
+                    p_off += br
+                    sub = payload[p_off:p_off + sub_len]
+                    p_off += sub_len
+                    s_off = 0
+                    while s_off < len(sub):
+                        s_tag = sub[s_off]
+                        s_off += 1
+                        s_field = s_tag >> 3
+                        s_wire = s_tag & 7
+                        if s_wire == 0:
+                            s_val, s_br = decode_varint(sub, s_off)
+                            s_off += s_br
+                            if s_field in (2, 5):
+                                item_id = s_val
+                        elif s_wire == 2:
+                            in_len, s_br = decode_varint(sub, s_off)
+                            s_off += s_br
+                            inner = sub[s_off:s_off + in_len]
+                            s_off += in_len
+                            if s_field == 6:
+                                i_off = 0
+                                while i_off < len(inner):
+                                    pv, pbr = decode_varint(inner, i_off)
+                                    i_off += pbr
+                                    if pv > 0:
+                                        prices.append(pv)
+                        else:
+                            break
+            return item_id, prices
+    except Exception:
+        pass
+    return None, []
+
+def process_packet(pkt):
+    if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
+        return
+    payload = bytes(pkt[Raw].load)
+    if b'kbt' in payload or b'type.ankama.com/kbt' in payload:
+        item_id, prices = parse_kbt(payload)
+        if item_id and prices:
+            name = get_item_name(item_id)
+            is_equipment = len(prices) > 4
+            body = {
+                'item_id': item_id,
+                'item_name': name,
+                'type': 'equipable' if is_equipment else 'recurso',
+                'server': SERVER_NAME,
+                'source': 'sniffer-bat'
+            }
+            if is_equipment:
+                body['precios'] = prices
+            else:
+                body['precios'] = {
+                    '1': prices[0] if len(prices) > 0 else 0,
+                    '10': prices[1] if len(prices) > 1 else 0,
+                    '100': prices[2] if len(prices) > 2 else 0,
+                    '1000': prices[3] if len(prices) > 3 else 0,
+                }
+            headers = {'Content-Type': 'application/json'}
+            try:
+                res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=4.0)
+                now_str = datetime.now().strftime('%H:%M:%S')
+                if res.status_code == 200:
+                    data = res.json()
+                    calc_price = data.get('calculated_price', 0)
+                    item_type = data.get('type', body['type'])
+                    print(f'[{now_str}]  [{item_type.upper()}] {name} (#{item_id}) -> Guardado en Turso: {calc_price:,} k ({SERVER_NAME})')
+                else:
+                    print(f'[{now_str}] [Error {res.status_code}] {res.text}')
+            except Exception as e:
+                print(f'[{datetime.now().strftime(\"%H:%M:%S\")}] [Error]: {e}')
+
+try:
+    sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
+except KeyboardInterrupt:
+    print('\\nSincronizador detenido por el usuario.')
+except Exception as e:
+    print(f'\\n[Error]: {e}')
+"
+pause
 `;
 
   const handleCopyUrl = () => {
@@ -251,6 +424,12 @@ if __name__ == "__main__":
     navigator.clipboard.writeText(pythonScript);
     setCopiedScript(true);
     setTimeout(() => setCopiedScript(false), 2000);
+  };
+
+  const handleCopyBat = () => {
+    navigator.clipboard.writeText(batContent);
+    setCopiedBat(true);
+    setTimeout(() => setCopiedBat(false), 2000);
   };
 
   const handleDownloadScript = () => {
@@ -266,207 +445,40 @@ if __name__ == "__main__":
   };
 
   const handleDownloadBat = () => {
-    const batContent = `@echo off
-setlocal EnableDelayedExpansion
-title Dofus Unity - Sincronizador de Mercadillo (HDV)
+    const filename = `sincronizar_mercadillo_${serverName.toLowerCase().replace(/[^a-z0-9]/g, '_')}.bat`;
 
-:: Auto-elevacion a Administrador si no tiene permisos
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo Solicitando permisos de Administrador...
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
-    exit /b
-)
-
-cd /d "%~dp0"
-cls
-echo =====================================================================
-echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (${serverName.toUpperCase()})
-echo =====================================================================
-echo.
-
-python --version >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [ERROR] Python no esta instalado o no se anadio al PATH de Windows.
-    echo Descargalo desde: https://www.python.org/downloads/
-    echo Recuerda marcar 'Add Python to PATH' durante la instalacion.
-    echo.
-    pause
-    exit /b 1
-)
-
-echo Verificando librerias de Python (scapy, requests)...
-python -c "import scapy, requests" >nul 2>&1
-if %errorLevel% neq 0 (
-    echo Instalando librerias scapy y requests automaticamente...
-    pip install scapy requests
-    echo.
-)
-
-if not exist "sniffer_standalone.py" (
-    echo Creando sniffer_standalone.py en este directorio...
-)
-
-python -c "
-import sys, re, json, time, requests
-from datetime import datetime
-
-try:
-    from scapy.all import sniff, TCP, Raw
-except ImportError:
-    print('[ERROR] Falta Scapy o Npcap en Windows.')
-    print('Descarga Npcap desde: https://npcap.com/#download')
-    sys.exit(1)
-
-VERCEL_API_URL = '${apiUrl}'
-API_SECRET_KEY = '${apiSecret}'
-SERVER_NAME = '${serverName}'
-DOFUS_PORTS = 'tcp port 5555'
-
-print('=================================================================')
-print('  DOFUS UNITY -> MERCADILLO AUTO-SYNC')
-print(f'  Destino API : {VERCEL_API_URL}')
-print(f'  Servidor    : {SERVER_NAME}')
-print('=================================================================')
-print('🟢 Escuchando mercadillo en segundo plano...')
-print('💡 Haz clic en los objetos del mercadillo en Dofus para sincronizar.')
-print('Presiona Ctrl+C para detener.\\n')
-
-def clean_text(raw_bytes):
-    try:
-        return raw_bytes.decode('utf-8', errors='ignore')
-    except Exception:
-        return ''
-
-def handle_packet(packet):
-    if not packet.haslayer(Raw):
-        return
-    payload = packet[Raw].load
-    text = clean_text(payload)
-    if not text:
-        return
-
-    if 'prices' in text or 'quantities' in text or 'objects' in text:
-        match_resource = re.search(r'\"(?:itemId|objectGID|id)\":\\s*(\\d+).*?\"prices\":\\s*\\[(.*?)\\]', text)
-        if match_resource:
-            item_id = int(match_resource.group(1))
-            prices_str = match_resource.group(2)
-            prices_list = [int(p.strip()) for p in prices_str.split(',') if p.strip().isdigit()]
-            if prices_list:
-                lot_map = {}
-                lots = ['1', '10', '100', '1000']
-                for idx, price in enumerate(prices_list[:4]):
-                    if price > 0:
-                        lot_map[lots[idx]] = price
-                if lot_map:
-                    send_price_update(item_id, f'Objeto #{item_id}', 'recurso', lot_map)
-                    return
-
-    match_equip = re.search(r'\"(?:itemId|objectGID|id)\":\\s*(\\d+).*?\"offers\":\\s*\\[(.*?)\\]', text)
-    if match_equip:
-        item_id = int(match_equip.group(1))
-        offers_str = match_equip.group(2)
-        price_matches = re.findall(r'\"price\":\\s*(\\d+)', offers_str)
-        if price_matches:
-            numeric_prices = [int(p) for p in price_matches if int(p) > 0]
-            if numeric_prices:
-                send_price_update(item_id, f'Objeto #{item_id}', 'equipable', numeric_prices)
-                return
-
-def send_price_update(item_id, item_name, p_type, precios):
-    body = {
-        'item_id': item_id,
-        'item_name': item_name,
-        'type': p_type,
-        'server': SERVER_NAME,
-        'precios': precios,
-        'source': 'sniffer-bat'
-    }
-    headers = {'Content-Type': 'application/json'}
-    if API_SECRET_KEY:
-        headers['x-market-secret'] = API_SECRET_KEY
-    try:
-        res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=5)
-        now_str = datetime.now().strftime('%H:%M:%S')
-        if res.status_code == 200:
-            data = res.json()
-            p_calc = data.get('calculated_price', 0)
-            name = data.get('name', item_name)
-            t_label = 'RECURSO' if p_type == 'recurso' else 'EQUIPABLE'
-            print(f'[{now_str}]  [{t_label}] {name} (#{item_id}) -> Guardado en Turso: {p_calc:,} k ({SERVER_NAME})')
-        else:
-            print(f'[{now_str}] ⚠️ Error {res.status_code}: {res.text}')
-    except Exception as e:
-        print(f'[{datetime.now().strftime(\"%H:%M:%S\")}] ❌ Error de conexion: {e}')
-
-try:
-    sniff(filter=DOFUS_PORTS, prn=handle_packet, store=0)
-except KeyboardInterrupt:
-    print('\\nSincronizador detenido.')
-except Exception as e:
-    print(f'\\nError de captura: {e}')
-"
-pause
-`;
-    const blob = new Blob([batContent], { type: 'application/x-bat' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sincronizar_mercadillo_${serverName.toLowerCase()}.bat`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleSimulate = async () => {
-    setIsSimulating(true);
-    setSimError(null);
-    setSimResult(null);
-
+    // 1. Trigger server download endpoint
     try {
-      let body: any = {
-        item_id: testItemId,
-        item_name: testItemName,
-        type: testType,
-        server: serverName,
-        source: 'sniffer_test',
-      };
-
-      if (testType === 'recurso') {
-        body.precios = {
-          '1': testP1,
-          '10': testP10,
-          '100': testP100,
-          '1000': testP1000,
-        };
-      } else {
-        const prices = testEquipPrices
-          .split(',')
-          .map((p) => parseInt(p.trim(), 10))
-          .filter((n) => !isNaN(n) && n > 0);
-        body.precios = prices;
-      }
-
-      const res = await fetch('/api/market/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Error ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      setSimResult(data);
-      if (onPriceUpdated) onPriceUpdated();
-    } catch (err: any) {
-      setSimError(err.message || 'Error al ejecutar simulación');
-    } finally {
-      setIsSimulating(false);
+      const directUrl = `/api/market/download-bat?server=${encodeURIComponent(serverName)}`;
+      const link = document.createElement('a');
+      link.href = directUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.warn("Direct link download failed, trying blob fallback:", e);
     }
+
+    // 2. Client-side fallback blob creation
+    try {
+      const blob = new Blob([batContent], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) {
+      console.warn("Blob download failed:", e);
+    }
+
+    setDownloadSuccessToast(
+      'Descarga iniciada. Si tu navegador bloquea archivos .bat por seguridad, puedes copiar el código con el botón "Copiar Código .BAT".'
+    );
+    setTimeout(() => setDownloadSuccessToast(null), 6000);
   };
 
   return (
@@ -499,41 +511,57 @@ pause
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 px-5 pt-3 border-b border-slate-800 bg-slate-950/30 text-xs font-bold">
+        <div className="flex items-center gap-2 px-5 pt-3 border-b border-slate-800 bg-slate-950/30 text-xs font-bold overflow-x-auto">
           <button
             onClick={() => setActiveTab('instructions')}
-            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === 'instructions'
                 ? 'border-amber-500 text-amber-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <HelpCircle className="w-4 h-4" />
-            Guía y Fórmulas de Cálculo
+            Guía y Requisitos
+          </button>
+          <button
+            onClick={() => setActiveTab('bat')}
+            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'bat'
+                ? 'border-amber-500 text-amber-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileCode className="w-4 h-4 text-amber-400" />
+            ⚡ Lanzador Windows (.BAT)
           </button>
           <button
             onClick={() => setActiveTab('script')}
-            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === 'script'
                 ? 'border-amber-500 text-amber-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Terminal className="w-4 h-4" />
-            Script Python Standalone
-          </button>
-          <button
-            onClick={() => setActiveTab('simulator')}
-            className={`pb-3 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'simulator'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Zap className="w-4 h-4" />
-            Simulador de Paquetes en Vivo
+            Script Python (.PY)
           </button>
         </div>
+
+        {/* Download Toast Notification */}
+        {downloadSuccessToast && (
+          <div className="bg-amber-500/10 border-b border-amber-500/30 px-5 py-2.5 flex items-center justify-between text-xs text-amber-300">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{downloadSuccessToast}</span>
+            </div>
+            <button
+              onClick={() => setDownloadSuccessToast(null)}
+              className="text-slate-400 hover:text-white ml-3"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Modal Content */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-slate-300 text-xs sm:text-sm">
@@ -566,6 +594,44 @@ pause
                 </div>
               </div>
 
+              {/* Requirement Cards */}
+              <div className="bg-slate-950 border border-amber-500/20 rounded-2xl p-4 space-y-3">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2 text-amber-400">
+                  <ShieldCheck className="w-4 h-4" /> Requisitos iniciales (Solo 1 vez en tu PC)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <span className="font-bold text-white block">1. Python y librerías</span>
+                    <p className="text-slate-400 text-[11px]">
+                      Descarga Python desde <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer" className="text-amber-400 underline inline-flex items-center gap-0.5">python.org <ExternalLink className="w-2.5 h-2.5" /></a> (marcando <em>"Add Python to PATH"</em>).
+                    </p>
+                    <p className="text-slate-300 text-[11px]">
+                      Luego abre tu terminal/CMD e instala las librerías una única vez:
+                    </p>
+                    <div className="bg-slate-950 p-2 rounded-lg font-mono text-amber-300 text-[11px] border border-slate-800 flex items-center justify-between">
+                      <code>pip install scapy requests</code>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <span className="font-bold text-white block">2. Controlador de Red Npcap</span>
+                    <p className="text-slate-400 text-[11px]">
+                      Requerido por Windows para que Python pueda capturar los paquetes de red del juego.
+                    </p>
+                    <p className="text-slate-300 text-[11px]">
+                      Descárgalo gratis e instálalo desde:
+                    </p>
+                    <a
+                      href="https://npcap.com/#download"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-amber-400 font-bold text-xs hover:underline mt-1"
+                    >
+                      npcap.com/#download <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+
               {/* Formula Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-4 space-y-2.5">
@@ -584,10 +650,10 @@ pause
 
                 <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-                    <ShieldCheck className="w-4 h-4" /> Equipables (Filtro Inteligente de Outliers & Exos)
+                    <ShieldCheck className="w-4 h-4" /> Equipables (Filtro de Outliers & Exos)
                   </div>
                   <p className="text-xs text-slate-300">
-                    Descarta ofertas con precios troles o exo-magias (que superen 2.2x el precio base o la mediana).
+                    Descarta precios troles o exo-magias (que superen 2.2x el precio base).
                     Promedia el cluster base: <strong>60% precio mínimo + 40% media normalizada</strong>.
                   </p>
                   <div className="bg-slate-900 p-2.5 rounded-xl text-[11px] font-mono text-amber-300 border border-amber-500/20">
@@ -617,9 +683,9 @@ pause
                       ⚡ Opción A: Archivo .BAT (1 Clic)
                     </span>
                     <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300">
-                      <li>Tener instalado <strong>Python</strong> y <strong>Npcap</strong> en Windows.</li>
-                      <li>Descarga el archivo <strong>.bat</strong> y hazle doble clic.</li>
-                      <li>Pide permisos de Administrador e instala librerías solo.</li>
+                      <li>Tener instalados <strong>Python</strong>, <strong>Npcap</strong> y las librerías (<code className="text-amber-300 font-mono">pip install scapy requests</code>).</li>
+                      <li>Descarga el archivo <strong>.bat</strong> o cópialo desde la pestaña Lanzador.</li>
+                      <li>Hazle doble clic: solicita permisos de Administrador y se pone a escuchar directamente el mercadillo sin demoras.</li>
                     </ol>
                   </div>
 
@@ -628,13 +694,58 @@ pause
                       🐍 Opción B: Script Python (.py)
                     </span>
                     <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-300">
-                      <li>Ejecuta: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">pip install scapy requests</code></li>
+                      <li>Instala los requisitos: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">pip install scapy requests</code></li>
                       <li>Abre PowerShell/CMD como <strong>Administrador</strong>.</li>
                       <li>Ejecuta: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">python sniffer_standalone.py</code></li>
                     </ol>
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'bat' && (
+            <div className="space-y-4">
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                    <FileCode className="w-4 h-4 text-amber-400" /> Lanzador por Lotes para Windows (.BAT)
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Ejecución limpia y directa. Simplemente haz doble clic y comenzará a capturar.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyBat}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                  >
+                    {copiedBat ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedBat ? '¡Código Copiado!' : 'Copiar Código .BAT'}
+                  </button>
+                  <button
+                    onClick={handleDownloadBat}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/20"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Descargar .BAT
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                <div>
+                  <strong>¿Tu navegador o Windows bloquea la descarga del archivo .bat?</strong>
+                  <p className="text-slate-300 text-[11px] mt-0.5">
+                    Es normal: los navegadores advierten al descargar scripts ejecutables. Puedes simplemente hacer clic en <strong>"Copiar Código .BAT"</strong>, crear un archivo de texto nuevo en tu bloc de notas, pegar el código y guardarlo como <code className="text-amber-300 font-mono">sincronizar.bat</code>.
+                  </p>
+                </div>
+              </div>
+
+              <pre className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-[360px] select-all leading-relaxed">
+                {batContent}
+              </pre>
             </div>
           )}
 
@@ -662,7 +773,7 @@ pause
                   <button
                     onClick={handleDownloadBat}
                     className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/20"
-                    title="Doble clic y listo para Windows (Auto-elevación a Administrador e instalación de librerías)"
+                    title="Doble clic y listo para Windows"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Descargar Lanzador (.bat)
@@ -673,185 +784,6 @@ pause
               <pre className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-[380px] select-all leading-relaxed">
                 {pythonScript}
               </pre>
-            </div>
-          )}
-
-          {activeTab === 'simulator' && (
-            <div className="space-y-5">
-              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-amber-400" /> Probar Envío Directo a la API
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTestType('recurso');
-                        setTestItemId(289);
-                        setTestItemName('Trigo');
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                        testType === 'recurso'
-                          ? 'bg-amber-500 text-slate-950'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      🌾 Recurso (Lotes)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTestType('equipable');
-                        setTestItemId(2469);
-                        setTestItemName('Gelanillo');
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                        testType === 'equipable'
-                          ? 'bg-amber-500 text-slate-950'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      ⚔️ Equipable (Ofertas)
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      ID del Objeto
-                    </label>
-                    <input
-                      type="number"
-                      value={testItemId}
-                      onChange={(e) => setTestItemId(Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Nombre
-                    </label>
-                    <input
-                      type="text"
-                      value={testItemName}
-                      onChange={(e) => setTestItemName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                {testType === 'recurso' ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lote x1</label>
-                      <input
-                        type="number"
-                        value={testP1}
-                        onChange={(e) => setTestP1(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lote x10</label>
-                      <input
-                        type="number"
-                        value={testP10}
-                        onChange={(e) => setTestP10(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lote x100</label>
-                      <input
-                        type="number"
-                        value={testP100}
-                        onChange={(e) => setTestP100(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lote x1000</label>
-                      <input
-                        type="number"
-                        value={testP1000}
-                        onChange={(e) => setTestP1000(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Ofertas de Equipable (separadas por coma)
-                    </label>
-                    <input
-                      type="text"
-                      value={testEquipPrices}
-                      onChange={(e) => setTestEquipPrices(e.target.value)}
-                      placeholder="Ej: 450000, 480000, 520000, 2500000"
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      El filtro de outliers elimina automáticamente valores extremos (como 1,000,000 o 2,500,000) si superan 2.2x el precio mínimo o el cluster base.
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSimulate}
-                  disabled={isSimulating}
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 cursor-pointer"
-                >
-                  {isSimulating ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                  {isSimulating ? 'Enviando a API...' : 'Enviar Paquete de Prueba a Turso'}
-                </button>
-              </div>
-
-              {simResult && (
-                <div className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                    <CheckCircle2 className="w-4 h-4" /> ¡Precio calculado y guardado con éxito en Turso SQLite!
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs">
-                    <div className="bg-slate-900 p-2 rounded-lg">
-                      <span className="text-slate-500 block text-[10px]">Precio Guardado:</span>
-                      <span className="text-amber-300 font-mono font-bold text-sm">
-                        {simResult.calculated_price?.toLocaleString()} k
-                      </span>
-                    </div>
-                    <div className="bg-slate-900 p-2 rounded-lg">
-                      <span className="text-slate-500 block text-[10px]">Precio Mínimo:</span>
-                      <span className="text-slate-200 font-mono font-bold text-sm">
-                        {simResult.min_price?.toLocaleString()} k
-                      </span>
-                    </div>
-                    <div className="bg-slate-900 p-2 rounded-lg">
-                      <span className="text-slate-500 block text-[10px]">Promedio General:</span>
-                      <span className="text-slate-200 font-mono font-bold text-sm">
-                        {simResult.raw_average?.toLocaleString()} k
-                      </span>
-                    </div>
-                    <div className="bg-slate-900 p-2 rounded-lg">
-                      <span className="text-slate-500 block text-[10px]">Servidor Asignado:</span>
-                      <span className="text-slate-200 font-bold text-xs">{simResult.server}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {simError && (
-                <div className="bg-rose-950/50 border border-rose-500/30 rounded-2xl p-3 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{simError}</span>
-                </div>
-              )}
             </div>
           )}
         </div>
