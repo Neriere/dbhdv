@@ -434,20 +434,20 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
     textMatches: ["daños de empuje", "daños empuje", "daño empuje", "danos empuje", "danos de empuje", "dommages poussée", "do pou", "push damage", "pushback damage"],
   },
   {
-    id: 7446,
-    name: "Runa Tram Por",
+    id: 7447,
+    name: "Runa Por Tram",
     nameFr: "Rune Per Pi",
-    nameEn: "Trap Power Rune",
-    shortCode: "TRAMPOR",
+    nameEn: "Trp Per Rune",
+    shortCode: "PORTRAM",
     symbol: "%TRP",
-    color: "#eab308",
+    color: "#10b981",
     characteristicId: 69,
     effectIds: [226],
     unitWeight: 2,
     statPerRune: 1,
     category: "dano",
-    iconId: 78023,
-    defaultPrice: 1400,
+    iconId: 78024,
+    defaultPrice: 130,
     description: "+1% Potencia Trampas",
     textMatches: [
       "potencia de trampas",
@@ -467,24 +467,25 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
       "per pi",
       "pui piège",
       "pui piege",
+      "por tram",
       "tram por",
     ],
   },
   {
-    id: 7445,
-    name: "Runa Tram",
+    id: 7446,
+    name: "Runa Da Tram",
     nameFr: "Rune Do Pi",
-    nameEn: "Trap Dmg Rune",
+    nameEn: "Trp Dam Rune",
     shortCode: "DATRAM",
     symbol: "DTRP",
-    color: "#ca8a04",
+    color: "#3b82f6",
     characteristicId: 70,
     effectIds: [225],
     unitWeight: 5,
     statPerRune: 1,
     category: "dano",
-    iconId: 78022,
-    defaultPrice: 1600,
+    iconId: 78268,
+    defaultPrice: 720,
     description: "+1 Daños Trampas",
     textMatches: [
       "daños de trampas",
@@ -499,6 +500,7 @@ export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
       "dommages pièges",
       "do pi",
       "trap damage",
+      "da tram",
       "trampas",
       "trampa",
       "piège",
@@ -1055,7 +1057,9 @@ export const BASE_RUNES_DEFAULT_PRICES: Record<number, number> =
 // Secondary lookup maps for legacy characteristic IDs
 const EXTRA_CHAR_MAP: Record<number, number> = {
   47: 7437, // Reenvío de Daños (legacy char id 47)
-  68: 7445, // Daños Trampas (legacy char id 68)
+  68: 7446, // Daños Trampas (legacy char id 68) -> Runa Da Tram (7446)
+  69: 7447, // % Potencia Trampas -> Runa Por Tram (7447)
+  70: 7446, // Daños Trampas -> Runa Da Tram (7446)
   109: 10057, // Arma de caza (char id 109)
 };
 
