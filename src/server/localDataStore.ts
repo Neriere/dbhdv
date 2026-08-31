@@ -775,7 +775,19 @@ async function getMetaValue<T>(key: string): Promise<T | null> {
   return row ? parseJsonValue<T>(row.value_json as string) : null;
 }
 
+let cachedPriceProfiles: PriceProfile[] | null = null;
+let cachedActivePriceProfileId: number | null = null;
+
+export function invalidatePriceProfileCache(): void {
+  cachedPriceProfiles = null;
+  cachedActivePriceProfileId = null;
+}
+
 async function getPriceProfiles(): Promise<PriceProfile[]> {
+  if (cachedPriceProfiles && cachedPriceProfiles.length > 0) {
+    return cachedPriceProfiles;
+  }
+
   const result = await database.execute(
     `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
   );
@@ -810,6 +822,7 @@ async function getPriceProfiles(): Promise<PriceProfile[]> {
       });
     }
   }
+  cachedPriceProfiles = profilesList;
   return profilesList;
 }
 
@@ -821,6 +834,11 @@ export function invalidateServerBootstrapCache(): void {
 }
 
 async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
+  if (cachedPriceProfiles && cachedPriceProfiles.length > 0) {
+    const def = cachedPriceProfiles.find((p) => p.isDefault) || cachedPriceProfiles[0];
+    if (def) return def;
+  }
+
   // Migrate slug oruka to orukam if present
   try {
     await database.execute(
@@ -888,7 +906,7 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
     args: [defaultSlug],
   });
   const inserted = insertedResult.rows[0];
-  return {
+  const defaultProfileObj: PriceProfile = {
     id: inserted.id as number,
     name: inserted.name as string,
     slug: inserted.slug as string,
@@ -896,6 +914,8 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
     categoryLabel: (inserted.category_label as string) || "Monocuenta Clásico",
     isDefault: (inserted.is_default as number) === 1,
   };
+  cachedPriceProfiles = null; // force fresh reload on next getPriceProfiles()
+  return defaultProfileObj;
 }
 
 async function ensureLegacyPriceMigration(
@@ -977,14 +997,20 @@ async function setSyncSettings(settings: SyncSettings): Promise<SyncSettings> {
 }
 
 async function getActivePriceProfileId(): Promise<number> {
+  if (cachedActivePriceProfileId !== null) {
+    return cachedActivePriceProfileId;
+  }
+
   const defaultProfile = await ensureDefaultPriceProfile();
-  await ensureLegacyPriceMigration(defaultProfile.id);
   const profiles = await getPriceProfiles();
   const visibleProfileIds = new Set(profiles.map((p) => p.id));
   const storedProfileId = await getMetaValue<number>("active_price_profile_id");
-  if (storedProfileId && visibleProfileIds.has(storedProfileId))
+  if (storedProfileId && visibleProfileIds.has(storedProfileId)) {
+    cachedActivePriceProfileId = storedProfileId;
     return storedProfileId;
+  }
   await setMetaValue("active_price_profile_id", defaultProfile.id);
+  cachedActivePriceProfileId = defaultProfile.id;
   return defaultProfile.id;
 }
 
@@ -993,31 +1019,35 @@ async function setActivePriceProfileId(profileId: number): Promise<number> {
   if (!profiles.some((p) => p.id === profileId))
     throw new Error("Perfil de precios no encontrado.");
   await setMetaValue("active_price_profile_id", profileId);
+  cachedActivePriceProfileId = profileId;
   return profileId;
 }
 
-async function getPricesMap(profileId: number): Promise<MarketPriceMap> {
+async function getPricesAndUpdatedAtMaps(profileId: number): Promise<{ prices: MarketPriceMap; priceUpdatedAt: PriceUpdatedAtMap }> {
   const result = await database.execute({
-    sql: "SELECT item_id, price FROM profile_prices WHERE profile_id = ?",
+    sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ?",
     args: [profileId],
   });
   const prices: MarketPriceMap = {};
-  for (const row of result.rows)
-    prices[row.item_id as number] = row.price as number;
+  const priceUpdatedAt: PriceUpdatedAtMap = {};
+  for (const row of result.rows) {
+    const itemId = Number(row.item_id);
+    prices[itemId] = Number(row.price);
+    priceUpdatedAt[itemId] = Number(row.updated_at);
+  }
+  return { prices, priceUpdatedAt };
+}
+
+async function getPricesMap(profileId: number): Promise<MarketPriceMap> {
+  const { prices } = await getPricesAndUpdatedAtMaps(profileId);
   return prices;
 }
 
 async function getPriceUpdatedAtMap(
   profileId: number,
 ): Promise<PriceUpdatedAtMap> {
-  const result = await database.execute({
-    sql: "SELECT item_id, updated_at FROM profile_prices WHERE profile_id = ?",
-    args: [profileId],
-  });
-  const updatedAtMap: PriceUpdatedAtMap = {};
-  for (const row of result.rows)
-    updatedAtMap[row.item_id as number] = row.updated_at as number;
-  return updatedAtMap;
+  const { priceUpdatedAt } = await getPricesAndUpdatedAtMaps(profileId);
+  return priceUpdatedAt;
 }
 
 async function updateRecipeIngredients(recipes: DofusRecipe[]): Promise<void> {
@@ -1169,10 +1199,12 @@ async function upsertPrice(
     // Ignore
   }
 
-  await database.execute({
-    sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
-    args: [profileId, itemId, cleanPrice, now],
-  });
+  const statements: Array<{ sql: string; args: any[] }> = [
+    {
+      sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+      args: [profileId, itemId, cleanPrice, now],
+    },
+  ];
 
   if (cleanPrice !== oldPrice) {
     const diff = cleanPrice - oldPrice;
@@ -1182,24 +1214,22 @@ async function upsertPrice(
         : cleanPrice > 0
         ? 100
         : 0;
-    try {
-      await database.execute({
-        sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          profileId,
-          itemId,
-          cleanPrice,
-          oldPrice,
-          diff,
-          Number(pctChange.toFixed(2)),
-          source,
-          now,
-        ],
-      });
-    } catch (e) {
-      console.warn("Failed to record price history:", e);
-    }
+    statements.push({
+      sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        profileId,
+        itemId,
+        cleanPrice,
+        oldPrice,
+        diff,
+        Number(pctChange.toFixed(2)),
+        source,
+        now,
+      ],
+    });
   }
+
+  await database.batch(statements, "write");
 }
 
 async function replaceAllPrices(
@@ -2083,9 +2113,10 @@ export async function setItemPrice(
   invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await upsertPrice(pid, itemId, price);
+  const { prices, priceUpdatedAt } = await getPricesAndUpdatedAtMaps(pid);
   return {
-    prices: await getPricesMap(pid),
-    priceUpdatedAt: await getPriceUpdatedAtMap(pid),
+    prices,
+    priceUpdatedAt,
     activePriceProfileId: pid,
   };
 }
@@ -2097,9 +2128,10 @@ export async function overwritePrices(
   invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await replaceAllPrices(pid, prices);
+  const { prices: updatedPrices, priceUpdatedAt } = await getPricesAndUpdatedAtMaps(pid);
   return {
-    prices: await getPricesMap(pid),
-    priceUpdatedAt: await getPriceUpdatedAtMap(pid),
+    prices: updatedPrices,
+    priceUpdatedAt,
     activePriceProfileId: pid,
   };
 }
@@ -2108,9 +2140,10 @@ export async function deleteAllStoredPrices(profileId?: number) {
   invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
   await clearAllPrices(pid);
+  const { prices, priceUpdatedAt } = await getPricesAndUpdatedAtMaps(pid);
   return {
-    prices: await getPricesMap(pid),
-    priceUpdatedAt: await getPriceUpdatedAtMap(pid),
+    prices,
+    priceUpdatedAt,
     activePriceProfileId: pid,
   };
 }
@@ -2119,10 +2152,11 @@ export async function changeActivePriceProfile(profileId: number) {
   invalidateServerBootstrapCache();
   const pid = await setActivePriceProfileId(profileId);
   const coeffData = await getProfileCoefficients(pid);
+  const { prices, priceUpdatedAt } = await getPricesAndUpdatedAtMaps(pid);
   return {
     activePriceProfileId: pid,
-    prices: await getPricesMap(pid),
-    priceUpdatedAt: await getPriceUpdatedAtMap(pid),
+    prices,
+    priceUpdatedAt,
     coefficients: coeffData.coefficients,
     coefficientUpdatedAt: coeffData.coefficientUpdatedAt,
     profiles: await getPriceProfiles(),
@@ -2290,7 +2324,7 @@ export async function processAndIngestMarketPrice(
   let rawAvg = 0;
   let offersCount = 0;
 
-  // 1. RECURSOS / INGREDIENTES: Media de lotes (x1, x10, x100, x1000) calculados a precio unitario
+  // 1. RECURSOS / INGREDIENTES: Media de lotes (x1, x10, x100, x1000) con filtro de lotes inflados
   if (resolvedType === 'recurso' || (precios && typeof precios === 'object' && !Array.isArray(precios) && Object.keys(precios).some(k => ['1', '10', '100', '1000'].includes(k)))) {
     resolvedType = 'recurso';
     const rawObj = (precios && typeof precios === 'object' && !Array.isArray(precios))
@@ -2314,10 +2348,15 @@ export async function processAndIngestMarketPrice(
       maxPrice = Math.max(...unitPrices);
       const sum = unitPrices.reduce((acc, val) => acc + val, 0);
       rawAvg = Math.round(sum / unitPrices.length);
-      finalPrice = rawAvg; // Media aritmética unitaria de lotes disponibles
+
+      // Filtro anti-inflación de lotes: descartar lotes que superen 2.5x el precio unitario mínimo
+      // (a menos que sea el único lote)
+      const validUnitPrices = unitPrices.filter(p => p <= minPrice * 2.5);
+      const activePrices = validUnitPrices.length > 0 ? validUnitPrices : [minPrice];
+      finalPrice = Math.round(activePrices.reduce((a, b) => a + b, 0) / activePrices.length);
     }
   }
-  // 2. EQUIPABLES / OFERTAS INDIVIDUALES: Filtro de sobremagueos combinando precio mínimo y media
+  // 2. EQUIPABLES / OFERTAS INDIVIDUALES: Filtro Robusto de Outliers (Exos / Sobremagueos / Precios Troles)
   else {
     resolvedType = 'equipable';
     let numericPrices: number[] = [];
@@ -2336,11 +2375,21 @@ export async function processAndIngestMarketPrice(
       const sum = sorted.reduce((acc, val) => acc + val, 0);
       rawAvg = Math.round(sum / sorted.length);
 
-      // FÓRMULA SOLICITADA PARA EQUIPABLES:
-      // Para evitar que objetos con precios astronómicos distorsionen el precio real,
-      // se toma el precio mínimo (p_min) y se promedia con la media general de ofertas (rawAvg).
-      // Si solo hay 1 oferta, se usa directamente el precio mínimo.
-      finalPrice = sorted.length === 1 ? minPrice : Math.round((minPrice + rawAvg) / 2);
+      // FÓRMULA INTELIGENTE ANTI-OUTLIERS:
+      // En Dofus los equipables con exo-magias o precios troles pueden valer x10, x100 o x1000 más que el precio base.
+      // Filtramos cualquier oferta que supere 2.2x el precio mínimo (o 2.0x de la mediana inferior).
+      // Solo promediamos las ofertas dentro del cluster base realista.
+      const outlierThreshold = Math.max(minPrice * 2.2, minPrice + 2000);
+      const normalOffers = sorted.filter(p => p <= outlierThreshold);
+
+      if (normalOffers.length === 1) {
+        finalPrice = normalOffers[0];
+      } else {
+        const normalSum = normalOffers.reduce((a, b) => a + b, 0);
+        const normalAvg = normalSum / normalOffers.length;
+        // Ponderar 60% el precio mínimo y 40% la media normalizada del cluster base
+        finalPrice = Math.round(minPrice * 0.6 + normalAvg * 0.4);
+      }
     }
   }
 
@@ -2391,14 +2440,225 @@ export async function processAndIngestMarketPricesBatch(
   }
 
   const results: IngestMarketPriceResult[] = [];
-  for (const item of items) {
-    try {
-      const res = await processAndIngestMarketPrice(item);
-      results.push(res);
-    } catch (e) {
-      console.warn(`[Sniffer Batch Ingestion] Failed for item ${item.item_id}:`, e);
+  const profileMap = new Map<string, { profileId: number; profileName: string }>();
+
+  // 1. In-memory parsing and outlier calculation
+  const parsedItems: Array<{
+    payload: IngestMarketPricePayload;
+    itemId: number;
+    profileId: number;
+    profileName: string;
+    resolvedType: string;
+    finalPrice: number;
+    minPrice: number;
+    maxPrice: number;
+    rawAvg: number;
+    offersCount: number;
+    resolvedName: string;
+  }> = [];
+
+  for (const payload of items) {
+    const itemId = Number(payload.item_id);
+    if (!itemId || Number.isNaN(itemId) || itemId <= 0) continue;
+
+    const serverKey = (payload.server || '').trim().toLowerCase();
+    let profileInfo = profileMap.get(serverKey);
+    if (!profileInfo) {
+      profileInfo = await getProfileIdByServerNameOrSlug(payload.server);
+      profileMap.set(serverKey, profileInfo);
+    }
+
+    const { profileId, profileName } = profileInfo;
+    const precios = payload.precios;
+    let resolvedType = (payload.type || '').toLowerCase();
+
+    if (!resolvedType) {
+      if (Array.isArray(precios) && precios.length > 4) {
+        resolvedType = 'equipable';
+      } else if (precios && typeof precios === 'object' && !Array.isArray(precios)) {
+        const keys = Object.keys(precios);
+        if (keys.some(k => ['1', '10', '100', '1000'].includes(k))) {
+          resolvedType = 'recurso';
+        }
+      }
+    }
+
+    let finalPrice = 0;
+    let minPrice = 0;
+    let maxPrice = 0;
+    let rawAvg = 0;
+    let offersCount = 0;
+
+    if (resolvedType === 'recurso' || (precios && typeof precios === 'object' && !Array.isArray(precios) && Object.keys(precios).some(k => ['1', '10', '100', '1000'].includes(k)))) {
+      resolvedType = 'recurso';
+      const rawObj = (precios && typeof precios === 'object' && !Array.isArray(precios))
+        ? (precios as Record<string, number | string>)
+        : {};
+
+      const p1 = Number(rawObj['1'] ?? rawObj[1] ?? 0);
+      const p10 = Number(rawObj['10'] ?? rawObj[10] ?? 0);
+      const p100 = Number(rawObj['100'] ?? rawObj[100] ?? 0);
+      const p1000 = Number(rawObj['1000'] ?? rawObj[1000] ?? 0);
+
+      const unitPrices: number[] = [];
+      if (p1 > 0) unitPrices.push(p1);
+      if (p10 > 0) unitPrices.push(Math.round(p10 / 10));
+      if (p100 > 0) unitPrices.push(Math.round(p100 / 100));
+      if (p1000 > 0) unitPrices.push(Math.round(p1000 / 1000));
+
+      if (unitPrices.length > 0) {
+        offersCount = unitPrices.length;
+        minPrice = Math.min(...unitPrices);
+        maxPrice = Math.max(...unitPrices);
+        const sum = unitPrices.reduce((acc, val) => acc + val, 0);
+        rawAvg = Math.round(sum / unitPrices.length);
+
+        const validUnitPrices = unitPrices.filter(p => p <= minPrice * 2.5);
+        const activePrices = validUnitPrices.length > 0 ? validUnitPrices : [minPrice];
+        finalPrice = Math.round(activePrices.reduce((a, b) => a + b, 0) / activePrices.length);
+      }
+    } else {
+      resolvedType = 'equipable';
+      let numericPrices: number[] = [];
+      if (Array.isArray(precios)) {
+        numericPrices = precios.map(Number).filter(n => !Number.isNaN(n) && n > 0);
+      } else if (precios && typeof precios === 'object') {
+        numericPrices = Object.values(precios).map(Number).filter(n => !Number.isNaN(n) && n > 0);
+      }
+
+      if (numericPrices.length > 0) {
+        const sorted = [...numericPrices].sort((a, b) => a - b);
+        offersCount = sorted.length;
+        minPrice = sorted[0];
+        maxPrice = sorted[sorted.length - 1];
+
+        const sum = sorted.reduce((acc, val) => acc + val, 0);
+        rawAvg = Math.round(sum / sorted.length);
+
+        const outlierThreshold = Math.max(minPrice * 2.2, minPrice + 2000);
+        const normalOffers = sorted.filter(p => p <= outlierThreshold);
+
+        if (normalOffers.length === 1) {
+          finalPrice = normalOffers[0];
+        } else {
+          const normalSum = normalOffers.reduce((a, b) => a + b, 0);
+          const normalAvg = normalSum / normalOffers.length;
+          finalPrice = Math.round(minPrice * 0.6 + normalAvg * 0.4);
+        }
+      }
+    }
+
+    let resolvedName = (payload.item_name || '').trim();
+    if (!resolvedName || resolvedName.startsWith('Item #') || resolvedName.startsWith('Objeto #')) {
+      if (SERVER_KNOWN_ITEMS[itemId]?.name?.es) {
+        resolvedName = SERVER_KNOWN_ITEMS[itemId].name.es;
+      } else {
+        resolvedName = `Objeto #${itemId}`;
+      }
+    }
+
+    parsedItems.push({
+      payload,
+      itemId,
+      profileId,
+      profileName,
+      resolvedType,
+      finalPrice,
+      minPrice,
+      maxPrice,
+      rawAvg,
+      offersCount,
+      resolvedName,
+    });
+  }
+
+  if (parsedItems.length === 0) {
+    return { success: true, total_processed: 0, results: [] };
+  }
+
+  // 2. Fetch existing prices in a single query per profile
+  const now = Date.now();
+  const uniqueProfileIds = Array.from(new Set(parsedItems.map(p => p.profileId)));
+  const oldPricesMap = new Map<string, number>();
+
+  for (const pid of uniqueProfileIds) {
+    const itemIdsForProfile = Array.from(new Set(parsedItems.filter(p => p.profileId === pid).map(p => p.itemId)));
+    if (itemIdsForProfile.length > 0) {
+      try {
+        const placeholders = itemIdsForProfile.map(() => '?').join(',');
+        const queryRes = await database.execute({
+          sql: `SELECT item_id, price FROM profile_prices WHERE profile_id = ? AND item_id IN (${placeholders})`,
+          args: [pid, ...itemIdsForProfile],
+        });
+        for (const row of queryRes.rows) {
+          oldPricesMap.set(`${pid}:${row.item_id}`, Number(row.price) || 0);
+        }
+      } catch {}
     }
   }
+
+  // 3. Build atomic write statements
+  const statements: Array<{ sql: string; args: any[] }> = [];
+
+  for (const item of parsedItems) {
+    const { profileId, profileName, itemId, finalPrice, minPrice, maxPrice, rawAvg, offersCount, resolvedName, resolvedType, payload } = item;
+    const key = `${profileId}:${itemId}`;
+    const oldPrice = oldPricesMap.get(key) || 0;
+
+    if (finalPrice > 0) {
+      statements.push({
+        sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+        args: [profileId, itemId, finalPrice, now],
+      });
+
+      if (finalPrice !== oldPrice) {
+        const diff = finalPrice - oldPrice;
+        const pctChange =
+          oldPrice > 0
+            ? ((finalPrice - oldPrice) / oldPrice) * 100
+            : finalPrice > 0
+            ? 100
+            : 0;
+        statements.push({
+          sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            profileId,
+            itemId,
+            finalPrice,
+            oldPrice,
+            diff,
+            Number(pctChange.toFixed(2)),
+            payload.source || 'sniffer',
+            now,
+          ],
+        });
+      }
+    }
+
+    results.push({
+      success: true,
+      item_id: itemId,
+      name: resolvedName,
+      type: resolvedType,
+      calculated_price: finalPrice,
+      min_price: minPrice,
+      max_price: maxPrice,
+      raw_average: rawAvg,
+      offers_count: offersCount,
+      server: profileName,
+      profile_id: profileId,
+      updated_at: now,
+    });
+  }
+
+  // 4. Batch write to Turso in parallel chunks of 250 statements
+  if (statements.length > 0) {
+    for (let i = 0; i < statements.length; i += 250) {
+      await database.batch(statements.slice(i, i + 250), "write");
+    }
+  }
+
+  invalidateServerBootstrapCache();
 
   return {
     success: true,

@@ -430,15 +430,15 @@ if __name__ == "__main__":
 
                 <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-                    <ShieldCheck className="w-4 h-4" /> Equipables (Filtro de Sobremagueos)
+                    <ShieldCheck className="w-4 h-4" /> Equipables (Filtro Inteligente de Outliers & Exos)
                   </div>
                   <p className="text-xs text-slate-300">
-                    Evita que ofertas exorbitantes o con exo-magias distorsionen el precio. Combina el
-                    <strong> precio mínimo</strong> con el <strong>promedio general</strong> de ofertas.
+                    Descarta ofertas con precios troles o exo-magias (que superen 2.2x el precio base o la mediana).
+                    Promedia el cluster base: <strong>60% precio mínimo + 40% media normalizada</strong>.
                   </p>
                   <div className="bg-slate-900 p-2.5 rounded-xl text-[11px] font-mono text-amber-300 border border-amber-500/20">
-                    p_min = min(ofertas), raw_avg = media(ofertas)<br />
-                    Precio Guardado = round((p_min + raw_avg) / 2)
+                    ofertas_validas = [p for p in ofertas if p &le; min*2.2]<br />
+                    Precio Guardado = round(min * 0.6 + media(validas) * 0.4)
                   </div>
                 </div>
               </div>
@@ -621,7 +621,7 @@ if __name__ == "__main__":
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
                     />
                     <p className="text-[10px] text-slate-500 mt-1">
-                      Nota cómo la fórmula promedia el precio mínimo con la media para mitigar el impacto del sobremagueo de 2.5M.
+                      El filtro de outliers elimina automáticamente valores extremos (como 1,000,000 o 2,500,000) si superan 2.2x el precio mínimo o el cluster base.
                     </p>
                   </div>
                 )}
