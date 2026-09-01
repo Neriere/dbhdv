@@ -329,9 +329,9 @@ def process_packet(pkt):
             except queue.Full:
                 pass
 
-if __name__ == "__main__":
+def main():
     print("=" * 70)
-    print("      DOFUS UNITY -> MERCADILLO LIVE SYNC (ULTRA-RÁPIDO)")
+    print("      DOFUS UNITY -> MERCADILLO LIVE SNIFFER (ULTRA-RAPIDO)")
     print(f"  Servidor Destino : {SERVER_NAME}")
     print(f"  Base de Datos    : Turso / LibSQL Cloud")
     print("=" * 70)
@@ -341,7 +341,7 @@ if __name__ == "__main__":
     worker_thread = threading.Thread(target=async_worker, daemon=True)
     worker_thread.start()
 
-    print("\\n🟢 Escuchando paquetes en tiempo real...")
+    print("\\n Escuchando paquetes en tiempo real...")
     print("Abre el mercadillo en Dofus Unity e inspecciona los objetos.")
     print("Presiona Ctrl+C para salir.\\n")
 
@@ -351,7 +351,16 @@ if __name__ == "__main__":
         print("\\n\\nSincronizador detenido por el usuario.")
     except Exception as e:
         print(f"\\n[Error Sniffer]: {e}")
-        input("Presiona Enter para cerrar...")
+        traceback.print_exc()
+        input("\\nPresiona Enter para cerrar...")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\\n[ERROR CRITICO NO CONTROLADO]: {e}")
+        traceback.print_exc()
+        input("\\nPresiona Enter para cerrar...")
 `;
 
   const batContent = `@echo off
@@ -368,9 +377,9 @@ net session >nul 2>&1
 if !errorlevel! neq 0 (
     echo ===================================================================
     echo  [ADMIN] Se requieren permisos de Administrador para capturar red.
-    echo  Solicitando elevacion UAC de Windows...
+    echo  Solicitando confirmacion UAC de Windows...
     echo ===================================================================
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d ""%~dp0"" && call ""%~f0"" elevated' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList 'elevated \"%~1\"' -Verb RunAs"
     exit /b
 )
 
@@ -395,34 +404,57 @@ echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (!TARGET_SERVER!)
 echo ===================================================================
 echo.
 
-:: 1. Deteccion de ejecutable de Python
-echo [1/4] Buscando Python en el sistema...
+:: 1. Deteccion de ejecutable de Python REAL
+echo [1/3] Detectando Python en el sistema...
 set "PYTHON_EXE="
-where python >nul 2>&1 && set "PYTHON_EXE=python"
-if not defined PYTHON_EXE (
-    where py >nul 2>&1 && set "PYTHON_EXE=py -3"
+
+py -3 -c "import sys; sys.exit(0)" >nul 2>&1
+if !errorlevel! equ 0 (
+    set "PYTHON_EXE=py -3"
+    goto :python_found
 )
-if not defined PYTHON_EXE (
-    where python3 >nul 2>&1 && set "PYTHON_EXE=python3"
+
+python -c "import sys; sys.exit(0)" >nul 2>&1
+if !errorlevel! equ 0 (
+    set "PYTHON_EXE=python"
+    goto :python_found
 )
-if not defined PYTHON_EXE (
-    for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
-        if exist "%%D\\python.exe" set "PYTHON_EXE=%%D\\python.exe"
-    )
+
+python3 -c "import sys; sys.exit(0)" >nul 2>&1
+if !errorlevel! equ 0 (
+    set "PYTHON_EXE=python3"
+    goto :python_found
 )
-if not defined PYTHON_EXE (
-    for /d %%D in ("%ProgramFiles%\\Python*") do (
-        if exist "%%D\\python.exe" set "PYTHON_EXE=%%D\\python.exe"
+
+for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
+    if exist "%%D\\python.exe" (
+        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
+        if !errorlevel! equ 0 (
+            set "PYTHON_EXE=\"%%D\\python.exe\""
+            goto :python_found
+        )
     )
 )
 
+for /d %%D in ("%ProgramFiles%\\Python*") do (
+    if exist "%%D\\python.exe" (
+        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
+        if !errorlevel! equ 0 (
+            set "PYTHON_EXE=\"%%D\\python.exe\""
+            goto :python_found
+        )
+    )
+)
+
+:python_found
 if not defined PYTHON_EXE (
     echo.
     echo ===================================================================
-    echo  [ERROR CRITICO] No se ha detectado Python instalado.
+    echo  [ERROR CRITICO] No se ha detectado Python instalado en tu sistema.
     echo ===================================================================
     echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
-    echo  2. IMPORTANTE: Marca la casilla "Add Python to PATH" al instalar.
+    echo  2. IMPORTANTE: En el instalador marca la casilla:
+    echo     [X] "Add Python to PATH"
     echo  3. Tras instalarlo, vuelve a ejecutar este archivo .bat.
     echo ===================================================================
     goto :exit_pause
@@ -431,13 +463,12 @@ if not defined PYTHON_EXE (
 echo [OK] Python detectado: !PYTHON_EXE!
 echo.
 
-:: 2. Verificacion de dependencias (requests y scapy)
-echo [2/4] Verificando dependencias (requests, scapy)...
+:: 2. Verificacion e instalacion de librerias (requests y scapy)
+echo [2/3] Verificando dependencias (requests, scapy)...
 !PYTHON_EXE! -c "import requests, scapy" >nul 2>&1
 if !errorlevel! neq 0 (
-    echo.
-    echo [INSTALANDO] Instalando librerias necesarias automaticamente...
-    !PYTHON_EXE! -m pip install --upgrade requests scapy
+    echo [INSTALANDO] Descargando e instalando librerias necesarias (requests, scapy)...
+    !PYTHON_EXE! -m pip install requests scapy
     if !errorlevel! neq 0 (
         echo.
         echo [ERROR] No se pudieron instalar las librerias con pip.
@@ -450,44 +481,24 @@ if !errorlevel! neq 0 (
 )
 echo.
 
-:: 3. Verificacion de controlador Npcap en Windows
-echo [3/4] Comprobando controlador de paquetes de red (Npcap)...
-set "NPCAP_OK=0"
-if exist "%SystemRoot%\\System32\\wpcap.dll" set "NPCAP_OK=1"
-if exist "%SystemRoot%\\System32\\Npcap" set "NPCAP_OK=1"
-if exist "%SystemRoot%\\SysWOW64\\wpcap.dll" set "NPCAP_OK=1"
-
-if "!NPCAP_OK!"=="0" (
-    echo.
-    echo -------------------------------------------------------------------
-    echo  [AVISO] No se detecto el controlador Npcap instalado en Windows.
-    echo  Si Scapy muestra un error al iniciar la captura, instala Npcap:
-    echo  -> https://npcap.com/#download
-    echo  (Recuerda marcar 'Install Npcap in WinPcap API-compatible Mode')
-    echo -------------------------------------------------------------------
-    echo.
-) else (
-    echo [OK] Controlador de captura detectado.
-    echo.
-)
-
-:: 4. Descarga automatica del motor Python si no existe
-echo [4/4] Verificando archivos del sincronizador...
+:: 3. Descarga del script dofus_sniffer.py si no existe
+echo [3/3] Verificando archivos del sincronizador...
 if not exist "dofus_sniffer.py" (
     echo [DESCARGA] Obteniendo script dofus_sniffer.py desde el servidor...
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}' -OutFile 'dofus_sniffer.py'"
+    where curl >nul 2>&1
+    if !errorlevel! equ 0 (
+        curl -s -L -f "${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}" -o "dofus_sniffer.py"
+    ) else (
+        powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}', 'dofus_sniffer.py')"
+    )
     if not exist "dofus_sniffer.py" (
         echo [ERROR] No se pudo descargar dofus_sniffer.py.
         goto :exit_pause
     )
 )
-
-if not exist "items_db.json" (
-    echo [DESCARGA] Obteniendo diccionario de nombres (items_db.json)...
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${dictApiUrl}' -OutFile 'items_db.json'"
-)
-
+echo [OK] Archivos listos.
 echo.
+
 echo ===================================================================
 echo  INICIANDO MOTOR DE CAPTURA EN VIVO
 echo  Servidor : !TARGET_SERVER!
