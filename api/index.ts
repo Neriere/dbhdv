@@ -741,9 +741,9 @@ app.get("/api/market/latest-prices", async (req, res) => {
 });
 
 app.get("/api/market/sniffer-script", (req, res) => {
-  const host = req.get("host") || "localhost:3000";
-  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const baseUrl = `${protocol}://${host}`;
+  const proto = (req.headers["x-forwarded-proto"] as string) || (req.secure ? "https" : "http");
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+  const baseUrl = `${proto}://${host}`;
   const batchApiUrl = `${baseUrl}/api/market/batch-update`;
   const updateApiUrl = `${baseUrl}/api/market/update`;
   const dictUrl = `${baseUrl}/api/market/items-dictionary`;
@@ -1145,9 +1145,9 @@ if __name__ == "__main__":
 });
 
 app.get("/api/market/download-bat", (req, res) => {
-  const host = req.get("host") || "localhost:3000";
-  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const baseUrl = `${protocol}://${host}`;
+  const proto = (req.headers["x-forwarded-proto"] as string) || (req.secure ? "https" : "http");
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+  const baseUrl = `${proto}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
   const scriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
 

@@ -212,79 +212,87 @@ def get_item_name(item_id):
 
     return f"Objeto #{item_id}"
 
-def parse_varint(data, offset):
-    res = 0
-    shift = 0
-    while offset < len(data):
-        b = data[offset]
-        offset += 1
-        res |= (b & 0x7F) << shift
-        if not (b & 0x80):
+def decode_varint(buf, off):
+    val, shift, read = 0, 0, 0
+    while off + read < len(buf):
+        b = buf[off + read]
+        read += 1
+        val |= (b & 0x7F) << shift
+        if (b & 0x80) == 0:
             break
         shift += 7
-    return res, offset
+    return val, read
 
-def parse_kbt(payload):
-    idx = payload.find(b"kbt")
-    if idx == -1:
-        idx = payload.find(b"type.ankama.com/kbt")
-        if idx != -1:
-            idx += len(b"type.ankama.com/kbt")
-        else:
-            return None, None
-    else:
-        idx += 3
+def parse_kbt(buf):
+    """Extrae ItemID y precios del paquete Protobuf kbt de Dofus Unity con detección dinámica de offset"""
+    try:
+        idx = buf.find(b"kbt")
+        if idx == -1:
+            return None, []
 
-    item_id = None
-    prices = []
+        # Buscar el byte 0x12 (tag del payload Any) en una ventana de 20 bytes tras 'kbt'
+        off_12 = buf.find(b"\x12", idx, idx + 20)
+        if off_12 == -1:
+            return None, []
 
-    pos = idx
-    while pos < len(payload):
-        if pos + 2 > len(payload):
-            break
-        tag, pos = parse_varint(payload, pos)
-        wire_type = tag & 0x07
-        field_num = tag >> 3
+        off = off_12 + 1
+        if off >= len(buf):
+            return None, []
 
-        if wire_type == 0:
-            val, pos = parse_varint(payload, pos)
-            if field_num == 1:
-                item_id = val
-            elif field_num in (3, 4, 5, 6):
-                prices.append(val)
-        elif wire_type == 2:
-            length, pos = parse_varint(payload, pos)
-            sub_end = pos + length
-            if sub_end > len(payload):
-                break
-            
-            sub_pos = pos
-            while sub_pos < sub_end:
-                sub_tag, sub_pos = parse_varint(payload, sub_pos)
-                s_wire = sub_tag & 0x07
-                s_field = sub_tag >> 3
-                if s_wire == 0:
-                    s_val, sub_pos = parse_varint(payload, sub_pos)
-                    if s_field in (3, 4, 5, 6, 7, 8):
-                        prices.append(s_val)
-                elif s_wire == 2:
-                    s_len, sub_pos = parse_varint(payload, sub_pos)
-                    sub_pos += s_len
-                elif s_wire == 1:
-                    sub_pos += 8
-                elif s_wire == 5:
-                    sub_pos += 4
-                else:
-                    break
-            pos = sub_end
-        elif wire_type == 1:
-            pos += 8
-        elif wire_type == 5:
-            pos += 4
-        else:
-            break
+        payload_len, br = decode_varint(buf, off)
+        off += br
+        payload = buf[off:off + payload_len]
 
-    return item_id, prices
+        p_off = 0
+        item_id = 0
+        prices = []
+
+        while p_off < len(payload):
+            tag = payload[p_off]
+            p_off += 1
+            field = tag >> 3
+            wire = tag & 7
+
+            if wire == 0:
+                val, br = decode_varint(payload, p_off)
+                p_off += br
+                if field == 2:
+                    item_id = val
+            elif wire == 2:
+                sub_len, br = decode_varint(payload, p_off)
+                p_off += br
+                sub = payload[p_off:p_off + sub_len]
+                p_off += sub_len
+
+                s_off = 0
+                while s_off < len(sub):
+                    s_tag = sub[s_off]
+                    s_off += 1
+                    s_field = s_tag >> 3
+                    s_wire = s_tag & 7
+                    if s_wire == 0:
+                        s_val, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        if s_field in (2, 5):
+                            item_id = s_val
+                    elif s_wire == 2:
+                        in_len, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        inner = sub[s_off:s_off + in_len]
+                        s_off += in_len
+                        if s_field == 6:
+                            i_off = 0
+                            while i_off < len(inner):
+                                pv, pbr = decode_varint(inner, i_off)
+                                i_off += pbr
+                                if pv > 0:
+                                    prices.append(pv)
+                    else:
+                        break
+        return item_id, prices
+    except Exception:
+        pass
+    return None, []
 
 def async_worker():
     headers = {
@@ -486,35 +494,47 @@ pause
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadItemsDb = () => {
+  const handleDownloadItemsDb = async () => {
     try {
+      const resp = await fetch('/api/market/download-items-db');
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = '/api/market/download-items-db';
+      link.href = url;
       link.download = 'items_db.json';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.warn("Items DB download error:", e);
     }
   };
 
   const handleDownloadBat = () => {
-    const filename = `sincronizar_mercadillo_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.bat`;
+    try {
+      const filename = `sincronizar_mercadillo_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.bat`;
+      const crlfBat = batContent.replace(/\r?\n/g, '\r\n');
+      const blob = new Blob([crlfBat], { type: 'application/x-bat;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-    // Descarga directa desde el endpoint del servidor
-    const directUrl = `/api/market/download-bat?server=${encodeURIComponent(activeServerTarget)}`;
-    const link = document.createElement('a');
-    link.href = directUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setDownloadSuccessToast(
-      `Descarga iniciada para el servidor ${activeServerTarget}.`
-    );
-    setTimeout(() => setDownloadSuccessToast(null), 5000);
+      setDownloadSuccessToast(
+        `Descarga completada: ${filename} para el servidor ${activeServerTarget}.`
+      );
+      setTimeout(() => setDownloadSuccessToast(null), 5000);
+    } catch (e) {
+      console.error("Error al descargar BAT:", e);
+    }
   };
 
   return (
