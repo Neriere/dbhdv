@@ -1149,7 +1149,339 @@ app.get("/api/market/download-bat", (req, res) => {
   const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
   const baseUrl = `${proto}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
-  const scriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
+  const secretKey = (process.env.MARKET_SNIFFER_SECRET || "").trim();
+
+  // Reutilizar o extraer el script
+  const batchApiUrl = `${baseUrl}/api/market/batch-update`;
+  const updateApiUrl = `${baseUrl}/api/market/update`;
+  const dictUrl = `${baseUrl}/api/market/items-dictionary`;
+
+  const scriptContent = `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+===============================================================================
+  DOFUS UNITY -> MERCADILLO ULTRA-FAST LIVE SNIFFER (HIGH PERFORMANCE)
+===============================================================================
+  - Búfer Asíncrono Multihilo: captura de paquetes sin latencia ni cuellos de botella.
+  - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms (sin llamadas a DofusDB).
+  - Micro-Batching con HTTP Keep-Alive hacia tu servidor Turso/Vercel.
+  
+  Dependencias requeridas:
+    pip install scapy requests
+
+  Ejecutar como Administrador:
+    python dofus_sniffer.py
+===============================================================================
+"""
+
+import sys
+import os
+import time
+import json
+import argparse
+import ctypes
+import subprocess
+import threading
+import queue
+import traceback
+
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+def check_and_elevate_admin():
+    if sys.platform == "win32" and not is_admin():
+        print("=" * 70)
+        print(" [AVISO] Solicitando permisos de Administrador para captura de red...")
+        print("=" * 70)
+        try:
+            script_path = os.path.abspath(sys.argv[0])
+            params = " ".join([f'"{arg}"' for arg in sys.argv[1:]])
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, f'"{script_path}" {params}', None, 1
+            )
+            if ret > 32:
+                sys.exit(0)
+            else:
+                print("[ADVERTENCIA] No se pudo elevar automaticamente a Administrador.")
+                print("Por favor, abre la consola o CMD como 'Ejecutar como Administrador'.")
+        except Exception as e:
+            print(f"[Error Elevacion Admin]: {e}")
+
+check_and_elevate_admin()
+
+def ensure_dependencies():
+    packages = []
+    try:
+        import requests
+    except ImportError:
+        packages.append("requests")
+    try:
+        import scapy
+    except ImportError:
+        packages.append("scapy")
+
+    if packages:
+        print("=" * 70)
+        print(f" [INSTALADOR] Instalando librerias necesarias: {', '.join(packages)}")
+        print("=" * 70)
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
+            print("[OK] Librerias instaladas con exito.\\n")
+        except Exception as e:
+            print(f"[ERROR PIP] No se pudieron instalar dependencias automaticamente: {e}")
+            print(f"Ejecuta en tu consola: pip install {' '.join(packages)}")
+            input("\\nPresiona Enter para salir...")
+            sys.exit(1)
+
+ensure_dependencies()
+
+import requests
+try:
+    from scapy.all import sniff, TCP, Raw
+except Exception as e:
+    print("\\n" + "=" * 70)
+    print(" [CONTROLADOR DE RED NPCAP REQUERIDO EN WINDOWS]")
+    print(f" Detalle: {e}")
+    print("=" * 70)
+    print(" Para capturar paquetes de red en Windows:")
+    print(" 1. Descarga el instalador gratuito de Npcap:")
+    print("    https://npcap.com/#download")
+    print(" 2. Durante la instalacion MARCA la casilla:")
+    print("    'Install Npcap in WinPcap API-compatible Mode'")
+    print("=" * 70)
+    input("\\nPresiona Enter para salir...")
+    sys.exit(1)
+
+parser = argparse.ArgumentParser(description="Dofus Unity Sniffer - Sync en vivo a Base de Datos")
+parser.add_argument("--server", type=str, default="${server}", help="Nombre del servidor (ej: Draconiros, Tal Kasha)")
+args = parser.parse_args()
+
+SERVER_NAME = args.server
+BATCH_ENDPOINT = "${batchApiUrl}"
+UPDATE_ENDPOINT = "${updateApiUrl}"
+DICT_ENDPOINT = "${dictUrl}"
+SECRET_KEY = "${secretKey}"
+
+DOFUS_PORTS = "tcp port 5555 or tcp port 443"
+LOCAL_DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "items_db.json")
+
+ITEMS_DB = {}
+
+def load_or_download_items_db():
+    global ITEMS_DB
+    need_download = False
+    if os.path.exists(LOCAL_DB_FILE):
+        try:
+            with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
+                ITEMS_DB = json.load(f)
+            if "1519" not in ITEMS_DB or "1522" not in ITEMS_DB or "15379" not in ITEMS_DB or "32194" not in ITEMS_DB:
+                need_download = True
+            else:
+                print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
+                return
+        except Exception as e:
+            need_download = True
+    else:
+        need_download = True
+
+    if need_download:
+        print("[DB Local] Descargando diccionario maestro de nombres desde tu app...")
+        try:
+            r = requests.get(DICT_ENDPOINT, timeout=10)
+            if r.status_code == 200:
+                ITEMS_DB = r.json()
+                with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+                    json.dump(ITEMS_DB, f, ensure_ascii=False)
+                print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
+        except Exception as e:
+            print(f"[Aviso] Error descargando diccionario: {e}")
+
+def get_item_name_instant(item_id):
+    s_id = str(item_id)
+    if s_id in ITEMS_DB:
+        return ITEMS_DB[s_id]
+    if item_id in ITEMS_DB:
+        return ITEMS_DB[item_id]
+    return f"Objeto #{item_id}"
+
+def decode_varint(buf, off):
+    val, shift, read = 0, 0, 0
+    while off + read < len(buf):
+        b = buf[off + read]
+        read += 1
+        val |= (b & 0x7F) << shift
+        if (b & 0x80) == 0:
+            break
+        shift += 7
+    return val, read
+
+def parse_kbt(buf):
+    try:
+        idx = buf.find(b"kbt")
+        if idx == -1:
+            return None, []
+        off_12 = buf.find(b"\\x12", idx, idx + 20)
+        if off_12 == -1:
+            return None, []
+        off = off_12 + 1
+        if off >= len(buf):
+            return None, []
+        payload_len, br = decode_varint(buf, off)
+        off += br
+        payload = buf[off:off + payload_len]
+
+        p_off = 0
+        item_id = 0
+        prices = []
+
+        while p_off < len(payload):
+            tag = payload[p_off]
+            p_off += 1
+            field = tag >> 3
+            wire = tag & 7
+
+            if wire == 0:
+                val, br = decode_varint(payload, p_off)
+                p_off += br
+                if field == 2:
+                    item_id = val
+            elif wire == 2:
+                sub_len, br = decode_varint(payload, p_off)
+                p_off += br
+                sub = payload[p_off:p_off + sub_len]
+                p_off += sub_len
+
+                s_off = 0
+                while s_off < len(sub):
+                    s_tag = sub[s_off]
+                    s_off += 1
+                    s_field = s_tag >> 3
+                    s_wire = s_tag & 7
+                    if s_wire == 0:
+                        s_val, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        if s_field in (2, 5):
+                            item_id = s_val
+                    elif s_wire == 2:
+                        in_len, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        inner = sub[s_off:s_off + in_len]
+                        s_off += in_len
+                        if s_field == 6:
+                            i_off = 0
+                            while i_off < len(inner):
+                                pv, pbr = decode_varint(inner, i_off)
+                                i_off += pbr
+                                if pv > 0:
+                                    prices.append(pv)
+                    else:
+                        break
+        return item_id, prices
+    except Exception:
+        pass
+    return None, []
+
+price_queue = queue.Queue()
+session = requests.Session()
+
+def async_worker():
+    headers = {
+        "Content-Type": "application/json",
+        "X-Market-Sniffer-Secret": SECRET_KEY
+    }
+    while True:
+        batch = []
+        try:
+            first_item = price_queue.get(timeout=0.5)
+            batch.append(first_item)
+            price_queue.task_done()
+            while len(batch) < 50:
+                try:
+                    next_item = price_queue.get_nowait()
+                    batch.append(next_item)
+                    price_queue.task_done()
+                except queue.Empty:
+                    break
+        except queue.Empty:
+            continue
+
+        if not batch:
+            continue
+
+        try:
+            payload = {"server": SERVER_NAME, "items": batch}
+            resp = session.post(BATCH_ENDPOINT, json=payload, headers=headers, timeout=5)
+            if resp.status_code != 200:
+                for item in batch:
+                    try:
+                        session.post(UPDATE_ENDPOINT, json={"server": SERVER_NAME, **item}, headers=headers, timeout=3)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+def process_packet(packet):
+    if not (packet.haslayer(TCP) and packet.haslayer(Raw)):
+        return
+    payload = bytes(packet[Raw].load)
+    item_id, raw_prices = parse_kbt(payload)
+    if not item_id or not raw_prices:
+        return
+    valid_prices = [p for p in raw_prices if isinstance(p, int) and p > 0]
+    if not valid_prices:
+        return
+    lowest_unit_price = min(valid_prices)
+    name = get_item_name_instant(item_id)
+    hora = time.strftime("%H:%M:%S")
+    print(f"[{hora}]  [RECURSO] {name} (#{item_id}) -> {lowest_unit_price:,.0f} k (Guardado)")
+
+    price_queue.put({
+        "itemId": int(item_id),
+        "itemName": name,
+        "price": int(lowest_unit_price),
+        "allPrices": valid_prices,
+        "source": "sniffer",
+        "timestamp": int(time.time() * 1000)
+    })
+
+def main():
+    print("=" * 70)
+    print("    DOFUS UNITY - SINCRONIZADOR EN VIVO (ALTO RENDIMIENTO)")
+    print(f"  Servidor Destino : {SERVER_NAME}")
+    print(f"  Base de Datos    : Turso / LibSQL Cloud")
+    print("=" * 70)
+
+    load_or_download_items_db()
+
+    worker_thread = threading.Thread(target=async_worker, daemon=True)
+    worker_thread.start()
+
+    print("\\n Escuchando paquetes en tiempo real...")
+    print("Abre el mercadillo en Dofus Unity e inspecciona los objetos.")
+    print("Presiona Ctrl+C para salir.\\n")
+
+    try:
+        sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
+    except KeyboardInterrupt:
+        print("\\n\\nSincronizador detenido por el usuario.")
+    except Exception as e:
+        print(f"\\n[Error Sniffer]: {e}")
+        traceback.print_exc()
+        input("\\nPresiona Enter para cerrar...")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\\n[ERROR CRITICO NO CONTROLADO]: {e}")
+        traceback.print_exc()
+        input("\\nPresiona Enter para cerrar...")
+`;
+
+  const scriptBase64 = Buffer.from(scriptContent, "utf-8").toString("base64");
 
   const batContent = `@echo off
 title Dofus Unity - Sincronizador de Mercadillo (${server})
@@ -1161,14 +1493,9 @@ echo       Servidor: ${server}
 echo ===================================================================
 echo.
 
-:: 1. Descargar / Actualizar siempre la ultima version de dofus_sniffer.py
-echo [DESCARGA] Sincronizando dofus_sniffer.py desde el servidor...
-where curl >nul 2>&1
-if %errorlevel% equ 0 (
-    curl -s -L -f "${scriptUrl}" -o "dofus_sniffer.py"
-) else (
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${scriptUrl}', 'dofus_sniffer.py')"
-)
+:: 1. Escribir o actualizar dofus_sniffer.py directamente desde el codigo base
+echo [INICIALIZANDO] Preparando dofus_sniffer.py...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$b = [System.Convert]::FromBase64String('${scriptBase64}'); [System.IO.File]::WriteAllBytes('dofus_sniffer.py', $b)"
 
 :: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
 where py >nul 2>&1

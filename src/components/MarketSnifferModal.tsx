@@ -408,6 +408,10 @@ if __name__ == "__main__":
         input("\\nPresiona Enter para cerrar...")
 `;
 
+  const pythonScriptBase64 = typeof window !== 'undefined' && typeof btoa !== 'undefined'
+    ? btoa(encodeURIComponent(pythonScript).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+    : '';
+
   const batContent = `@echo off
 title Dofus Unity - Sincronizador de Mercadillo (${activeServerTarget})
 cd /d "%~dp0"
@@ -418,14 +422,9 @@ echo       Servidor: ${activeServerTarget}
 echo ===================================================================
 echo.
 
-:: 1. Descargar / Actualizar siempre la ultima version de dofus_sniffer.py
-echo [DESCARGA] Sincronizando dofus_sniffer.py desde el servidor...
-where curl >nul 2>&1
-if %errorlevel% equ 0 (
-    curl -s -L -f "${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}" -o "dofus_sniffer.py"
-) else (
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}', 'dofus_sniffer.py')"
-)
+:: 1. Escribir o actualizar dofus_sniffer.py directamente desde el codigo base
+echo [INICIALIZANDO] Preparando dofus_sniffer.py...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$b = [System.Convert]::FromBase64String('${pythonScriptBase64}'); [System.IO.File]::WriteAllBytes('dofus_sniffer.py', $b)"
 
 :: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
 where py >nul 2>&1
