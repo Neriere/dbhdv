@@ -1186,19 +1186,6 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
             </div>
           </div>
 
-          {/* Dofus Excluded Note Banner */}
-          {excludeDofus && computedData.totals.excludedDofusCount > 0 && (
-            <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-xl flex items-center gap-2.5 text-amber-300 text-xs">
-              <Info className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                <strong>Nota:</strong> Se detectaron{' '}
-                <strong>{computedData.totals.excludedDofusCount} Dofus</strong> en el set. Por defecto sus
-                precios <strong>no se han sumado al total</strong> (puedes activar su inclusión con el botón
-                "Excluir Dofus").
-              </span>
-            </div>
-          )}
-
           {/* Tab Navigation & Status Filters */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">

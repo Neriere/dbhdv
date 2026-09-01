@@ -497,10 +497,113 @@ async function executeBootstrapFetch(): Promise<BootstrapResponse> {
   return bootstrap;
 }
 
+let livePriceSyncInterval: any = null;
+let lastPriceSyncTimestamp = 0;
+let isPollingPrices = false;
+let visibilityListenerRegistered = false;
+
+export function startLivePriceAutoSync(intervalMs: number = 8000): void {
+  if (typeof window === "undefined") return;
+
+  const poll = async () => {
+    if (isPollingPrices) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
+    isPollingPrices = true;
+    try {
+      const pid = activePriceProfileIdMemoryCache || 1;
+      const since = lastPriceSyncTimestamp || (Date.now() - 120000);
+      const res = await requestJson<{
+        success: boolean;
+        profile_id: number;
+        prices: MarketPriceMap;
+        priceUpdatedAt: PriceUpdatedAtMap;
+        serverTime: number;
+        totalUpdated: number;
+      }>(`/api/market/latest-prices?profileId=${pid}&since=${since}`);
+
+      if (res && res.success && res.totalUpdated > 0 && res.profile_id === activePriceProfileIdMemoryCache) {
+        // Merge into in-memory caches
+        pricesMemoryCache = {
+          ...pricesMemoryCache,
+          ...res.prices,
+        };
+        priceUpdatedAtMemoryCache = {
+          ...priceUpdatedAtMemoryCache,
+          ...res.priceUpdatedAt,
+        };
+
+        lastPriceSyncTimestamp = res.serverTime || Date.now();
+
+        // 1. Dispatch specific price updated event with details
+        window.dispatchEvent(
+          new CustomEvent("dofus_prices_updated", {
+            detail: {
+              profileId: res.profile_id,
+              updatedPrices: res.prices,
+              count: res.totalUpdated,
+              timestamp: lastPriceSyncTimestamp,
+            },
+          })
+        );
+
+        // 2. Dispatch database updated event so all calculators re-render with fresh prices
+        emitDatabaseUpdated();
+      } else if (res && res.serverTime) {
+        lastPriceSyncTimestamp = Math.max(lastPriceSyncTimestamp, res.serverTime - 1000);
+      }
+    } catch {
+      // Ignored for quiet background polling
+    } finally {
+      isPollingPrices = false;
+    }
+  };
+
+  // Register Visibility and Focus listeners once
+  if (!visibilityListenerRegistered && typeof document !== "undefined" && typeof window !== "undefined") {
+    visibilityListenerRegistered = true;
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        // Tab became visible again: execute immediate catch-up sync
+        void poll();
+      }
+    });
+
+    window.addEventListener("focus", () => {
+      void poll();
+    });
+
+    window.addEventListener("online", () => {
+      void poll();
+    });
+  }
+
+  if (!livePriceSyncInterval) {
+    // Initial poll after 2s, then recurring interval
+    setTimeout(poll, 2000);
+    livePriceSyncInterval = setInterval(poll, intervalMs);
+  }
+}
+
+export function stopLivePriceAutoSync(): void {
+  if (livePriceSyncInterval) {
+    clearInterval(livePriceSyncInterval);
+    livePriceSyncInterval = null;
+  }
+}
+
+export function resetLivePriceSyncTimestamp(): void {
+  lastPriceSyncTimestamp = 0;
+}
+
 export async function initializeDatabase(): Promise<{
   items: DofusItem[];
   recipes: Record<number, DofusRecipe>;
 }> {
+  startLivePriceAutoSync();
+
   if (isDbInitialized && itemsMemoryCache.length > 50) {
     return {
       items: itemsMemoryCache,
@@ -1465,6 +1568,8 @@ export async function setActiveLocalPriceProfile(
     coefficients: response.coefficients,
     coefficientUpdatedAt: response.coefficientUpdatedAt,
   });
+
+  resetLivePriceSyncTimestamp();
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(

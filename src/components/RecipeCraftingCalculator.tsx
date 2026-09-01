@@ -43,6 +43,7 @@ import {
   CornerDownRight,
   Hammer,
   CheckCircle2,
+  Clock,
 } from "lucide-react";
 import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
 import {
@@ -86,6 +87,7 @@ import {
   resolveMissingItemNamesInBatch,
   addToShoppingList,
   addOrUpdateBankItem,
+  formatRelativeTime,
 } from "../services/dofusDbService";
 import { matchesSearchQuery } from "../utils/searchUtils";
 
@@ -650,8 +652,8 @@ export const RecipeCraftingCalculator: React.FC<{
             </div>
 
             {/* Sale Price Interactive Editor Box */}
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 text-right w-full md:w-auto shrink-0 shadow-inner">
-              <label className="block text-[11px] font-bold text-slate-400 mb-1 flex items-center justify-end gap-1">
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 text-right w-full md:w-auto shrink-0 shadow-inner space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-400 flex items-center justify-end gap-1">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
                 Precio Venta HDV
               </label>
@@ -700,6 +702,14 @@ export const RecipeCraftingCalculator: React.FC<{
                     <Check className="w-3.5 h-3.5" />
                   </span>
                 )}
+              </div>
+              <div className="flex items-center justify-end gap-1 text-[10px] text-slate-500 font-medium pt-0.5">
+                <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                <span>
+                  {priceUpdatedAt[activePresetItem.id]
+                    ? formatRelativeTime(priceUpdatedAt[activePresetItem.id])
+                    : "Sin fecha de precio"}
+                </span>
               </div>
             </div>
           </div>
@@ -1291,6 +1301,12 @@ export const RecipeCraftingCalculator: React.FC<{
                         +{metrics.roi.toFixed(0)}% ROI
                       </span>
                     )}
+                    {priceUpdatedAt[item.id] ? (
+                      <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                        {formatRelativeTime(priceUpdatedAt[item.id])}
+                      </span>
+                    ) : null}
                   </span>
                   <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-400 transition-colors" />
                 </div>
@@ -1586,6 +1602,14 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
             placeholder="0"
             className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-right text-amber-300 font-mono font-black text-base focus:outline-none focus:border-amber-400 transition-colors"
           />
+          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 font-medium">
+            <span className="flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+              {priceUpdatedAt[node.itemId]
+                ? formatRelativeTime(priceUpdatedAt[node.itemId])
+                : "Sin fecha de precio"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1802,6 +1826,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
                       level={1}
                       parentName={itemName}
                       marketPrices={marketPrices}
+                      priceUpdatedAt={priceUpdatedAt}
                       onPriceChange={onPriceChange}
                       onOpenHistory={onOpenHistory}
                       forceExpandTrigger={forceExpandTrigger}
@@ -1826,6 +1851,7 @@ interface SubIngredientRowProps {
   level?: number;
   parentName?: string;
   marketPrices: MarketPriceMap;
+  priceUpdatedAt?: Record<number, number>;
   onPriceChange: (itemId: number, newPrice: number) => void;
   onOpenHistory?: (item: DofusItem) => void;
   forceExpandTrigger?: number;
@@ -1837,6 +1863,7 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
   level = 1,
   parentName,
   marketPrices,
+  priceUpdatedAt = {},
   onPriceChange,
   onOpenHistory,
   forceExpandTrigger = 0,
@@ -1955,44 +1982,54 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
       </div>
 
       {/* Price Input Row */}
-      <div className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex items-center justify-between gap-2 text-xs font-mono">
-        <div className="flex items-center gap-1">
-          <span className="text-slate-400 text-[11px] font-bold">Precio U.:</span>
-          {onOpenHistory && (
-            <button
-              type="button"
-              onClick={() => onOpenHistory(sub.item)}
-              className="p-1 rounded bg-slate-900 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors cursor-pointer"
-              title="Ver historial de precios"
-            >
-              <History className="w-3 h-3" />
-            </button>
-          )}
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-2 space-y-1 text-xs font-mono">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400 text-[11px] font-bold">Precio U.:</span>
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={() => onOpenHistory(sub.item)}
+                className="p-1 rounded bg-slate-900 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 transition-colors cursor-pointer"
+                title="Ver historial de precios"
+              >
+                <History className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={displayPrice}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDraftPrice(val);
+                const numericVal = val === "" ? 0 : Number(val);
+                onPriceChange(sub.itemId, numericVal);
+              }}
+              onBlur={() => {
+                const nextVal =
+                  draftPrice === null
+                    ? currentPrice
+                    : draftPrice === ""
+                      ? 0
+                      : Number(draftPrice);
+                onPriceChange(sub.itemId, nextVal);
+                setDraftPrice(null);
+              }}
+              placeholder="0"
+              className="w-24 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-lg px-2 py-1 text-right font-black text-amber-400 text-xs focus:outline-none"
+            />
+            <span className="text-slate-400 font-bold">K</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            value={displayPrice}
-            onChange={(e) => {
-              const val = e.target.value;
-              setDraftPrice(val);
-              const numericVal = val === "" ? 0 : Number(val);
-              onPriceChange(sub.itemId, numericVal);
-            }}
-            onBlur={() => {
-              const nextVal =
-                draftPrice === null
-                  ? currentPrice
-                  : draftPrice === ""
-                    ? 0
-                    : Number(draftPrice);
-              onPriceChange(sub.itemId, nextVal);
-              setDraftPrice(null);
-            }}
-            placeholder="0"
-            className="w-24 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-lg px-2 py-1 text-right font-black text-amber-400 text-xs focus:outline-none"
-          />
-          <span className="text-slate-400 font-bold">K</span>
+        <div className="flex items-center justify-between text-[10px] text-slate-500 font-sans font-medium px-0.5">
+          <span className="flex items-center gap-1">
+            <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+            {priceUpdatedAt[sub.itemId]
+              ? formatRelativeTime(priceUpdatedAt[sub.itemId])
+              : "Sin fecha de precio"}
+          </span>
         </div>
       </div>
 
@@ -2077,6 +2114,7 @@ const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
                     level={level + 1}
                     parentName={subName}
                     marketPrices={marketPrices}
+                    priceUpdatedAt={priceUpdatedAt}
                     onPriceChange={onPriceChange}
                     onOpenHistory={onOpenHistory}
                     forceExpandTrigger={forceExpandTrigger}

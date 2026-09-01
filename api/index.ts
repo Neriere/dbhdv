@@ -44,6 +44,9 @@ import {
   bulkSaveProfileCoefficients,
   processAndIngestMarketPrice,
   processAndIngestMarketPricesBatch,
+  getItemsDictionary,
+  getLatestMarketPricesDelta,
+  getProfileIdByServerNameOrSlug,
 } from "../src/server/localDataStore.js";
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
@@ -686,74 +689,161 @@ app.post("/api/market/batch-update", async (req, res) => {
   }
 });
 
+app.get("/api/market/items-dictionary", async (req, res) => {
+  try {
+    const dict = await getItemsDictionary();
+    res.setHeader("Cache-Control", "public, max-age=600, s-maxage=1800");
+    res.json(dict);
+  } catch (error: any) {
+    console.error("[Items Dictionary API Error]:", error);
+    res.status(500).json({ error: "Error al obtener diccionario de objetos" });
+  }
+});
+
+app.get("/api/market/download-items-db", async (req, res) => {
+  try {
+    const dict = await getItemsDictionary();
+    res.setHeader("Content-Disposition", "attachment; filename=items_db.json");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=600, s-maxage=1800");
+    res.send(JSON.stringify(dict, null, 2));
+  } catch (error: any) {
+    console.error("[Download Items DB Error]:", error);
+    res.status(500).json({ error: "Error al descargar base de items" });
+  }
+});
+
+app.get("/api/market/latest-prices", async (req, res) => {
+  try {
+    const serverParam = (req.query.server as string) || "";
+    const profileIdParam = req.query.profileId ? Number(req.query.profileId) : 0;
+    const sinceParam = req.query.since ? Number(req.query.since) : 0;
+
+    let targetProfileId = profileIdParam;
+    if (!targetProfileId) {
+      const { profileId } = await getProfileIdByServerNameOrSlug(serverParam);
+      targetProfileId = profileId;
+    }
+
+    const result = await getLatestMarketPricesDelta(targetProfileId, sinceParam);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.json({
+      success: true,
+      profile_id: targetProfileId,
+      ...result,
+    });
+  } catch (error: any) {
+    console.error("[Market Latest Prices API Error]:", error);
+    res.status(500).json({
+      error: error.message || "Error al obtener precios recientes",
+    });
+  }
+});
+
 app.get("/api/market/sniffer-script", (req, res) => {
   const host = req.get("host") || "localhost:3000";
   const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const apiUrl = `${protocol}://${host}/api/market/update`;
+  const baseUrl = `${protocol}://${host}`;
+  const batchApiUrl = `${baseUrl}/api/market/batch-update`;
+  const updateApiUrl = `${baseUrl}/api/market/update`;
+  const dictUrl = `${baseUrl}/api/market/items-dictionary`;
   const server = (req.query.server as string) || "Draconiros";
   const secretKey = (process.env.MARKET_SNIFFER_SECRET || "").trim();
 
   const scriptContent = `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 ===============================================================================
-  DOFUS UNITY -> MERCADILLO LIVE SYNC (AUTOMATIC PACKET SNIFFER)
+  DOFUS UNITY -> MERCADILLO ULTRA-FAST LIVE SNIFFER (HIGH PERFORMANCE)
 ===============================================================================
-  Escucha en segundo plano los paquetes del mercadillo (HDV) en Dofus Unity,
-  calcula las medias unitarias (lotes para recursos, filtro de sobremagueo
-  para equipables) y envía las actualizaciones directamente a tu servidor Turso/Vercel.
-
-  Instalación de dependencias requeridas en tu PC:
+  - Búfer Asíncrono Multihilo: captura de paquetes sin latencia ni cuellos de botella.
+  - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms (sin llamadas a DofusDB).
+  - Micro-Batching con HTTP Keep-Alive hacia tu servidor Turso/Vercel.
+  
+  Dependencias requeridas:
     pip install scapy requests
 
-  Ejecución (en Windows abrir terminal como Administrador):
-    python sniffer_standalone.py
+  Ejecutar como Administrador:
+    python dofus_sniffer.py
 ===============================================================================
 """
 
+import os
 import sys
-import requests
+import time
+import json
+import queue
+import argparse
+import threading
 from datetime import datetime
+
+try:
+    import requests
+except ImportError:
+    print("[ERROR] Falta la librería 'requests'. Ejecuta: pip install requests")
+    input("Presiona Enter para salir...")
+    sys.exit(1)
 
 try:
     from scapy.all import sniff, TCP, Raw
 except ImportError:
-    print("[ERROR] Falta la librería 'scapy'. Instálala ejecutando: pip install scapy")
+    print("[ERROR] Falta la librería 'scapy'.")
+    print("1. Instálala ejecutando: pip install scapy")
+    print("2. En Windows, asegúrate de tener instalado Npcap: https://npcap.com/#download")
+    input("Presiona Enter para salir...")
     sys.exit(1)
 
+# Argumentos de línea de comandos para permitir cambiar el servidor dinámicamente
+parser = argparse.ArgumentParser(description="Dofus Unity Market Sniffer")
+parser.add_argument("--server", type=str, default="${server}", help="Nombre del servidor Dofus")
+cli_args, _ = parser.parse_known_args()
+
 # ==================== CONFIGURACIÓN ====================
-# URL de tu API en producción (Vercel) o local
-VERCEL_API_URL = "${apiUrl}"
-
-# Clave secreta (debe coincidir con MARKET_SNIFFER_SECRET en tus variables de entorno)
+API_BATCH_URL = "${batchApiUrl}"
+API_UPDATE_URL = "${updateApiUrl}"
+API_DICT_URL = "${dictUrl}"
 API_SECRET_KEY = "${secretKey}"
-
-# Servidor de Dofus al que se asignarán los precios
-SERVER_NAME = "${server}"
-
-# Puerto estándar de conexión del juego Dofus Unity
+SERVER_NAME = (cli_args.server or "${server}").strip()
 DOFUS_PORTS = "tcp port 5555"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
+LOCAL_DB_FILE = os.path.join(SCRIPT_DIR, "items_db.json")
 # =======================================================
 
-NAME_CACHE = {}
+ITEMS_DB = {}
+packet_queue = queue.Queue(maxsize=2000)
+http_session = requests.Session()
+
+def load_or_download_items_db():
+    global ITEMS_DB
+    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 100:
+        try:
+            with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
+                ITEMS_DB = json.load(f)
+            print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
+            return
+        except Exception as e:
+            print(f"[Aviso] Error leyendo items_db.json local: {e}. Re-descargando...")
+
+    print(f"[DB Local] Descargando base de nombres desde el servidor ({API_DICT_URL})...")
+    try:
+        r = http_session.get(API_DICT_URL, timeout=10.0)
+        if r.status_code == 200:
+            ITEMS_DB = r.json()
+            with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(ITEMS_DB, f, ensure_ascii=False)
+            print(f"[DB Local] ✅ Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
+        else:
+            print(f"[DB Local] Error HTTP {r.status_code} al descargar base de items.")
+    except Exception as e:
+        print(f"[DB Local] Advertencia de descarga: {e}. Se usarán identificadores numéricos.")
 
 def get_item_name(item_id):
-    if item_id in NAME_CACHE:
-        return NAME_CACHE[item_id]
-    try:
-        r = requests.get(f"https://api.dofusdb.fr/items/{item_id}?$select[]=name", timeout=2.0)
-        if r.status_code == 200:
-            data = r.json()
-            name = (
-                data.get("name", {}).get("es")
-                or data.get("name", {}).get("fr")
-                or data.get("name", {}).get("en")
-                or f"Item #{item_id}"
-            )
-            NAME_CACHE[item_id] = name
-            return name
-    except Exception:
-        pass
-    return f"Item #{item_id}"
+    s_id = str(item_id)
+    if s_id in ITEMS_DB:
+        return ITEMS_DB[s_id]
+    if item_id in ITEMS_DB:
+        return ITEMS_DB[item_id]
+    return f"Objeto #{item_id}"
 
 def decode_varint(buf, off):
     val, shift, read = 0, 0, 0
@@ -834,6 +924,62 @@ def parse_kbt(buf):
         pass
     return None, []
 
+def async_worker():
+    """Hilo en segundo plano: envía los precios por lotes sin frenar el sniffer"""
+    headers = {"Content-Type": "application/json"}
+    if API_SECRET_KEY:
+        headers["x-api-key"] = API_SECRET_KEY
+
+    while True:
+        items_batch = []
+        try:
+            # Esperar el primer item
+            first_item = packet_queue.get(timeout=1.0)
+            items_batch.append(first_item)
+            packet_queue.task_done()
+
+            # Micro-batching: vaciar hasta 30 items adicionales acumulados en 80ms
+            start_collect = time.time()
+            while len(items_batch) < 35 and (time.time() - start_collect) < 0.08:
+                try:
+                    next_item = packet_queue.get_nowait()
+                    items_batch.append(next_item)
+                    packet_queue.task_done()
+                except queue.Empty:
+                    break
+        except queue.Empty:
+            continue
+        except Exception:
+            continue
+
+        if not items_batch:
+            continue
+
+        now_str = datetime.now().strftime("%H:%M:%S")
+
+        try:
+            if len(items_batch) == 1:
+                # Envío individual
+                item = items_batch[0]
+                res = http_session.post(API_UPDATE_URL, json=item, headers=headers, timeout=4.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    c_price = data.get("calculated_price", 0)
+                    print(f"[{now_str}]  [{item['type'].upper()}] {item['item_name']} (#{item['item_id']}) -> {c_price:,} k (Guardado)")
+                else:
+                    print(f"[{now_str}]  Error {res.status_code}: {res.text}")
+            else:
+                # Envío en Lote (Batch)
+                res = http_session.post(API_BATCH_URL, json={"items": items_batch}, headers=headers, timeout=6.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    tot = data.get("total_processed", len(items_batch))
+                    print(f"[{now_str}] ⚡ [LOTE PROCESADO] {tot} objetos sincronizados en paralelo con Turso")
+                else:
+                    print(f"[{now_str}]  Error de lote {res.status_code}: {res.text}")
+        except Exception as e:
+            print(f"[{now_str}] ⚠️ Error de conexión al sincronizar: {e}")
+
 def process_packet(pkt):
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
         return
@@ -863,228 +1009,154 @@ def process_packet(pkt):
                     "1000": prices[3] if len(prices) > 3 else 0,
                 }
 
-            headers = {"Content-Type": "application/json"}
-            if API_SECRET_KEY:
-                headers["x-api-key"] = API_SECRET_KEY
-
             try:
-                res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=3.0)
-                now_str = datetime.now().strftime("%H:%M:%S")
-                if res.status_code == 200:
-                    data = res.json()
-                    calc_price = data.get("calculated_price", 0)
-                    item_type = data.get("type", body["type"])
-                    print(f"[{now_str}]  [{item_type.upper()}] {name} (#{item_id}) -> Guardado en Turso: {calc_price:,} k (Servidor: {SERVER_NAME})")
-                else:
-                    print(f"[{now_str}] [Error {res.status_code}] {res.text}")
-            except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [Error de conexión]: {e}")
+                packet_queue.put_nowait(body)
+            except queue.Full:
+                pass
 
 if __name__ == "__main__":
-    print("=" * 65)
-    print("  DOFUS UNITY -> MERCADILLO AUTO-SYNC")
-    print(f"  Destino API : {VERCEL_API_URL}")
-    print(f"  Servidor    : {SERVER_NAME}")
-    print("=" * 65)
-    print("🟢 Escuchando mercadillo en segundo plano...")
-    print("💡 Haz clic en los objetos del mercadillo en Dofus para actualizar precios.")
-    sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
+    print("=" * 70)
+    print("      DOFUS UNITY -> MERCADILLO LIVE SYNC (ULTRA-RÁPIDO)")
+    print(f"  Servidor Destino : {SERVER_NAME}")
+    print(f"  Base de Datos    : Turso / LibSQL Cloud")
+    print("=" * 70)
+
+    # 1. Cargar o descargar diccionario local en RAM
+    load_or_download_items_db()
+
+    # 2. Iniciar Worker en segundo plano
+    worker_thread = threading.Thread(target=async_worker, daemon=True)
+    worker_thread.start()
+
+    print("\n🟢 Escuchando paquetes en tiempo real...")
+    print("Abre el mercadillo en Dofus Unity e inspecciona los objetos.")
+    print("Presiona Ctrl+C para salir.\n")
+
+    try:
+        sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
+    except KeyboardInterrupt:
+        print("\n\nSincronizador detenido por el usuario.")
+    except Exception as e:
+        print(f"\n[Error Sniffer]: {e}")
+        input("Presiona Enter para cerrar...")
 `;
 
-  res.setHeader("Content-Disposition", `attachment; filename=sniffer_standalone.py`);
-  res.setHeader("Content-Type", "text/x-python");
+  res.setHeader("Content-Disposition", `attachment; filename=dofus_sniffer.py`);
+  res.setHeader("Content-Type", "text/x-python; charset=utf-8");
   res.send(scriptContent);
 });
 
 app.get("/api/market/download-bat", (req, res) => {
   const host = req.get("host") || "localhost:3000";
   const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const apiUrl = `${protocol}://${host}/api/market/update`;
+  const baseUrl = `${protocol}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
-  const secretKey = (process.env.MARKET_SNIFFER_SECRET || "").trim();
+  const scriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
+  const dictUrl = `${baseUrl}/api/market/items-dictionary`;
 
   const batContent = `@echo off
+chcp 65001 >nul
 setlocal EnableDelayedExpansion
 title Dofus Unity - Sincronizador de Mercadillo (${server})
 
-:: Auto-elevacion a Administrador si no tiene permisos
+:: Comprobacion de permisos de Administrador
 net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo Solicitando permisos de Administrador para capturar paquetes...
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+if %errorlevel% neq 0 (
+    echo ===================================================================
+    echo  [AVISO] Se requieren permisos de Administrador para capturar red.
+    echo  Abriendo ventana con privilegios elevados...
+    echo ===================================================================
+    powershell -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\" \"%~1\" elevated\"' -Verb RunAs"
     exit /b
 )
 
 cd /d "%~dp0"
 cls
-echo =====================================================================
-echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (${server.toUpperCase()})
-echo =====================================================================
+
+:: Configuracion del servidor objetivo
+set "CONFIGURED_SERVER=${server}"
+set "PARAM1=%~1"
+set "PARAM2=%~2"
+set "TARGET_SERVER=!CONFIGURED_SERVER!"
+
+if not "!PARAM1!"=="" if not "!PARAM1!"=="elevated" (
+    set "TARGET_SERVER=!PARAM1!"
+)
+if "!PARAM1!"=="elevated" if not "!PARAM2!"=="" (
+    set "TARGET_SERVER=!PARAM2!"
+)
+
+echo ===================================================================
+echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (!TARGET_SERVER!)
+echo ===================================================================
 echo.
 
-python -c "
-import sys, requests
-from datetime import datetime
+:: 1. Deteccion de ejecutable de Python
+set "PYTHON_EXE="
+python --version >nul 2>&1 && set "PYTHON_EXE=python"
+if not defined PYTHON_EXE (
+    py -3 --version >nul 2>&1 && set "PYTHON_EXE=py -3"
+)
+if not defined PYTHON_EXE (
+    python3 --version >nul 2>&1 && set "PYTHON_EXE=python3"
+)
 
-try:
-    from scapy.all import sniff, TCP, Raw
-except ImportError:
-    print('[ERROR] Falta Scapy o Npcap en Windows.')
-    print('1. Asegurate de haber instalado las dependencias: pip install scapy requests')
-    print('2. Descarga e instala Npcap desde: https://npcap.com/#download')
-    sys.exit(1)
+if not defined PYTHON_EXE (
+    echo [ERROR CRITICO] No se ha encontrado Python en tu sistema.
+    echo.
+    echo 1. Descarga Python desde https://www.python.org/downloads/
+    echo 2. IMPORTANTE: Durante la instalacion marca la casilla "Add Python to PATH".
+    echo 3. Una vez instalado, vuelve a ejecutar este archivo .bat.
+    echo.
+    goto :exit_pause
+)
 
-VERCEL_API_URL = '${apiUrl}'
-API_SECRET_KEY = '${secretKey}'
-SERVER_NAME = '${server}'
-DOFUS_PORTS = 'tcp port 5555'
+echo [OK] Python detectado: !PYTHON_EXE!
 
-print('=================================================================')
-print('  DOFUS UNITY -> MERCADILLO AUTO-SYNC')
-print(f'  Destino API : {VERCEL_API_URL}')
-print(f'  Servidor    : {SERVER_NAME}')
-print('=================================================================')
-print('🟢 Escuchando mercadillo en segundo plano...')
-print('💡 Haz clic en los objetos del mercadillo en Dofus para sincronizar.')
-print('Presiona Ctrl+C para detener.\\n')
+:: 2. Verificacion de dependencias (requests y scapy)
+!PYTHON_EXE! -c "import requests, scapy" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo [INSTALANDO DEPENDENCIAS] Instalando scapy y requests automaticamente...
+    !PYTHON_EXE! -m pip install --upgrade requests scapy
+    if !errorlevel! neq 0 (
+        echo [ERROR] No se pudieron instalar las librerias. Revisa tu conexion a Internet.
+        goto :exit_pause
+    )
+    echo [OK] Dependencias instaladas correctamente.
+)
 
-NAME_CACHE = {}
+:: 3. Descarga automatica del motor Python si no existe
+if not exist "dofus_sniffer.py" (
+    echo.
+    echo [DESCARGA] Obteniendo script de sincronizacion optimizado...
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${scriptUrl}' -OutFile 'dofus_sniffer.py'"
+    if not exist "dofus_sniffer.py" (
+        echo [ERROR] No se pudo descargar dofus_sniffer.py desde el servidor.
+        goto :exit_pause
+    )
+)
 
-def get_item_name(item_id):
-    if item_id in NAME_CACHE:
-        return NAME_CACHE[item_id]
-    try:
-        r = requests.get(f'https://api.dofusdb.fr/items/{item_id}?$select[]=name', timeout=2.0)
-        if r.status_code == 200:
-            data = r.json()
-            name = (data.get('name', {}).get('es') or data.get('name', {}).get('fr') or data.get('name', {}).get('en') or f'Item #{item_id}')
-            NAME_CACHE[item_id] = name
-            return name
-    except Exception:
-        pass
-    return f'Item #{item_id}'
+:: 4. Descarga de la base de nombres local si no existe
+if not exist "items_db.json" (
+    echo [DESCARGA] Obteniendo base de datos de nombres (items_db.json)...
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${dictUrl}' -OutFile 'items_db.json'"
+)
 
-def decode_varint(buf, off):
-    val, shift, read = 0, 0, 0
-    while off + read < len(buf):
-        b = buf[off + read]
-        read += 1
-        val |= (b & 0x7F) << shift
-        if (b & 0x80) == 0:
-            break
-        shift += 7
-    return val, read
+echo.
+echo ===================================================================
+echo  🟢 INICIANDO MOTOR DE CAPTURA EN SEGUNDO PLANO
+echo  Servidor : !TARGET_SERVER!
+echo ===================================================================
+echo.
 
-def parse_kbt(buf):
-    try:
-        idx = buf.find(b'type.ankama.com/kbt')
-        if idx == -1:
-            idx = buf.find(b'kbt')
-            if idx == -1:
-                return None, []
-            idx = idx - 16
-        off = idx + 19
-        if off < len(buf) and buf[off] == 0x12:
-            off += 1
-            payload_len, br = decode_varint(buf, off)
-            off += br
-            payload = buf[off:off + payload_len]
-            p_off = 0
-            item_id = 0
-            prices = []
-            while p_off < len(payload):
-                tag = payload[p_off]
-                p_off += 1
-                field = tag >> 3
-                wire = tag & 7
-                if wire == 0:
-                    val, br = decode_varint(payload, p_off)
-                    p_off += br
-                    if field == 2:
-                        item_id = val
-                elif wire == 2:
-                    sub_len, br = decode_varint(payload, p_off)
-                    p_off += br
-                    sub = payload[p_off:p_off + sub_len]
-                    p_off += sub_len
-                    s_off = 0
-                    while s_off < len(sub):
-                        s_tag = sub[s_off]
-                        s_off += 1
-                        s_field = s_tag >> 3
-                        s_wire = s_tag & 7
-                        if s_wire == 0:
-                            s_val, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            if s_field in (2, 5):
-                                item_id = s_val
-                        elif s_wire == 2:
-                            in_len, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            inner = sub[s_off:s_off + in_len]
-                            s_off += in_len
-                            if s_field == 6:
-                                i_off = 0
-                                while i_off < len(inner):
-                                    pv, pbr = decode_varint(inner, i_off)
-                                    i_off += pbr
-                                    if pv > 0:
-                                        prices.append(pv)
-                        else:
-                            break
-            return item_id, prices
-    except Exception:
-        pass
-    return None, []
+!PYTHON_EXE! dofus_sniffer.py --server "!TARGET_SERVER!"
 
-def process_packet(pkt):
-    if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
-        return
-    payload = bytes(pkt[Raw].load)
-    if b'kbt' in payload or b'type.ankama.com/kbt' in payload:
-        item_id, prices = parse_kbt(payload)
-        if item_id and prices:
-            name = get_item_name(item_id)
-            is_equipment = len(prices) > 4
-            body = {
-                'item_id': item_id,
-                'item_name': name,
-                'type': 'equipable' if is_equipment else 'recurso',
-                'server': SERVER_NAME,
-                'source': 'sniffer-bat'
-            }
-            if is_equipment:
-                body['precios'] = prices
-            else:
-                body['precios'] = {
-                    '1': prices[0] if len(prices) > 0 else 0,
-                    '10': prices[1] if len(prices) > 1 else 0,
-                    '100': prices[2] if len(prices) > 2 else 0,
-                    '1000': prices[3] if len(prices) > 3 else 0,
-                }
-            headers = {'Content-Type': 'application/json'}
-            if API_SECRET_KEY:
-                headers['x-api-key'] = API_SECRET_KEY
-            try:
-                res = requests.post(VERCEL_API_URL, json=body, headers=headers, timeout=4.0)
-                now_str = datetime.now().strftime('%H:%M:%S')
-                if res.status_code == 200:
-                    data = res.json()
-                    calc_price = data.get('calculated_price', 0)
-                    item_type = data.get('type', body['type'])
-                    print(f'[{now_str}]  [{item_type.upper()}] {name} (#{item_id}) -> Guardado en Turso: {calc_price:,} k ({SERVER_NAME})')
-                else:
-                    print(f'[{now_str}] [Error {res.status_code}] {res.text}')
-            except Exception as e:
-                print(f'[{datetime.now().strftime(\"%H:%M:%S\")}] [Error]: {e}')
-
-try:
-    sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
-except KeyboardInterrupt:
-    print('\\nSincronizador detenido por el usuario.')
-except Exception as e:
-    print(f'\\n[Error]: {e}')
-"
+:exit_pause
+echo.
+echo ===================================================================
+echo  Proceso finalizado. 
+echo ===================================================================
 pause
 `;
 
@@ -1095,13 +1167,7 @@ pause
 });
 
 app.get("/api/market/download-py", (req, res) => {
-  const host = req.get("host") || "localhost:3000";
-  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const apiUrl = `${protocol}://${host}/api/market/update`;
   const server = (req.query.server as string) || "Draconiros";
-  const secretKey = (process.env.MARKET_SNIFFER_SECRET || "").trim();
-
-  // Redirect to sniffer-script or return script
   res.redirect(`/api/market/sniffer-script?server=${encodeURIComponent(server)}`);
 });
 

@@ -190,11 +190,14 @@ export async function initDB() {
 
       CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
       CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+      CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_updated ON profile_prices(profile_id, updated_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_id ON profile_coefficients(profile_id);
+      CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_item ON profile_coefficients(profile_id, item_id);
 
       CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_price_history_timestamp ON price_history(timestamp DESC);
     `);
 
     // Clean up obsolete table if present
@@ -2298,11 +2301,12 @@ export async function processAndIngestMarketPrice(
   payload: IngestMarketPricePayload,
 ): Promise<IngestMarketPriceResult> {
   const itemId = Number(payload.item_id);
-  if (!itemId || Number.isNaN(itemId) || itemId <= 0) {
-    throw new Error("El campo 'item_id' es obligatorio y debe ser un número positivo.");
+  if (!itemId || Number.isNaN(itemId) || itemId <= 0 || itemId > 1_000_000_000) {
+    throw new Error("El campo 'item_id' es obligatorio y debe ser un número entero positivo válido.");
   }
 
-  const { profileId, profileName } = await getProfileIdByServerNameOrSlug(payload.server);
+  const cleanServer = typeof payload.server === "string" ? payload.server.slice(0, 60) : "";
+  const { profileId, profileName } = await getProfileIdByServerNameOrSlug(cleanServer);
   const precios = payload.precios;
   let resolvedType = (payload.type || '').toLowerCase();
 
@@ -2665,6 +2669,88 @@ export async function processAndIngestMarketPricesBatch(
     total_processed: results.length,
     results,
   };
+}
+
+export async function getLatestMarketPricesDelta(
+  profileId: number,
+  sinceTimestamp: number = 0,
+): Promise<{
+  prices: MarketPriceMap;
+  priceUpdatedAt: PriceUpdatedAtMap;
+  serverTime: number;
+  totalUpdated: number;
+}> {
+  const serverTime = Date.now();
+  const safeSince = Number(sinceTimestamp) || 0;
+
+  try {
+    const result = await database.execute({
+      sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at > ? ORDER BY updated_at ASC",
+      args: [profileId, safeSince],
+    });
+
+    const prices: MarketPriceMap = {};
+    const priceUpdatedAt: PriceUpdatedAtMap = {};
+
+    for (const row of result.rows) {
+      const itemId = Number(row.item_id);
+      prices[itemId] = Number(row.price);
+      priceUpdatedAt[itemId] = Number(row.updated_at);
+    }
+
+    return {
+      prices,
+      priceUpdatedAt,
+      serverTime,
+      totalUpdated: Object.keys(prices).length,
+    };
+  } catch (err) {
+    console.error("[getLatestMarketPricesDelta Error]:", err);
+    return {
+      prices: {},
+      priceUpdatedAt: {},
+      serverTime,
+      totalUpdated: 0,
+    };
+  }
+}
+
+let cachedItemsDictionary: Record<string, string> | null = null;
+let lastItemsDictionaryFetch = 0;
+
+export async function getItemsDictionary(): Promise<Record<string, string>> {
+  const now = Date.now();
+  // Cache for 15 minutes in RAM
+  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 0 && now - lastItemsDictionaryFetch < 15 * 60 * 1000) {
+    return cachedItemsDictionary;
+  }
+
+  const dict: Record<string, string> = {};
+
+  // 1. Seed with known server items
+  for (const [idStr, item] of Object.entries(SERVER_KNOWN_ITEMS)) {
+    if (item.name?.es) {
+      dict[idStr] = item.name.es;
+    }
+  }
+
+  // 2. Query all items with names in database
+  try {
+    const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != ''");
+    for (const row of result.rows) {
+      const id = String(row.id);
+      const name = String(row.name_es || "").trim();
+      if (name && !name.startsWith("Objeto #") && !name.startsWith("Item #")) {
+        dict[id] = name;
+      }
+    }
+  } catch (err) {
+    console.warn("[getItemsDictionary] DB query warning:", err);
+  }
+
+  cachedItemsDictionary = dict;
+  lastItemsDictionaryFetch = now;
+  return dict;
 }
 
 export async function getPriceProfileState() {
