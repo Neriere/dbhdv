@@ -167,6 +167,7 @@ cli_args, _ = parser.parse_known_args()
 API_BATCH_URL = "${batchApiUrl}"
 API_UPDATE_URL = "${updateApiUrl}"
 API_DICT_URL = "${dictApiUrl}"
+API_DOWNLOAD_URL = "${currentOrigin}/api/market/download-items-db"
 API_SECRET_KEY = ""
 SERVER_NAME = (cli_args.server or "${activeServerTarget}").strip()
 DOFUS_PORTS = "tcp port 5555"
@@ -177,38 +178,89 @@ LOCAL_DB_FILE = os.path.join(SCRIPT_DIR, "items_db.json")
 ITEMS_DB = {}
 packet_queue = queue.Queue(maxsize=2000)
 http_session = requests.Session()
+_db_dirty = False
+_db_lock = threading.Lock()
+
+def save_local_db():
+    global _db_dirty
+    with _db_lock:
+        if not _db_dirty or not ITEMS_DB:
+            return
+        try:
+            with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(ITEMS_DB, f, ensure_ascii=False)
+            _db_dirty = False
+        except Exception:
+            pass
 
 def load_or_download_items_db():
-    global ITEMS_DB
-    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 100:
+    global ITEMS_DB, _db_dirty
+    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 500:
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 ITEMS_DB = json.load(f)
-            if "1519" in ITEMS_DB and "1522" in ITEMS_DB and "15379" in ITEMS_DB:
-                print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
+            if len(ITEMS_DB) > 50:
+                print(f"[DB Local] OK Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
                 return
-        except Exception as e:
-            print(f"[Aviso] Error leyendo items_db.json local: {e}. Re-descargando...")
+        except Exception:
+            pass
 
-    print(f"[DB Local] Descargando base de nombres desde {API_DICT_URL}...")
-    try:
-        req = urllib.request.Request(API_DICT_URL, headers={"User-Agent": "DofusSniffer/2.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = resp.read().decode("utf-8")
-            ITEMS_DB = json.loads(data)
-            with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
-                f.write(data)
-            print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos).")
-    except Exception as e:
-        print(f"[DB Local] Advertencia de descarga: {e}. Se usaran IDs numericos.")
+    print(f"[DB Local] Descargando base de nombres de objetos...")
+    downloaded = False
+    for target_url in [API_DICT_URL, API_DOWNLOAD_URL]:
+        try:
+            req = urllib.request.Request(target_url, headers={"User-Agent": "DofusSniffer/2.0"})
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                if resp.status == 200:
+                    data = resp.read().decode("utf-8")
+                    if data.strip().startswith("{"):
+                        parsed = json.loads(data)
+                        if isinstance(parsed, dict) and len(parsed) > 50:
+                            ITEMS_DB = parsed
+                            with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+                                f.write(data)
+                            print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
+                            downloaded = True
+                            break
+        except Exception:
+            continue
+
+    if not downloaded:
+        print("[DB Local] Aviso: Servidor en modo diferido. Los nombres se resolveran en vivo automaticamente al inspeccionar objetos.")
 
 def get_item_name(item_id):
-    if not ITEMS_DB:
-        load_or_download_items_db()
+    global _db_dirty
+    if not item_id:
+        return "Objeto"
     
     str_id = str(item_id)
     if str_id in ITEMS_DB:
         return ITEMS_DB[str_id]
+
+    # Auto-resolución en vivo desde DofusDB oficial
+    try:
+        req = urllib.request.Request(
+            f"https://api.dofusdb.fr/items/{item_id}",
+            headers={"User-Agent": "DofusSniffer/2.0"}
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            if resp.status == 200:
+                item_data = json.loads(resp.read().decode("utf-8"))
+                name_obj = item_data.get("name")
+                name_val = ""
+                if isinstance(name_obj, dict):
+                    name_val = name_obj.get("es") or name_obj.get("fr") or name_obj.get("en") or ""
+                elif isinstance(name_obj, str):
+                    name_val = name_obj
+                
+                if name_val and name_val.strip():
+                    clean_name = name_val.strip()
+                    with _db_lock:
+                        ITEMS_DB[str_id] = clean_name
+                        _db_dirty = True
+                    return clean_name
+    except Exception:
+        pass
 
     return f"Objeto #{item_id}"
 
@@ -320,6 +372,7 @@ def async_worker():
                     break
 
             now_str = datetime.now().strftime("%H:%M:%S")
+            save_local_db()
             if len(items_batch) == 1:
                 item = items_batch[0]
                 res = http_session.post(API_UPDATE_URL, json=item, headers=headers, timeout=5.0)

@@ -693,25 +693,28 @@ app.post("/api/market/batch-update", async (req, res) => {
 
 app.get("/api/market/items-dictionary", async (req, res) => {
   try {
-    const dict = await getItemsDictionary();
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Cache-Control", "public, max-age=600, s-maxage=1800");
+    const dict = await getItemsDictionary();
     res.json(dict);
   } catch (error: any) {
     console.error("[Items Dictionary API Error]:", error);
-    // Return empty dict rather than 500 so sniffer scripts don't fail
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.status(200).json({});
   }
 });
 
 app.get("/api/market/download-items-db", async (req, res) => {
   try {
-    const dict = await getItemsDictionary();
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Disposition", "attachment; filename=items_db.json");
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=600, s-maxage=1800");
+    const dict = await getItemsDictionary();
     res.send(JSON.stringify(dict, null, 2));
   } catch (error: any) {
     console.error("[Download Items DB Error]:", error);
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.status(200).json({});
   }
 });
@@ -1309,11 +1312,37 @@ def load_or_download_items_db():
             print(f"[DB Local] Descarga diferida ({e}). Los nombres se resolveran en vivo.")
 
 def get_item_name_instant(item_id):
+    if not item_id:
+        return "Objeto"
     s_id = str(item_id)
     if s_id in ITEMS_DB:
         return ITEMS_DB[s_id]
     if item_id in ITEMS_DB:
         return ITEMS_DB[item_id]
+    
+    # Auto-resolución en vivo desde DofusDB oficial
+    try:
+        req = requests.get(f"https://api.dofusdb.fr/items/{item_id}", headers={"User-Agent": "DofusSniffer/2.0"}, timeout=2.0)
+        if req.status_code == 200:
+            item_data = req.json()
+            name_obj = item_data.get("name")
+            name_val = ""
+            if isinstance(name_obj, dict):
+                name_val = name_obj.get("es") or name_obj.get("fr") or name_obj.get("en") or ""
+            elif isinstance(name_obj, str):
+                name_val = name_obj
+            if name_val and name_val.strip():
+                clean_name = name_val.strip()
+                ITEMS_DB[s_id] = clean_name
+                try:
+                    with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+                        json.dump(ITEMS_DB, f, ensure_ascii=False)
+                except Exception:
+                    pass
+                return clean_name
+    except Exception:
+        pass
+
     return f"Objeto #{item_id}"
 
 def decode_varint(buf, off):
