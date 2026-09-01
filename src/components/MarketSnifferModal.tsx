@@ -409,15 +409,13 @@ echo       Servidor: ${activeServerTarget}
 echo ===================================================================
 echo.
 
-:: 1. Comprobar si dofus_sniffer.py existe, si no, descargarlo
-if not exist "dofus_sniffer.py" (
-    echo [DESCARGA] Obteniendo dofus_sniffer.py desde el servidor...
-    where curl >nul 2>&1
-    if %errorlevel% equ 0 (
-        curl -s -L -f "${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}" -o "dofus_sniffer.py"
-    ) else (
-        powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}', 'dofus_sniffer.py')"
-    )
+:: 1. Descargar / Actualizar siempre la ultima version de dofus_sniffer.py
+echo [DESCARGA] Sincronizando dofus_sniffer.py desde el servidor...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -s -L -f "${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}" -o "dofus_sniffer.py"
+) else (
+    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}', 'dofus_sniffer.py')"
 )
 
 :: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)

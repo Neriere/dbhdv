@@ -1038,6 +1038,40 @@ def async_worker():
         except Exception as e:
             print(f"[{now_str}] [Aviso Conexion]: {e}")
 
+def process_packet(pkt):
+    if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
+        return
+    payload = bytes(pkt[Raw].load)
+
+    if b"kbt" in payload or b"type.ankama.com/kbt" in payload:
+        item_id, prices = parse_kbt(payload)
+        if item_id and prices:
+            name = get_item_name(item_id)
+            is_equipment = len(prices) > 4
+
+            body = {
+                "item_id": item_id,
+                "item_name": name,
+                "type": "equipable" if is_equipment else "recurso",
+                "server": SERVER_NAME,
+                "source": "sniffer",
+            }
+
+            if is_equipment:
+                body["precios"] = prices
+            else:
+                body["precios"] = {
+                    "1": prices[0] if len(prices) > 0 else 0,
+                    "10": prices[1] if len(prices) > 1 else 0,
+                    "100": prices[2] if len(prices) > 2 else 0,
+                    "1000": prices[3] if len(prices) > 3 else 0,
+                }
+
+            try:
+                packet_queue.put_nowait(body)
+            except queue.Full:
+                pass
+
 def main():
     print("=" * 70)
     print("      DOFUS UNITY -> MERCADILLO LIVE SNIFFER (ULTRA-RAPIDO)")
@@ -1096,15 +1130,13 @@ echo       Servidor: ${server}
 echo ===================================================================
 echo.
 
-:: 1. Comprobar si dofus_sniffer.py existe, si no, descargarlo
-if not exist "dofus_sniffer.py" (
-    echo [DESCARGA] Obteniendo dofus_sniffer.py desde el servidor...
-    where curl >nul 2>&1
-    if %errorlevel% equ 0 (
-        curl -s -L -f "${scriptUrl}" -o "dofus_sniffer.py"
-    ) else (
-        powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${scriptUrl}', 'dofus_sniffer.py')"
-    )
+:: 1. Descargar / Actualizar siempre la ultima version de dofus_sniffer.py
+echo [DESCARGA] Sincronizando dofus_sniffer.py desde el servidor...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -s -L -f "${scriptUrl}" -o "dofus_sniffer.py"
+) else (
+    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${scriptUrl}', 'dofus_sniffer.py')"
 )
 
 :: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
