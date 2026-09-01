@@ -1055,35 +1055,32 @@ app.get("/api/market/download-bat", (req, res) => {
   const dictUrl = `${baseUrl}/api/market/items-dictionary`;
 
   const batContent = `@echo off
-chcp 65001 >nul
 setlocal EnableDelayedExpansion
-title Dofus Unity - Sincronizador de Mercadillo (${server})
 
-:: Comprobacion de permisos de Administrador
+:: 1. Ir al directorio donde reside este archivo .bat
+cd /d "%~dp0"
+
+:: 2. Comprobar permisos de Administrador
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo ===================================================================
     echo  [AVISO] Se requieren permisos de Administrador para capturar red.
-    echo  Abriendo ventana con privilegios elevados...
+    echo  Solicitando elevacion de permisos UAC...
     echo ===================================================================
-    powershell -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\" \"%~1\" elevated\"' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -WorkingDirectory '%~dp0'"
     exit /b
 )
 
-cd /d "%~dp0"
+title Dofus Unity - Sincronizador de Mercadillo (${server})
 cls
 
 :: Configuracion del servidor objetivo
 set "CONFIGURED_SERVER=${server}"
 set "PARAM1=%~1"
-set "PARAM2=%~2"
 set "TARGET_SERVER=!CONFIGURED_SERVER!"
 
-if not "!PARAM1!"=="" if not "!PARAM1!"=="elevated" (
+if not "!PARAM1!"=="" (
     set "TARGET_SERVER=!PARAM1!"
-)
-if "!PARAM1!"=="elevated" if not "!PARAM2!"=="" (
-    set "TARGET_SERVER=!PARAM2!"
 )
 
 echo ===================================================================
@@ -1130,7 +1127,7 @@ if %errorlevel% neq 0 (
 if not exist "dofus_sniffer.py" (
     echo.
     echo [DESCARGA] Obteniendo script de sincronizacion optimizado...
-    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${scriptUrl}' -OutFile 'dofus_sniffer.py'"
+    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${scriptUrl}' -OutFile 'dofus_sniffer.py'"
     if not exist "dofus_sniffer.py" (
         echo [ERROR] No se pudo descargar dofus_sniffer.py desde el servidor.
         goto :exit_pause
@@ -1140,12 +1137,12 @@ if not exist "dofus_sniffer.py" (
 :: 4. Descarga de la base de nombres local si no existe
 if not exist "items_db.json" (
     echo [DESCARGA] Obteniendo base de datos de nombres (items_db.json)...
-    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${dictUrl}' -OutFile 'items_db.json'"
+    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${dictUrl}' -OutFile 'items_db.json'"
 )
 
 echo.
 echo ===================================================================
-echo  🟢 INICIANDO MOTOR DE CAPTURA EN SEGUNDO PLANO
+echo  INICIANDO MOTOR DE CAPTURA EN SEGUNDO PLANO
 echo  Servidor : !TARGET_SERVER!
 echo ===================================================================
 echo.
@@ -1155,15 +1152,16 @@ echo.
 :exit_pause
 echo.
 echo ===================================================================
-echo  Proceso finalizado. 
+echo  Proceso finalizado.
 echo ===================================================================
 pause
 `;
 
   const safeFilename = `sincronizar_mercadillo_${server.toLowerCase().replace(/[^a-z0-9]/g, "_")}.bat`;
+  const crlfBat = batContent.replace(/\r?\n/g, "\r\n");
   res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
   res.setHeader("Content-Type", "application/x-bat; charset=utf-8");
-  res.send(batContent);
+  res.send(crlfBat);
 });
 
 app.get("/api/market/download-py", (req, res) => {
