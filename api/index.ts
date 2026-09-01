@@ -776,31 +776,79 @@ import queue
 import argparse
 import threading
 import traceback
+import subprocess
+import urllib.request
 from datetime import datetime
 
-try:
-    import requests
-except Exception as e:
-    print(f"\n[ERROR CRITICO] Falta la libreria 'requests' ({e}).")
-    print("Ejecuta en tu consola: pip install requests")
-    input("\nPresiona Enter para salir...")
-    sys.exit(1)
+# 1. AUTO-ELEVACION ADMINISTRADOR EN WINDOWS
+def is_admin():
+    if sys.platform != "win32":
+        return os.geteuid() == 0 if hasattr(os, "geteuid") else True
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
 
+def check_and_elevate_admin():
+    if sys.platform == "win32" and not is_admin():
+        print("[UAC] Solicitando permisos de Administrador a Windows para captura de paquetes...")
+        try:
+            import ctypes
+            script_path = os.path.abspath(sys.argv[0])
+            params = f'"{script_path}" ' + " ".join([f'"{a}"' for a in sys.argv[1:]])
+            ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+            if int(ret) > 32:
+                sys.exit(0)
+            else:
+                print("[Aviso] No se concedieron permisos de Administrador.")
+        except Exception as e:
+            print(f"[Error UAC]: {e}")
+
+check_and_elevate_admin()
+
+# 2. AUTO-INSTALACION DE DEPENDENCIAS (requests, scapy)
+def ensure_dependencies():
+    packages = []
+    try:
+        import requests
+    except ImportError:
+        packages.append("requests")
+    try:
+        import scapy
+    except ImportError:
+        packages.append("scapy")
+
+    if packages:
+        print("=" * 70)
+        print(f" [INSTALADOR] Instalando librerias necesarias: {', '.join(packages)}")
+        print("=" * 70)
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
+            print("[OK] Librerias instaladas con exito.\\n")
+        except Exception as e:
+            print(f"[ERROR PIP] No se pudieron instalar dependencias automaticamente: {e}")
+            print(f"Ejecuta en tu consola: pip install {' '.join(packages)}")
+            input("\\nPresiona Enter para salir...")
+            sys.exit(1)
+
+ensure_dependencies()
+
+import requests
 try:
     from scapy.all import sniff, TCP, Raw
 except Exception as e:
-    print("\n" + "=" * 70)
-    print(" [ERROR AL INICIALIZAR SCAPY / CONTROLADOR DE RED]")
+    print("\\n" + "=" * 70)
+    print(" [CONTROLADOR DE RED NPCAP REQUERIDO EN WINDOWS]")
     print(f" Detalle: {e}")
     print("=" * 70)
-    print(" Para capturar paquetes de red en Windows necesitas:")
-    print(" 1. Instalar Scapy: pip install scapy")
-    print(" 2. Instalar el controlador Npcap (OBLIGATORIO en Windows):")
-    print("    -> Descargalo gratis desde: https://npcap.com/#download")
-    print("    -> Durante la instalacion MARCA la casilla:")
-    print("       'Install Npcap in WinPcap API-compatible Mode'")
+    print(" Para capturar paquetes de red en Windows:")
+    print(" 1. Descarga el instalador gratuito de Npcap:")
+    print("    https://npcap.com/#download")
+    print(" 2. Durante la instalacion MARCA la casilla:")
+    print("    'Install Npcap in WinPcap API-compatible Mode'")
     print("=" * 70)
-    input("\nPresiona Enter para salir...")
+    input("\\nPresiona Enter para salir...")
     sys.exit(1)
 
 # Argumentos de línea de comandos para permitir cambiar el servidor dinámicamente
@@ -1037,156 +1085,60 @@ app.get("/api/market/download-bat", (req, res) => {
   const baseUrl = `${protocol}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
   const scriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
-  const dictUrl = `${baseUrl}/api/market/items-dictionary`;
 
   const batContent = `@echo off
-setlocal EnableDelayedExpansion
-
-:: 1. Fijar directorio de trabajo donde reside este archivo .bat
+title Dofus Unity - Sincronizador de Mercadillo (${server})
 cd /d "%~dp0"
 
-:: 2. Si ya venimos del proceso elevado, saltar directamente a la ejecucion
-if "%~1"=="elevated" goto :main_execution
-
-:: 3. Comprobar permisos de Administrador
-net session >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ===================================================================
-    echo  [ADMIN] Se requieren permisos de Administrador para capturar red.
-    echo  Solicitando confirmacion UAC de Windows...
-    echo ===================================================================
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList 'elevated \"%~1\"' -Verb RunAs"
-    exit /b
-)
-
-:main_execution
-title Dofus Unity - Sincronizador de Mercadillo (${server})
-cls
-
-set "CONFIGURED_SERVER=${server}"
-set "PARAM1=%~1"
-set "PARAM2=%~2"
-set "TARGET_SERVER=!CONFIGURED_SERVER!"
-
-if not "!PARAM1!"=="" if not "!PARAM1!"=="elevated" (
-    set "TARGET_SERVER=!PARAM1!"
-)
-if "!PARAM1!"=="elevated" if not "!PARAM2!"=="" (
-    set "TARGET_SERVER=!PARAM2!"
-)
-
 echo ===================================================================
-echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (!TARGET_SERVER!)
+echo       DOFUS UNITY - SINCRONIZADOR DE MERCADILLO
+echo       Servidor: ${server}
 echo ===================================================================
 echo.
 
-:: 1. Deteccion de ejecutable de Python REAL
-echo [1/3] Detectando Python en el sistema...
-set "PYTHON_EXE="
-
-py -3 -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=py -3"
-    goto :python_found
-)
-
-python -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=python"
-    goto :python_found
-)
-
-python3 -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=python3"
-    goto :python_found
-)
-
-for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
-    if exist "%%D\\python.exe" (
-        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
-        if !errorlevel! equ 0 (
-            set "PYTHON_EXE=\"%%D\\python.exe\""
-            goto :python_found
-        )
-    )
-)
-
-for /d %%D in ("%ProgramFiles%\\Python*") do (
-    if exist "%%D\\python.exe" (
-        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
-        if !errorlevel! equ 0 (
-            set "PYTHON_EXE=\"%%D\\python.exe\""
-            goto :python_found
-        )
-    )
-)
-
-:python_found
-if not defined PYTHON_EXE (
-    echo.
-    echo ===================================================================
-    echo  [ERROR CRITICO] No se ha detectado Python instalado en tu sistema.
-    echo ===================================================================
-    echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
-    echo  2. IMPORTANTE: En el instalador marca la casilla:
-    echo     [X] "Add Python to PATH"
-    echo  3. Tras instalarlo, vuelve a ejecutar este archivo .bat.
-    echo ===================================================================
-    goto :exit_pause
-)
-
-echo [OK] Python detectado: !PYTHON_EXE!
-echo.
-
-:: 2. Verificacion e instalacion de librerias (requests y scapy)
-echo [2/3] Verificando dependencias (requests, scapy)...
-!PYTHON_EXE! -c "import requests, scapy" >nul 2>&1
-if !errorlevel! neq 0 (
-    echo [INSTALANDO] Descargando e instalando librerias necesarias (requests, scapy)...
-    !PYTHON_EXE! -m pip install requests scapy
-    if !errorlevel! neq 0 (
-        echo.
-        echo [ERROR] No se pudieron instalar las librerias con pip.
-        echo Comprueba tu conexion a Internet o ejecuta: pip install requests scapy
-        goto :exit_pause
-    )
-    echo [OK] Dependencias instaladas correctamente.
-) else (
-    echo [OK] Dependencias listas.
-)
-echo.
-
-:: 3. Descarga del script dofus_sniffer.py si no existe
-echo [3/3] Verificando archivos del sincronizador...
+:: 1. Comprobar si dofus_sniffer.py existe, si no, descargarlo
 if not exist "dofus_sniffer.py" (
-    echo [DESCARGA] Obteniendo script dofus_sniffer.py desde el servidor...
+    echo [DESCARGA] Obteniendo dofus_sniffer.py desde el servidor...
     where curl >nul 2>&1
-    if !errorlevel! equ 0 (
+    if %errorlevel% equ 0 (
         curl -s -L -f "${scriptUrl}" -o "dofus_sniffer.py"
     ) else (
         powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${scriptUrl}', 'dofus_sniffer.py')"
     )
-    if not exist "dofus_sniffer.py" (
-        echo [ERROR] No se pudo descargar dofus_sniffer.py.
-        goto :exit_pause
-    )
 )
-echo [OK] Archivos listos.
-echo.
 
-echo ===================================================================
-echo  INICIANDO MOTOR DE CAPTURA EN VIVO
-echo  Servidor : !TARGET_SERVER!
-echo ===================================================================
-echo.
+:: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
+where py >nul 2>&1
+if %errorlevel% equ 0 (
+    py -3 dofus_sniffer.py --server "${server}"
+    goto :fin
+)
 
-!PYTHON_EXE! dofus_sniffer.py --server "!TARGET_SERVER!"
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    python dofus_sniffer.py --server "${server}"
+    goto :fin
+)
 
-:exit_pause
+where python3 >nul 2>&1
+if %errorlevel% equ 0 (
+    python3 dofus_sniffer.py --server "${server}"
+    goto :fin
+)
+
 echo.
 echo ===================================================================
-echo  Proceso finalizado. La ventana permanecera abierta.
+echo  [ERROR] No se ha detectado Python en tu sistema.
+echo ===================================================================
+echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
+echo  2. IMPORTANTE: En el instalador marca la casilla:
+echo     [X] "Add Python to PATH"
+echo ===================================================================
+
+:fin
+echo.
+echo ===================================================================
+echo  Proceso finalizado.
 echo ===================================================================
 pause
 `;

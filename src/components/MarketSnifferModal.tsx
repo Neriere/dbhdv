@@ -69,14 +69,9 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
   DOFUS UNITY -> MERCADILLO ULTRA-FAST LIVE SNIFFER (HIGH PERFORMANCE)
 ===============================================================================
   - Búfer Asíncrono Multihilo: captura de paquetes sin latencia ni cuellos de botella.
-  - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms (sin llamadas a DofusDB).
+  - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms.
   - Micro-Batching con HTTP Keep-Alive hacia tu servidor Turso/Vercel.
-  
-  Dependencias requeridas:
-    pip install scapy requests
-
-  Ejecutar como Administrador:
-    python dofus_sniffer.py --server "${activeServerTarget}"
+  - Auto-Elevación en Windows y Auto-Instalación de dependencias.
 ===============================================================================
 """
 
@@ -87,31 +82,80 @@ import json
 import queue
 import argparse
 import threading
+import traceback
+import subprocess
+import urllib.request
 from datetime import datetime
 
-try:
-    import requests
-except Exception as e:
-    print(f"\n[ERROR CRITICO] Falta la libreria 'requests' ({e}).")
-    print("Ejecuta en tu consola: pip install requests")
-    input("\nPresiona Enter para salir...")
-    sys.exit(1)
+# 1. AUTO-ELEVACIÓN ADMINISTRADOR EN WINDOWS (para captura con Scapy)
+def is_admin():
+    if sys.platform != "win32":
+        return os.geteuid() == 0 if hasattr(os, "geteuid") else True
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
 
+def check_and_elevate_admin():
+    if sys.platform == "win32" and not is_admin():
+        print("[UAC] Solicitando permisos de Administrador a Windows para captura de paquetes...")
+        try:
+            import ctypes
+            script_path = os.path.abspath(sys.argv[0])
+            params = f'"{script_path}" ' + " ".join([f'"{a}"' for a in sys.argv[1:]])
+            ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+            if int(ret) > 32:
+                sys.exit(0)
+            else:
+                print("[Aviso] No se concedieron permisos de Administrador.")
+        except Exception as e:
+            print(f"[Error UAC]: {e}")
+
+check_and_elevate_admin()
+
+# 2. AUTO-INSTALACIÓN DE DEPENDENCIAS (requests, scapy)
+def ensure_dependencies():
+    packages = []
+    try:
+        import requests
+    except ImportError:
+        packages.append("requests")
+    try:
+        import scapy
+    except ImportError:
+        packages.append("scapy")
+
+    if packages:
+        print("=" * 70)
+        print(f" [INSTALADOR] Instalando librerias necesarias: {', '.join(packages)}")
+        print("=" * 70)
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
+            print("[OK] Librerias instaladas con exito.\\n")
+        except Exception as e:
+            print(f"[ERROR PIP] No se pudieron instalar dependencias automaticamente: {e}")
+            print(f"Ejecuta en tu consola: pip install {' '.join(packages)}")
+            input("\\nPresiona Enter para salir...")
+            sys.exit(1)
+
+ensure_dependencies()
+
+import requests
 try:
     from scapy.all import sniff, TCP, Raw
 except Exception as e:
-    print("\n" + "=" * 70)
-    print(" [ERROR AL INICIALIZAR SCAPY / CONTROLADOR DE RED]")
+    print("\\n" + "=" * 70)
+    print(" [CONTROLADOR DE RED NPCAP REQUERIDO EN WINDOWS]")
     print(f" Detalle: {e}")
     print("=" * 70)
-    print(" Para capturar paquetes de red en Windows necesitas:")
-    print(" 1. Instalar Scapy: pip install scapy")
-    print(" 2. Instalar el controlador Npcap (OBLIGATORIO en Windows):")
-    print("    -> Descargalo gratis desde: https://npcap.com/#download")
-    print("    -> Durante la instalacion MARCA la casilla:")
-    print("       'Install Npcap in WinPcap API-compatible Mode'")
+    print(" Para capturar paquetes de red en Windows:")
+    print(" 1. Descarga el instalador gratuito de Npcap:")
+    print("    https://npcap.com/#download")
+    print(" 2. Durante la instalacion MARCA la casilla:")
+    print("    'Install Npcap in WinPcap API-compatible Mode'")
     print("=" * 70)
-    input("\nPresiona Enter para salir...")
+    input("\\nPresiona Enter para salir...")
     sys.exit(1)
 
 # Argumentos de línea de comandos para cambiar el servidor dinámicamente
@@ -123,7 +167,7 @@ cli_args, _ = parser.parse_known_args()
 API_BATCH_URL = "${batchApiUrl}"
 API_UPDATE_URL = "${updateApiUrl}"
 API_DICT_URL = "${dictApiUrl}"
-API_SECRET_KEY = ""  # Opcional
+API_SECRET_KEY = ""
 SERVER_NAME = (cli_args.server or "${activeServerTarget}").strip()
 DOFUS_PORTS = "tcp port 5555"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
@@ -145,114 +189,115 @@ def load_or_download_items_db():
         except Exception as e:
             print(f"[Aviso] Error leyendo items_db.json local: {e}. Re-descargando...")
 
-    print(f"[DB Local] Descargando base de nombres desde el servidor ({API_DICT_URL})...")
+    print(f"[DB Local] Descargando base de nombres desde {API_DICT_URL}...")
     try:
-        r = http_session.get(API_DICT_URL, timeout=10.0)
-        if r.status_code == 200:
-            ITEMS_DB = r.json()
+        req = urllib.request.Request(API_DICT_URL, headers={"User-Agent": "DofusSniffer/2.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read().decode("utf-8")
+            ITEMS_DB = json.loads(data)
             with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
-                json.dump(ITEMS_DB, f, ensure_ascii=False)
-            print(f"[DB Local] Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
-        else:
-            print(f"[DB Local] Error HTTP {r.status_code} al descargar base de items.")
+                f.write(data)
+            print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos).")
     except Exception as e:
-        print(f"[DB Local] Advertencia de descarga: {e}. Se usarán identificadores numéricos.")
+        print(f"[DB Local] Advertencia de descarga: {e}. Se usaran IDs numericos.")
 
 def get_item_name(item_id):
-    s_id = str(item_id)
-    if s_id in ITEMS_DB:
-        return ITEMS_DB[s_id]
-    if item_id in ITEMS_DB:
-        return ITEMS_DB[item_id]
+    if not ITEMS_DB:
+        load_or_download_items_db()
+    
+    str_id = str(item_id)
+    if str_id in ITEMS_DB:
+        return ITEMS_DB[str_id]
+
     return f"Objeto #{item_id}"
 
-def decode_varint(buf, off):
-    val, shift, read = 0, 0, 0
-    while off + read < len(buf):
-        b = buf[off + read]
-        read += 1
-        val |= (b & 0x7F) << shift
-        if (b & 0x80) == 0:
+def parse_varint(data, offset):
+    res = 0
+    shift = 0
+    while offset < len(data):
+        b = data[offset]
+        offset += 1
+        res |= (b & 0x7F) << shift
+        if not (b & 0x80):
             break
         shift += 7
-    return val, read
+    return res, offset
 
-def parse_kbt(buf):
-    try:
-        idx = buf.find(b'type.ankama.com/kbt')
-        if idx == -1:
-            idx = buf.find(b'kbt')
-            if idx == -1:
-                return None, []
-            idx = idx - 16
+def parse_kbt(payload):
+    idx = payload.find(b"kbt")
+    if idx == -1:
+        idx = payload.find(b"type.ankama.com/kbt")
+        if idx != -1:
+            idx += len(b"type.ankama.com/kbt")
+        else:
+            return None, None
+    else:
+        idx += 3
 
-        off = idx + 19
-        if off < len(buf) and buf[off] == 0x12:
-            off += 1
-            payload_len, br = decode_varint(buf, off)
-            off += br
-            payload = buf[off:off + payload_len]
+    item_id = None
+    prices = []
 
-            p_off = 0
-            item_id = 0
-            prices = []
+    pos = idx
+    while pos < len(payload):
+        if pos + 2 > len(payload):
+            break
+        tag, pos = parse_varint(payload, pos)
+        wire_type = tag & 0x07
+        field_num = tag >> 3
 
-            while p_off < len(payload):
-                tag = payload[p_off]
-                p_off += 1
-                field = tag >> 3
-                wire = tag & 7
+        if wire_type == 0:
+            val, pos = parse_varint(payload, pos)
+            if field_num == 1:
+                item_id = val
+            elif field_num in (3, 4, 5, 6):
+                prices.append(val)
+        elif wire_type == 2:
+            length, pos = parse_varint(payload, pos)
+            sub_end = pos + length
+            if sub_end > len(payload):
+                break
+            
+            sub_pos = pos
+            while sub_pos < sub_end:
+                sub_tag, sub_pos = parse_varint(payload, sub_pos)
+                s_wire = sub_tag & 0x07
+                s_field = sub_tag >> 3
+                if s_wire == 0:
+                    s_val, sub_pos = parse_varint(payload, sub_pos)
+                    if s_field in (3, 4, 5, 6, 7, 8):
+                        prices.append(s_val)
+                elif s_wire == 2:
+                    s_len, sub_pos = parse_varint(payload, sub_pos)
+                    sub_pos += s_len
+                elif s_wire == 1:
+                    sub_pos += 8
+                elif s_wire == 5:
+                    sub_pos += 4
+                else:
+                    break
+            pos = sub_end
+        elif wire_type == 1:
+            pos += 8
+        elif wire_type == 5:
+            pos += 4
+        else:
+            break
 
-                if wire == 0:
-                    val, br = decode_varint(payload, p_off)
-                    p_off += br
-                    if field == 2:
-                        item_id = val
-                elif wire == 2:
-                    sub_len, br = decode_varint(payload, p_off)
-                    p_off += br
-                    sub = payload[p_off:p_off + sub_len]
-                    p_off += sub_len
-
-                    s_off = 0
-                    while s_off < len(sub):
-                        s_tag = sub[s_off]
-                        s_off += 1
-                        s_field = s_tag >> 3
-                        s_wire = s_tag & 7
-                        if s_wire == 0:
-                            s_val, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            if s_field in (2, 5):
-                                item_id = s_val
-                        elif s_wire == 2:
-                            in_len, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            inner = sub[s_off:s_off + in_len]
-                            s_off += in_len
-                            if s_field == 6:
-                                i_off = 0
-                                while i_off < len(inner):
-                                    pv, pbr = decode_varint(inner, i_off)
-                                    i_off += pbr
-                                    if pv > 0:
-                                        prices.append(pv)
-                        else:
-                            break
-            return item_id, prices
-    except Exception:
-        pass
-    return None, []
+    return item_id, prices
 
 def async_worker():
-    headers = {"Content-Type": "application/json"}
-    if API_SECRET_KEY:
-        headers["x-api-key"] = API_SECRET_KEY
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "DofusSniffer/2.0"
+    }
 
     while True:
-        items_batch = []
         try:
-            first_item = packet_queue.get(timeout=1.0)
+            first_item = packet_queue.get()
+            if first_item is None:
+                break
+
+            items_batch = []
             items_batch.append(first_item)
             packet_queue.task_done()
 
@@ -264,43 +309,34 @@ def async_worker():
                     packet_queue.task_done()
                 except queue.Empty:
                     break
-        except queue.Empty:
-            continue
-        except Exception:
-            continue
 
-        if not items_batch:
-            continue
-
-        now_str = datetime.now().strftime("%H:%M:%S")
-
-        try:
+            now_str = datetime.now().strftime("%H:%M:%S")
             if len(items_batch) == 1:
                 item = items_batch[0]
-                res = http_session.post(API_UPDATE_URL, json=item, headers=headers, timeout=4.0)
+                res = http_session.post(API_UPDATE_URL, json=item, headers=headers, timeout=5.0)
                 if res.status_code == 200:
                     data = res.json()
                     c_price = data.get("calculated_price", 0)
-                    print(f"[{now_str}]  [{item['type'].upper()}] {item['item_name']} (#{item['item_id']}) -> {c_price:,} k (Guardado)")
+                    print(f"[{now_str}] 🟢 [{SERVER_NAME}] {item['item_name']} -> {c_price:,} kamas")
                 else:
                     print(f"[{now_str}]  Error {res.status_code}: {res.text}")
             else:
-                res = http_session.post(API_BATCH_URL, json={"items": items_batch}, headers=headers, timeout=6.0)
+                res = http_session.post(API_BATCH_URL, json={"items": items_batch}, headers=headers, timeout=8.0)
                 if res.status_code == 200:
                     data = res.json()
                     tot = data.get("total_processed", len(items_batch))
-                    print(f"[{now_str}] ⚡ [LOTE PROCESADO] {tot} objetos sincronizados en paralelo con Turso")
+                    print(f"[{now_str}]  [LOTE PROCESADO] {tot} objetos sincronizados con Turso")
                 else:
                     print(f"[{now_str}]  Error de lote {res.status_code}: {res.text}")
         except Exception as e:
-            print(f"[{now_str}] Error de conexión al sincronizar: {e}")
+            print(f"[{now_str}] [Aviso Conexion]: {e}")
 
 def process_packet(pkt):
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
         return
     payload = bytes(pkt[Raw].load)
 
-    if b'kbt' in payload or b'type.ankama.com/kbt' in payload:
+    if b"kbt" in payload or b"type.ankama.com/kbt" in payload:
         item_id, prices = parse_kbt(payload)
         if item_id and prices:
             name = get_item_name(item_id)
@@ -364,153 +400,58 @@ if __name__ == "__main__":
 `;
 
   const batContent = `@echo off
-setlocal EnableDelayedExpansion
-
-:: 1. Fijar directorio de trabajo donde reside este archivo .bat
+title Dofus Unity - Sincronizador de Mercadillo (${activeServerTarget})
 cd /d "%~dp0"
 
-:: 2. Si ya venimos del proceso elevado, saltar directamente a la ejecucion
-if "%~1"=="elevated" goto :main_execution
-
-:: 3. Comprobar permisos de Administrador
-net session >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ===================================================================
-    echo  [ADMIN] Se requieren permisos de Administrador para capturar red.
-    echo  Solicitando confirmacion UAC de Windows...
-    echo ===================================================================
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList 'elevated \"%~1\"' -Verb RunAs"
-    exit /b
-)
-
-:main_execution
-title Dofus Unity - Sincronizador de Mercadillo (${activeServerTarget})
-cls
-
-set "CONFIGURED_SERVER=${activeServerTarget}"
-set "PARAM1=%~1"
-set "PARAM2=%~2"
-set "TARGET_SERVER=!CONFIGURED_SERVER!"
-
-if not "!PARAM1!"=="" if not "!PARAM1!"=="elevated" (
-    set "TARGET_SERVER=!PARAM1!"
-)
-if "!PARAM1!"=="elevated" if not "!PARAM2!"=="" (
-    set "TARGET_SERVER=!PARAM2!"
-)
-
 echo ===================================================================
-echo       DOFUS UNITY - MERCADILLO AUTO-SYNC (!TARGET_SERVER!)
+echo       DOFUS UNITY - SINCRONIZADOR DE MERCADILLO
+echo       Servidor: ${activeServerTarget}
 echo ===================================================================
 echo.
 
-:: 1. Deteccion de ejecutable de Python REAL
-echo [1/3] Detectando Python en el sistema...
-set "PYTHON_EXE="
-
-py -3 -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=py -3"
-    goto :python_found
-)
-
-python -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=python"
-    goto :python_found
-)
-
-python3 -c "import sys; sys.exit(0)" >nul 2>&1
-if !errorlevel! equ 0 (
-    set "PYTHON_EXE=python3"
-    goto :python_found
-)
-
-for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
-    if exist "%%D\\python.exe" (
-        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
-        if !errorlevel! equ 0 (
-            set "PYTHON_EXE=\"%%D\\python.exe\""
-            goto :python_found
-        )
-    )
-)
-
-for /d %%D in ("%ProgramFiles%\\Python*") do (
-    if exist "%%D\\python.exe" (
-        "%%D\\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
-        if !errorlevel! equ 0 (
-            set "PYTHON_EXE=\"%%D\\python.exe\""
-            goto :python_found
-        )
-    )
-)
-
-:python_found
-if not defined PYTHON_EXE (
-    echo.
-    echo ===================================================================
-    echo  [ERROR CRITICO] No se ha detectado Python instalado en tu sistema.
-    echo ===================================================================
-    echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
-    echo  2. IMPORTANTE: En el instalador marca la casilla:
-    echo     [X] "Add Python to PATH"
-    echo  3. Tras instalarlo, vuelve a ejecutar este archivo .bat.
-    echo ===================================================================
-    goto :exit_pause
-)
-
-echo [OK] Python detectado: !PYTHON_EXE!
-echo.
-
-:: 2. Verificacion e instalacion de librerias (requests y scapy)
-echo [2/3] Verificando dependencias (requests, scapy)...
-!PYTHON_EXE! -c "import requests, scapy" >nul 2>&1
-if !errorlevel! neq 0 (
-    echo [INSTALANDO] Descargando e instalando librerias necesarias (requests, scapy)...
-    !PYTHON_EXE! -m pip install requests scapy
-    if !errorlevel! neq 0 (
-        echo.
-        echo [ERROR] No se pudieron instalar las librerias con pip.
-        echo Comprueba tu conexion a Internet o ejecuta: pip install requests scapy
-        goto :exit_pause
-    )
-    echo [OK] Dependencias instaladas correctamente.
-) else (
-    echo [OK] Dependencias listas.
-)
-echo.
-
-:: 3. Descarga del script dofus_sniffer.py si no existe
-echo [3/3] Verificando archivos del sincronizador...
+:: 1. Comprobar si dofus_sniffer.py existe, si no, descargarlo
 if not exist "dofus_sniffer.py" (
-    echo [DESCARGA] Obteniendo script dofus_sniffer.py desde el servidor...
+    echo [DESCARGA] Obteniendo dofus_sniffer.py desde el servidor...
     where curl >nul 2>&1
-    if !errorlevel! equ 0 (
+    if %errorlevel% equ 0 (
         curl -s -L -f "${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}" -o "dofus_sniffer.py"
     ) else (
         powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}', 'dofus_sniffer.py')"
     )
-    if not exist "dofus_sniffer.py" (
-        echo [ERROR] No se pudo descargar dofus_sniffer.py.
-        goto :exit_pause
-    )
 )
-echo [OK] Archivos listos.
-echo.
 
-echo ===================================================================
-echo  INICIANDO MOTOR DE CAPTURA EN VIVO
-echo  Servidor : !TARGET_SERVER!
-echo ===================================================================
-echo.
+:: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
+where py >nul 2>&1
+if %errorlevel% equ 0 (
+    py -3 dofus_sniffer.py --server "${activeServerTarget}"
+    goto :fin
+)
 
-!PYTHON_EXE! dofus_sniffer.py --server "!TARGET_SERVER!"
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    python dofus_sniffer.py --server "${activeServerTarget}"
+    goto :fin
+)
 
-:exit_pause
+where python3 >nul 2>&1
+if %errorlevel% equ 0 (
+    python3 dofus_sniffer.py --server "${activeServerTarget}"
+    goto :fin
+)
+
 echo.
 echo ===================================================================
-echo  Proceso finalizado. La ventana permanecera abierta.
+echo  [ERROR] No se ha detectado Python en tu sistema.
+echo ===================================================================
+echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
+echo  2. IMPORTANTE: En el instalador marca la casilla:
+echo     [X] "Add Python to PATH"
+echo ===================================================================
+
+:fin
+echo.
+echo ===================================================================
+echo  Proceso finalizado.
 echo ===================================================================
 pause
 `;
@@ -761,18 +702,18 @@ pause
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="font-bold text-white block">1. Python y librerías</span>
+                    <span className="font-bold text-white block">1. Python en tu PC</span>
                     <p className="text-slate-400 text-[11px]">
-                      Descarga Python desde <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer" className="text-amber-400 underline inline-flex items-center gap-0.5">python.org <ExternalLink className="w-2.5 h-2.5" /></a> (marcando <em>"Add Python to PATH"</em>).
+                      Descarga Python desde <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer" className="text-amber-400 underline inline-flex items-center gap-0.5">python.org <ExternalLink className="w-2.5 h-2.5" /></a> asegurándote de marcar la casilla <em>"Add Python to PATH"</em> en el instalador.
                     </p>
-                    <div className="bg-slate-950 p-2 rounded-lg font-mono text-amber-300 text-[11px] border border-slate-800 flex items-center justify-between">
-                      <code>pip install scapy requests</code>
-                    </div>
+                    <p className="text-emerald-400 text-[11px] font-semibold">
+                      ✓ Las dependencias (scapy, requests) se instalan solas al ejecutar.
+                    </p>
                   </div>
                   <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="font-bold text-white block">2. Controlador de Red Npcap</span>
+                    <span className="font-bold text-white block">2. Controlador Npcap (Requerido en Windows)</span>
                     <p className="text-slate-400 text-[11px]">
-                      Requerido en Windows para capturar los paquetes de red de Dofus Unity.
+                      Permite capturar los paquetes de red de Dofus Unity en tiempo real.
                     </p>
                     <a
                       href="https://npcap.com/#download"
@@ -780,7 +721,7 @@ pause
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-amber-400 font-bold text-xs hover:underline mt-1"
                     >
-                      npcap.com/#download <ExternalLink className="w-3 h-3" />
+                      Descargar Npcap (npcap.com) <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 </div>
@@ -795,15 +736,15 @@ pause
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleDownloadScript}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-slate-700"
+                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition-colors shadow-md shadow-amber-500/20"
                     >
-                      <Download className="w-3.5 h-3.5" /> Descargar .py
+                      <Download className="w-3.5 h-3.5" /> Descargar dofus_sniffer.py
                     </button>
                     <button
                       onClick={handleDownloadBat}
-                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition-colors shadow-md shadow-amber-500/20"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-slate-700"
                     >
-                      <Download className="w-3.5 h-3.5" /> Descargar Lanzador .bat
+                      <Download className="w-3.5 h-3.5" /> Descargar .bat (Opcional)
                     </button>
                   </div>
                 </div>
@@ -811,23 +752,22 @@ pause
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                   <div className="bg-slate-900/90 border border-amber-500/20 rounded-xl p-3 space-y-2">
                     <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
-                      ⚡ Opción A: Archivo .BAT (1 Clic)
+                      🐍 Opción Recomendada: Doble Clic en .py
                     </span>
                     <ol className="list-decimal list-inside space-y-1 text-xs text-slate-300">
-                      <li>Tener instalados <strong>Python</strong>, <strong>Npcap</strong> y dependencias.</li>
-                      <li>Descarga el archivo <strong>.bat</strong> configurado para {activeServerTarget}.</li>
-                      <li>Doble clic para ejecutar como Administrador.</li>
+                      <li>Descarga <strong className="text-white">dofus_sniffer.py</strong>.</li>
+                      <li>Haz <strong>doble clic</strong> en el archivo.</li>
+                      <li>Windows te pedirá confirmación de Administrador y el script se iniciará solo (auto-instalará librerías y descargará la base de nombres).</li>
                     </ol>
                   </div>
 
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2">
                     <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                      🐍 Opción B: Script Python (.py)
+                      ⚡ Opción Alternativa: Lanzador .BAT
                     </span>
                     <ol className="list-decimal list-inside space-y-1 text-xs text-slate-300">
-                      <li>Descarga el archivo <strong>.py</strong>.</li>
-                      <li>Abre PowerShell/CMD como <strong>Administrador</strong>.</li>
-                      <li>Ejecuta: <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">python dofus_sniffer.py --server "{activeServerTarget}"</code></li>
+                      <li>Descarga el archivo <strong>.bat</strong>.</li>
+                      <li>Haz doble clic; descargará el script Python y lo ejecutará sin cerrarse si hay algún mensaje o error.</li>
                     </ol>
                   </div>
                 </div>
