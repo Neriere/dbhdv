@@ -779,18 +779,27 @@ from datetime import datetime
 
 try:
     import requests
-except ImportError:
-    print("[ERROR] Falta la librería 'requests'. Ejecuta: pip install requests")
-    input("Presiona Enter para salir...")
+except Exception as e:
+    print(f"\n[ERROR CRITICO] Falta la libreria 'requests' ({e}).")
+    print("Ejecuta en tu consola: pip install requests")
+    input("\nPresiona Enter para salir...")
     sys.exit(1)
 
 try:
     from scapy.all import sniff, TCP, Raw
-except ImportError:
-    print("[ERROR] Falta la librería 'scapy'.")
-    print("1. Instálala ejecutando: pip install scapy")
-    print("2. En Windows, asegúrate de tener instalado Npcap: https://npcap.com/#download")
-    input("Presiona Enter para salir...")
+except Exception as e:
+    print("\n" + "=" * 70)
+    print(" [ERROR AL INICIALIZAR SCAPY / CONTROLADOR DE RED]")
+    print(f" Detalle: {e}")
+    print("=" * 70)
+    print(" Para capturar paquetes de red en Windows necesitas:")
+    print(" 1. Instalar Scapy: pip install scapy")
+    print(" 2. Instalar el controlador Npcap (OBLIGATORIO en Windows):")
+    print("    -> Descargalo gratis desde: https://npcap.com/#download")
+    print("    -> Durante la instalacion MARCA la casilla:")
+    print("       'Install Npcap in WinPcap API-compatible Mode'")
+    print("=" * 70)
+    input("\nPresiona Enter para salir...")
     sys.exit(1)
 
 # Argumentos de línea de comandos para permitir cambiar el servidor dinámicamente
@@ -1057,30 +1066,37 @@ app.get("/api/market/download-bat", (req, res) => {
   const batContent = `@echo off
 setlocal EnableDelayedExpansion
 
-:: 1. Ir al directorio donde reside este archivo .bat
+:: 1. Fijar directorio de trabajo donde reside este archivo .bat
 cd /d "%~dp0"
 
-:: 2. Comprobar permisos de Administrador
+:: 2. Si ya venimos del proceso elevado, saltar directamente a la ejecucion
+if "%~1"=="elevated" goto :main_execution
+
+:: 3. Comprobar permisos de Administrador
 net session >nul 2>&1
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo ===================================================================
-    echo  [AVISO] Se requieren permisos de Administrador para capturar red.
-    echo  Solicitando elevacion de permisos UAC...
+    echo  [ADMIN] Se requieren permisos de Administrador para capturar red.
+    echo  Solicitando elevacion UAC de Windows...
     echo ===================================================================
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -WorkingDirectory '%~dp0'"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d ""%~dp0"" && call ""%~f0"" elevated' -Verb RunAs"
     exit /b
 )
 
+:main_execution
 title Dofus Unity - Sincronizador de Mercadillo (${server})
 cls
 
-:: Configuracion del servidor objetivo
 set "CONFIGURED_SERVER=${server}"
 set "PARAM1=%~1"
+set "PARAM2=%~2"
 set "TARGET_SERVER=!CONFIGURED_SERVER!"
 
-if not "!PARAM1!"=="" (
+if not "!PARAM1!"=="" if not "!PARAM1!"=="elevated" (
     set "TARGET_SERVER=!PARAM1!"
+)
+if "!PARAM1!"=="elevated" if not "!PARAM2!"=="" (
+    set "TARGET_SERVER=!PARAM2!"
 )
 
 echo ===================================================================
@@ -1089,60 +1105,100 @@ echo ===================================================================
 echo.
 
 :: 1. Deteccion de ejecutable de Python
+echo [1/4] Buscando Python en el sistema...
 set "PYTHON_EXE="
-python --version >nul 2>&1 && set "PYTHON_EXE=python"
+where python >nul 2>&1 && set "PYTHON_EXE=python"
 if not defined PYTHON_EXE (
-    py -3 --version >nul 2>&1 && set "PYTHON_EXE=py -3"
+    where py >nul 2>&1 && set "PYTHON_EXE=py -3"
 )
 if not defined PYTHON_EXE (
-    python3 --version >nul 2>&1 && set "PYTHON_EXE=python3"
+    where python3 >nul 2>&1 && set "PYTHON_EXE=python3"
+)
+if not defined PYTHON_EXE (
+    for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
+        if exist "%%D\\python.exe" set "PYTHON_EXE=%%D\\python.exe"
+    )
+)
+if not defined PYTHON_EXE (
+    for /d %%D in ("%ProgramFiles%\\Python*") do (
+        if exist "%%D\\python.exe" set "PYTHON_EXE=%%D\\python.exe"
+    )
 )
 
 if not defined PYTHON_EXE (
-    echo [ERROR CRITICO] No se ha encontrado Python en tu sistema.
     echo.
-    echo 1. Descarga Python desde https://www.python.org/downloads/
-    echo 2. IMPORTANTE: Durante la instalacion marca la casilla "Add Python to PATH".
-    echo 3. Una vez instalado, vuelve a ejecutar este archivo .bat.
-    echo.
+    echo ===================================================================
+    echo  [ERROR CRITICO] No se ha detectado Python instalado.
+    echo ===================================================================
+    echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
+    echo  2. IMPORTANTE: Marca la casilla "Add Python to PATH" al instalar.
+    echo  3. Tras instalarlo, vuelve a ejecutar este archivo .bat.
+    echo ===================================================================
     goto :exit_pause
 )
 
 echo [OK] Python detectado: !PYTHON_EXE!
+echo.
 
 :: 2. Verificacion de dependencias (requests y scapy)
+echo [2/4] Verificando dependencias (requests, scapy)...
 !PYTHON_EXE! -c "import requests, scapy" >nul 2>&1
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo.
-    echo [INSTALANDO DEPENDENCIAS] Instalando scapy y requests automaticamente...
+    echo [INSTALANDO] Instalando librerias necesarias automaticamente...
     !PYTHON_EXE! -m pip install --upgrade requests scapy
     if !errorlevel! neq 0 (
-        echo [ERROR] No se pudieron instalar las librerias. Revisa tu conexion a Internet.
+        echo.
+        echo [ERROR] No se pudieron instalar las librerias con pip.
+        echo Comprueba tu conexion a Internet o ejecuta: pip install requests scapy
         goto :exit_pause
     )
     echo [OK] Dependencias instaladas correctamente.
+) else (
+    echo [OK] Dependencias listas.
+)
+echo.
+
+:: 3. Verificacion de controlador Npcap en Windows
+echo [3/4] Comprobando controlador de paquetes de red (Npcap)...
+set "NPCAP_OK=0"
+if exist "%SystemRoot%\\System32\\wpcap.dll" set "NPCAP_OK=1"
+if exist "%SystemRoot%\\System32\\Npcap" set "NPCAP_OK=1"
+if exist "%SystemRoot%\\SysWOW64\\wpcap.dll" set "NPCAP_OK=1"
+
+if "!NPCAP_OK!"=="0" (
+    echo.
+    echo -------------------------------------------------------------------
+    echo  [AVISO] No se detecto el controlador Npcap instalado en Windows.
+    echo  Si Scapy muestra un error al iniciar la captura, instala Npcap:
+    echo  -> https://npcap.com/#download
+    echo  (Recuerda marcar 'Install Npcap in WinPcap API-compatible Mode')
+    echo -------------------------------------------------------------------
+    echo.
+) else (
+    echo [OK] Controlador de captura detectado.
+    echo.
 )
 
-:: 3. Descarga automatica del motor Python si no existe
+:: 4. Descarga automatica del motor Python si no existe
+echo [4/4] Verificando archivos del sincronizador...
 if not exist "dofus_sniffer.py" (
-    echo.
-    echo [DESCARGA] Obteniendo script de sincronizacion optimizado...
+    echo [DESCARGA] Obteniendo script dofus_sniffer.py desde el servidor...
     powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${scriptUrl}' -OutFile 'dofus_sniffer.py'"
     if not exist "dofus_sniffer.py" (
-        echo [ERROR] No se pudo descargar dofus_sniffer.py desde el servidor.
+        echo [ERROR] No se pudo descargar dofus_sniffer.py.
         goto :exit_pause
     )
 )
 
-:: 4. Descarga de la base de nombres local si no existe
 if not exist "items_db.json" (
-    echo [DESCARGA] Obteniendo base de datos de nombres (items_db.json)...
+    echo [DESCARGA] Obteniendo diccionario de nombres (items_db.json)...
     powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${dictUrl}' -OutFile 'items_db.json'"
 )
 
 echo.
 echo ===================================================================
-echo  INICIANDO MOTOR DE CAPTURA EN SEGUNDO PLANO
+echo  INICIANDO MOTOR DE CAPTURA EN VIVO
 echo  Servidor : !TARGET_SERVER!
 echo ===================================================================
 echo.
@@ -1152,7 +1208,7 @@ echo.
 :exit_pause
 echo.
 echo ===================================================================
-echo  Proceso finalizado.
+echo  Proceso finalizado. La ventana permanecera abierta.
 echo ===================================================================
 pause
 `;
