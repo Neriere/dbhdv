@@ -34,6 +34,7 @@ import {
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
+import bycGeneratedDb from "../data/bycGeneratedDb.json";
 import {
   BASE_RUNES_BY_ID,
   DOFUS_BASE_RUNES,
@@ -905,6 +906,45 @@ export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
         typeId: 175,
         type: { id: 175, superCategoryId: 0, name: { es: "Trozo de tabla", fr: "Morceau de tablette", en: "Tablet piece" } },
       };
+    }
+    // All ByC hunts, maps, fragments, resources
+    if (Array.isArray(bycGeneratedDb)) {
+      for (const hunt of bycGeneratedDb as any[]) {
+        if (hunt.mapItem?.id && hunt.mapItem?.name) {
+          res[hunt.mapItem.id] = {
+            id: hunt.mapItem.id,
+            name: { es: hunt.mapItem.name, fr: hunt.mapItem.name_fr || hunt.mapItem.name, en: hunt.mapItem.name },
+            iconId: hunt.mapItem.iconId || 77041,
+            level: hunt.monsterLevel || 100,
+            typeId: 174,
+            type: { id: 174, superCategoryId: 0, name: { es: "Mapa", fr: "Carte", en: "Map" } },
+          };
+        }
+        if (Array.isArray(hunt.fragments)) {
+          for (const f of hunt.fragments) {
+            if (f.id && f.name) {
+              res[f.id] = {
+                id: f.id,
+                name: { es: f.name, fr: f.name_fr || f.name, en: f.name },
+                iconId: f.iconId || 77042,
+                level: hunt.monsterLevel || 100,
+                typeId: 175,
+                type: { id: 175, superCategoryId: 0, name: { es: "Fragmento de mapa", fr: "Fragment de carte", en: "Map fragment" } },
+              };
+            }
+          }
+        }
+        if (hunt.resource?.id && hunt.resource?.name) {
+          res[hunt.resource.id] = {
+            id: hunt.resource.id,
+            name: { es: hunt.resource.name, fr: hunt.resource.name_fr || hunt.resource.name, en: hunt.resource.name },
+            iconId: hunt.resource.iconId || 24971,
+            level: hunt.monsterLevel || 100,
+            typeId: 71,
+            type: { id: 71, superCategoryId: 0, name: { es: hunt.resource.type || "Recurso", fr: "Ressource", en: "Resource" } },
+          };
+        }
+      }
     }
     return res;
   })(),

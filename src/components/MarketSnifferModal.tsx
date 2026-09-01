@@ -184,8 +184,9 @@ def load_or_download_items_db():
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 ITEMS_DB = json.load(f)
-            print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
-            return
+            if "1519" in ITEMS_DB and "1522" in ITEMS_DB and "15379" in ITEMS_DB:
+                print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
+                return
         except Exception as e:
             print(f"[Aviso] Error leyendo items_db.json local: {e}. Re-descargando...")
 

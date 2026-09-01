@@ -891,8 +891,8 @@ def load_or_download_items_db(force=False):
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 ITEMS_DB = json.load(f)
-            # Si la base local no tiene runas básicas (1519, 1522), actualizar automáticamente
-            if "1519" not in ITEMS_DB or "1522" not in ITEMS_DB:
+            # Si la base local no tiene runas o fragmentos ByC (1519, 1522, 15379, 32194), actualizar automáticamente
+            if "1519" not in ITEMS_DB or "1522" not in ITEMS_DB or "15379" not in ITEMS_DB or "32194" not in ITEMS_DB:
                 need_download = True
             else:
                 print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")

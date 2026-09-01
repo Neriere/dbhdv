@@ -6,6 +6,7 @@ import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights.js"
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData.js";
 import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems.js";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData.js";
+import bycGeneratedDb from "../data/bycGeneratedDb.json";
 import {
   DofusEffect,
   DofusItem,
@@ -2882,7 +2883,40 @@ export async function getItemsDictionary(): Promise<Record<string, string>> {
     }
   }
 
-  // 6. Query all items with names in database
+  // 6. ByC hunts, maps, fragments and items
+  if (Array.isArray(bycGeneratedDb)) {
+    for (const hunt of bycGeneratedDb as any[]) {
+      if (hunt.mapItem?.id && hunt.mapItem?.name) {
+        dict[String(hunt.mapItem.id)] = hunt.mapItem.name;
+      }
+      if (Array.isArray(hunt.fragments)) {
+        for (const f of hunt.fragments) {
+          if (f.id && f.name) {
+            dict[String(f.id)] = f.name;
+          }
+        }
+      }
+      if (hunt.resource?.id && hunt.resource?.name) {
+        dict[String(hunt.resource.id)] = hunt.resource.name;
+      }
+      if (Array.isArray(hunt.equipments)) {
+        for (const eq of hunt.equipments) {
+          if (eq.id && eq.name) {
+            dict[String(eq.id)] = eq.name;
+          }
+          if (Array.isArray(eq.recipeIngredients)) {
+            for (const ing of eq.recipeIngredients) {
+              if (ing.id && ing.name) {
+                dict[String(ing.id)] = ing.name;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 7. Query all items with names in database
   try {
     const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != ''");
     for (const row of result.rows) {
