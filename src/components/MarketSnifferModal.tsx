@@ -87,6 +87,14 @@ import subprocess
 import urllib.request
 from datetime import datetime
 
+# 0. FORZAR UTF-8 EN CONSOLA DE WINDOWS (evita texto ilegible con tildes/ñ)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # 1. AUTO-ELEVACIÓN ADMINISTRADOR EN WINDOWS (para captura con Scapy)
 def is_admin():
     if sys.platform != "win32":
@@ -461,11 +469,11 @@ if __name__ == "__main__":
         input("\\nPresiona Enter para cerrar...")
 `;
 
-  const pythonScriptBase64 = typeof window !== 'undefined' && typeof btoa !== 'undefined'
-    ? btoa(encodeURIComponent(pythonScript).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
-    : '';
+  const snifferScriptUrl = `${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}`;
+  const itemsDbDownloadUrl = `${currentOrigin}/api/market/download-items-db`;
 
   const batContent = `@echo off
+chcp 65001 >nul
 title Dofus Unity - Sincronizador de Mercadillo (${activeServerTarget})
 cd /d "%~dp0"
 
@@ -475,11 +483,38 @@ echo       Servidor: ${activeServerTarget}
 echo ===================================================================
 echo.
 
-:: 1. Escribir o actualizar dofus_sniffer.py directamente desde el codigo base
-echo [INICIALIZANDO] Preparando dofus_sniffer.py...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$b = [System.Convert]::FromBase64String('${pythonScriptBase64}'); [System.IO.File]::WriteAllBytes('dofus_sniffer.py', $b)"
+:: 1. Descargar/actualizar dofus_sniffer.py desde el servidor
+echo [1/2] Descargando dofus_sniffer.py...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -fsSL "${snifferScriptUrl}" -o "dofus_sniffer.py"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${snifferScriptUrl}' -OutFile 'dofus_sniffer.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
+)
+if not exist "dofus_sniffer.py" (
+    echo [ERROR] No se pudo descargar dofus_sniffer.py. Verifica tu conexion a internet.
+    goto :error
+)
 
-:: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
+:: 2. Descargar/actualizar la base de nombres de objetos items_db.json
+echo [2/2] Descargando items_db.json...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -fsSL "${itemsDbDownloadUrl}" -o "items_db.json"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { Write-Host $_.Exception.Message }"
+)
+if not exist "items_db.json" (
+    echo [Aviso] No se pudo descargar items_db.json ahora mismo. El script la descargara automaticamente al iniciar.
+)
+
+echo.
+echo ===================================================================
+echo  Archivos listos. Iniciando sincronizador...
+echo ===================================================================
+echo.
+
+:: 3. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
 where py >nul 2>&1
 if %errorlevel% equ 0 (
     py -3 dofus_sniffer.py --server "${activeServerTarget}"
@@ -505,6 +540,13 @@ echo ===================================================================
 echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
 echo  2. IMPORTANTE: En el instalador marca la casilla:
 echo     [X] "Add Python to PATH"
+echo ===================================================================
+goto :fin
+
+:error
+echo.
+echo ===================================================================
+echo  El proceso se detuvo por un error de descarga.
 echo ===================================================================
 
 :fin

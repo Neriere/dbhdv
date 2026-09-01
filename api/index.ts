@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import compression from "compression";
 import path from "path";
 import basicAuth from "express-basic-auth";
@@ -168,7 +168,8 @@ app.post("/api/local-db/seed-step/init", async (req, res) => {
     const result = await seedStepInit();
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Init seed step failed";
+    const message =
+      error instanceof Error ? error.message : "Init seed step failed";
     res.status(500).json({ error: message });
   }
 });
@@ -180,7 +181,8 @@ app.post("/api/local-db/seed-step/items", async (req, res) => {
     const result = await seedStepItems(chunkIndex, chunkSize);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Items seed step failed";
+    const message =
+      error instanceof Error ? error.message : "Items seed step failed";
     res.status(500).json({ error: message });
   }
 });
@@ -192,7 +194,8 @@ app.post("/api/local-db/seed-step/recipes", async (req, res) => {
     const result = await seedStepRecipes(chunkIndex, chunkSize);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Recipes seed step failed";
+    const message =
+      error instanceof Error ? error.message : "Recipes seed step failed";
     res.status(500).json({ error: message });
   }
 });
@@ -202,7 +205,8 @@ app.post("/api/local-db/seed-step/finalize", async (req, res) => {
     const result = await seedStepFinalize();
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Finalize seed step failed";
+    const message =
+      error instanceof Error ? error.message : "Finalize seed step failed";
     res.status(500).json({ error: message });
   }
 });
@@ -212,7 +216,8 @@ app.post("/api/local-db/import-chunk/init", async (req, res) => {
     await importChunkInit();
     res.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Import chunk init failed";
+    const message =
+      error instanceof Error ? error.message : "Import chunk init failed";
     res.status(500).json({ error: message });
   }
 });
@@ -223,7 +228,8 @@ app.post("/api/local-db/import-chunk/items", async (req, res) => {
     const result = await importChunkItems(items);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Import chunk items failed";
+    const message =
+      error instanceof Error ? error.message : "Import chunk items failed";
     res.status(500).json({ error: message });
   }
 });
@@ -234,7 +240,8 @@ app.post("/api/local-db/import-chunk/recipes", async (req, res) => {
     const result = await importChunkRecipes(recipes);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Import chunk recipes failed";
+    const message =
+      error instanceof Error ? error.message : "Import chunk recipes failed";
     res.status(500).json({ error: message });
   }
 });
@@ -244,7 +251,8 @@ app.post("/api/local-db/import-chunk/finalize", async (req, res) => {
     const result = await importChunkFinalize();
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Import chunk finalize failed";
+    const message =
+      error instanceof Error ? error.message : "Import chunk finalize failed";
     res.status(500).json({ error: message });
   }
 });
@@ -255,8 +263,7 @@ app.post("/api/local-db/fast-seed", async (req, res) => {
     const data = await seedDatabaseFromBundle(force);
     res.json(data);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Fast seed failed";
+    const message = error instanceof Error ? error.message : "Fast seed failed";
     res.status(500).json({ error: message });
   }
 });
@@ -294,7 +301,10 @@ app.get("/api/local-db/items/:id", async (req, res) => {
     const itemId = Number(req.params.id);
     if (!itemId) return res.status(400).json({ error: "Invalid item id" });
 
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+    );
     const item = await getOrFetchItemById(itemId);
     if (!item) return res.status(404).json({ error: "Item not found" });
 
@@ -311,7 +321,10 @@ app.get("/api/local-db/item-stats/:id", async (req, res) => {
     const itemId = Number(req.params.id);
     if (!itemId) return res.status(400).json({ error: "Invalid item id" });
 
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+    );
     const stats = await getItemStatsFromDb(itemId);
     res.json({ itemId, stats });
   } catch (error) {
@@ -326,7 +339,10 @@ app.get("/api/local-db/recipes/:resultId", async (req, res) => {
     const resultId = Number(req.params.resultId);
     if (!resultId) return res.status(400).json({ error: "Invalid result id" });
 
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+    );
     const recipe = await getOrFetchRecipeByResultId(resultId);
     if (!recipe) return res.status(404).json({ error: "Recipe not found" });
 
@@ -398,11 +414,15 @@ app.get("/api/local-db/export-database", (req, res) => {
 app.get("/api/local-db/export-json", async (req, res) => {
   try {
     const data = await exportFullDatabaseJSON();
-    res.setHeader("Content-Disposition", `attachment; filename=dofus_database_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=dofus_database_backup_${new Date().toISOString().slice(0, 10)}.json`,
+    );
     res.setHeader("Content-Type", "application/json");
     res.json(data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to export JSON database";
+    const message =
+      error instanceof Error ? error.message : "Failed to export JSON database";
     res.status(500).json({ error: message });
   }
 });
@@ -412,7 +432,8 @@ app.post("/api/local-db/import-json", async (req, res) => {
     const imported = await importFullDatabaseJSON(req.body);
     res.json(imported);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to import JSON database";
+    const message =
+      error instanceof Error ? error.message : "Failed to import JSON database";
     res.status(500).json({ error: message });
   }
 });
@@ -513,12 +534,18 @@ app.delete("/api/local-db/prices", async (req, res) => {
 
 app.get("/api/local-db/price-history", async (req, res) => {
   try {
-    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const profileId = req.query.profileId
+      ? Number(req.query.profileId)
+      : undefined;
     const itemId = req.query.itemId ? Number(req.query.itemId) : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const offset = req.query.offset ? Number(req.query.offset) : 0;
     const search = req.query.search ? String(req.query.search) : undefined;
-    const filter = req.query.filter as 'all' | 'increased' | 'decreased' | undefined;
+    const filter = req.query.filter as
+      | "all"
+      | "increased"
+      | "decreased"
+      | undefined;
 
     const result = await getPriceHistory({
       profileId,
@@ -540,13 +567,17 @@ app.get("/api/local-db/price-history/item/:id", async (req, res) => {
   try {
     const itemId = Number(req.params.id);
     if (!itemId) return res.status(400).json({ error: "Invalid item ID" });
-    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const profileId = req.query.profileId
+      ? Number(req.query.profileId)
+      : undefined;
 
     const result = await getItemPriceHistory(itemId, profileId);
     res.json(result);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to fetch item price history";
+      error instanceof Error
+        ? error.message
+        : "Failed to fetch item price history";
     res.status(500).json({ error: message });
   }
 });
@@ -568,7 +599,9 @@ app.post("/api/local-db/price-history/revert", async (req, res) => {
 
 app.delete("/api/local-db/price-history", async (req, res) => {
   try {
-    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const profileId = req.body?.profileId
+      ? Number(req.body?.profileId)
+      : undefined;
     const itemId = req.body?.itemId ? Number(req.body?.itemId) : undefined;
     const result = await clearPriceHistory(profileId, itemId);
     res.json(result);
@@ -581,11 +614,14 @@ app.delete("/api/local-db/price-history", async (req, res) => {
 
 app.get("/api/local-db/coefficients", async (req, res) => {
   try {
-    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const profileId = req.query.profileId
+      ? Number(req.query.profileId)
+      : undefined;
     const result = await getProfileCoefficients(profileId);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch coefficients";
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch coefficients";
     res.status(500).json({ error: message });
   }
 });
@@ -594,15 +630,27 @@ app.put("/api/local-db/coefficients/:itemId", async (req, res) => {
   try {
     const itemId = Number(req.params.itemId);
     const coefficient = Number(req.body?.coefficient);
-    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
-    const updatedAt = req.body?.updatedAt ? Number(req.body?.updatedAt) : undefined;
+    const profileId = req.body?.profileId
+      ? Number(req.body?.profileId)
+      : undefined;
+    const updatedAt = req.body?.updatedAt
+      ? Number(req.body?.updatedAt)
+      : undefined;
     if (!itemId || Number.isNaN(coefficient)) {
-      return res.status(400).json({ error: "Valid itemId and coefficient are required" });
+      return res
+        .status(400)
+        .json({ error: "Valid itemId and coefficient are required" });
     }
-    const result = await setItemCoefficient(itemId, coefficient, profileId, updatedAt);
+    const result = await setItemCoefficient(
+      itemId,
+      coefficient,
+      profileId,
+      updatedAt,
+    );
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to save coefficient";
+    const message =
+      error instanceof Error ? error.message : "Failed to save coefficient";
     res.status(500).json({ error: message });
   }
 });
@@ -610,11 +658,16 @@ app.put("/api/local-db/coefficients/:itemId", async (req, res) => {
 app.post("/api/local-db/coefficients/bulk", async (req, res) => {
   try {
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
-    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const profileId = req.body?.profileId
+      ? Number(req.body?.profileId)
+      : undefined;
     const result = await bulkSaveProfileCoefficients(entries, profileId);
     res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to bulk save coefficients";
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to bulk save coefficients";
     res.status(500).json({ error: message });
   }
 });
@@ -624,7 +677,8 @@ app.post("/api/local-db/coefficients/bulk", async (req, res) => {
 // ----------------------------------------------------------------------------
 
 function verifySnifferAuth(req: express.Request): boolean {
-  const secret = process.env.MARKET_SNIFFER_SECRET || process.env.SNIFFER_SECRET;
+  const secret =
+    process.env.MARKET_SNIFFER_SECRET || process.env.SNIFFER_SECRET;
   if (!secret || secret.trim() === "") {
     return true; // No secret configured -> open access
   }
@@ -632,35 +686,42 @@ function verifySnifferAuth(req: express.Request): boolean {
   const headerKey =
     req.headers["x-api-key"] ||
     req.headers["x-market-sniffer-secret"] ||
-    (typeof req.headers["authorization"] === "string" ? req.headers["authorization"].replace(/^Bearer\s+/i, "") : undefined) ||
+    (typeof req.headers["authorization"] === "string"
+      ? req.headers["authorization"].replace(/^Bearer\s+/i, "")
+      : undefined) ||
     req.query.key ||
     req.query.api_key;
   return typeof headerKey === "string" && headerKey.trim() === cleanSecret;
 }
 
-app.post(["/api/market/update", "/api/market-prices/ingest"], async (req, res) => {
-  try {
-    if (!verifySnifferAuth(req)) {
-      return res.status(401).json({
-        error: "No autorizado",
-        message: "Clave de API inválida o ausente en cabecera 'x-api-key'.",
+app.post(
+  ["/api/market/update", "/api/market-prices/ingest"],
+  async (req, res) => {
+    try {
+      if (!verifySnifferAuth(req)) {
+        return res.status(401).json({
+          error: "No autorizado",
+          message: "Clave de API inválida o ausente en cabecera 'x-api-key'.",
+        });
+      }
+
+      const payload = req.body;
+      if (!payload || typeof payload !== "object") {
+        return res
+          .status(400)
+          .json({ error: "Cuerpo de solicitud JSON requerido" });
+      }
+
+      const result = await processAndIngestMarketPrice(payload);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Market Sniffer API Error]:", error);
+      res.status(500).json({
+        error: error.message || "Error al procesar el precio del mercadillo",
       });
     }
-
-    const payload = req.body;
-    if (!payload || typeof payload !== "object") {
-      return res.status(400).json({ error: "Cuerpo de solicitud JSON requerido" });
-    }
-
-    const result = await processAndIngestMarketPrice(payload);
-    res.json(result);
-  } catch (error: any) {
-    console.error("[Market Sniffer API Error]:", error);
-    res.status(500).json({
-      error: error.message || "Error al procesar el precio del mercadillo",
-    });
-  }
-});
+  },
+);
 
 app.post("/api/market/batch-update", async (req, res) => {
   try {
@@ -674,8 +735,8 @@ app.post("/api/market/batch-update", async (req, res) => {
     const items = Array.isArray(req.body?.items)
       ? req.body.items
       : Array.isArray(req.body)
-      ? req.body
-      : [];
+        ? req.body
+        : [];
 
     if (items.length === 0) {
       return res.status(400).json({ error: "Se requiere un array de items" });
@@ -686,7 +747,8 @@ app.post("/api/market/batch-update", async (req, res) => {
   } catch (error: any) {
     console.error("[Market Sniffer Batch API Error]:", error);
     res.status(500).json({
-      error: error.message || "Error al procesar el lote de precios del mercadillo",
+      error:
+        error.message || "Error al procesar el lote de precios del mercadillo",
     });
   }
 });
@@ -722,7 +784,9 @@ app.get("/api/market/download-items-db", async (req, res) => {
 app.get("/api/market/latest-prices", async (req, res) => {
   try {
     const serverParam = (req.query.server as string) || "";
-    const profileIdParam = req.query.profileId ? Number(req.query.profileId) : 0;
+    const profileIdParam = req.query.profileId
+      ? Number(req.query.profileId)
+      : 0;
     const sinceParam = req.query.since ? Number(req.query.since) : 0;
 
     let targetProfileId = profileIdParam;
@@ -731,7 +795,10 @@ app.get("/api/market/latest-prices", async (req, res) => {
       targetProfileId = profileId;
     }
 
-    const result = await getLatestMarketPricesDelta(targetProfileId, sinceParam);
+    const result = await getLatestMarketPricesDelta(
+      targetProfileId,
+      sinceParam,
+    );
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.json({
       success: true,
@@ -747,8 +814,13 @@ app.get("/api/market/latest-prices", async (req, res) => {
 });
 
 app.get("/api/market/sniffer-script", (req, res) => {
-  const proto = (req.headers["x-forwarded-proto"] as string) || (req.secure ? "https" : "http");
-  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+  const proto =
+    (req.headers["x-forwarded-proto"] as string) ||
+    (req.secure ? "https" : "http");
+  const host =
+    (req.headers["x-forwarded-host"] as string) ||
+    req.get("host") ||
+    "localhost:3000";
   const baseUrl = `${proto}://${host}`;
   const batchApiUrl = `${baseUrl}/api/market/batch-update`;
   const updateApiUrl = `${baseUrl}/api/market/update`;
@@ -785,6 +857,14 @@ import traceback
 import subprocess
 import urllib.request
 from datetime import datetime
+
+# 0. FORZAR UTF-8 EN CONSOLA DE WINDOWS (evita texto ilegible con tildes/ñ)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # 1. AUTO-ELEVACION ADMINISTRADOR EN WINDOWS
 def is_admin():
@@ -1151,377 +1231,21 @@ if __name__ == "__main__":
 });
 
 app.get("/api/market/download-bat", (req, res) => {
-  const proto = (req.headers["x-forwarded-proto"] as string) || (req.secure ? "https" : "http");
-  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+  const proto =
+    (req.headers["x-forwarded-proto"] as string) ||
+    (req.secure ? "https" : "http");
+  const host =
+    (req.headers["x-forwarded-host"] as string) ||
+    req.get("host") ||
+    "localhost:3000";
   const baseUrl = `${proto}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
-  const secretKey = (process.env.MARKET_SNIFFER_SECRET || "").trim();
 
-  // Reutilizar o extraer el script
-  const batchApiUrl = `${baseUrl}/api/market/batch-update`;
-  const updateApiUrl = `${baseUrl}/api/market/update`;
-  const dictUrl = `${baseUrl}/api/market/items-dictionary`;
-
-  const scriptContent = `#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-===============================================================================
-  DOFUS UNITY -> MERCADILLO ULTRA-FAST LIVE SNIFFER (HIGH PERFORMANCE)
-===============================================================================
-  - Búfer Asíncrono Multihilo: captura de paquetes sin latencia ni cuellos de botella.
-  - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms (sin llamadas a DofusDB).
-  - Micro-Batching con HTTP Keep-Alive hacia tu servidor Turso/Vercel.
-  
-  Dependencias requeridas:
-    pip install scapy requests
-
-  Ejecutar como Administrador:
-    python dofus_sniffer.py
-===============================================================================
-"""
-
-import sys
-import os
-import time
-import json
-import argparse
-import ctypes
-import subprocess
-import threading
-import queue
-import traceback
-
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
-        return False
-
-def check_and_elevate_admin():
-    if sys.platform == "win32" and not is_admin():
-        print("=" * 70)
-        print(" [AVISO] Solicitando permisos de Administrador para captura de red...")
-        print("=" * 70)
-        try:
-            script_path = os.path.abspath(sys.argv[0])
-            params = " ".join([f'"{arg}"' for arg in sys.argv[1:]])
-            ret = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, f'"{script_path}" {params}', None, 1
-            )
-            if ret > 32:
-                sys.exit(0)
-            else:
-                print("[ADVERTENCIA] No se pudo elevar automaticamente a Administrador.")
-                print("Por favor, abre la consola o CMD como 'Ejecutar como Administrador'.")
-        except Exception as e:
-            print(f"[Error Elevacion Admin]: {e}")
-
-check_and_elevate_admin()
-
-def ensure_dependencies():
-    packages = []
-    try:
-        import requests
-    except ImportError:
-        packages.append("requests")
-    try:
-        import scapy
-    except ImportError:
-        packages.append("scapy")
-
-    if packages:
-        print("=" * 70)
-        print(f" [INSTALADOR] Instalando librerias necesarias: {', '.join(packages)}")
-        print("=" * 70)
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
-            print("[OK] Librerias instaladas con exito.\\n")
-        except Exception as e:
-            print(f"[ERROR PIP] No se pudieron instalar dependencias automaticamente: {e}")
-            print(f"Ejecuta en tu consola: pip install {' '.join(packages)}")
-            input("\\nPresiona Enter para salir...")
-            sys.exit(1)
-
-ensure_dependencies()
-
-import requests
-try:
-    from scapy.all import sniff, TCP, Raw
-except Exception as e:
-    print("\\n" + "=" * 70)
-    print(" [CONTROLADOR DE RED NPCAP REQUERIDO EN WINDOWS]")
-    print(f" Detalle: {e}")
-    print("=" * 70)
-    print(" Para capturar paquetes de red en Windows:")
-    print(" 1. Descarga el instalador gratuito de Npcap:")
-    print("    https://npcap.com/#download")
-    print(" 2. Durante la instalacion MARCA la casilla:")
-    print("    'Install Npcap in WinPcap API-compatible Mode'")
-    print("=" * 70)
-    input("\\nPresiona Enter para salir...")
-    sys.exit(1)
-
-parser = argparse.ArgumentParser(description="Dofus Unity Sniffer - Sync en vivo a Base de Datos")
-parser.add_argument("--server", type=str, default="${server}", help="Nombre del servidor (ej: Draconiros, Tal Kasha)")
-args = parser.parse_args()
-
-SERVER_NAME = args.server
-BATCH_ENDPOINT = "${batchApiUrl}"
-UPDATE_ENDPOINT = "${updateApiUrl}"
-DICT_ENDPOINT = "${dictUrl}"
-SECRET_KEY = "${secretKey}"
-
-DOFUS_PORTS = "tcp port 5555 or tcp port 443"
-LOCAL_DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "items_db.json")
-
-ITEMS_DB = {}
-
-def load_or_download_items_db():
-    global ITEMS_DB
-    need_download = False
-    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 500:
-        try:
-            with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
-                ITEMS_DB = json.load(f)
-            if len(ITEMS_DB) > 50:
-                print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
-                return
-            else:
-                need_download = True
-        except Exception:
-            need_download = True
-    else:
-        need_download = True
-
-    if need_download:
-        print("[DB Local] Descargando diccionario maestro de nombres desde tu app...")
-        try:
-            headers = {"User-Agent": "DofusSniffer/1.0"}
-            if SECRET_KEY:
-                headers["x-api-key"] = SECRET_KEY
-                headers["X-Market-Sniffer-Secret"] = SECRET_KEY
-            r = requests.get(DICT_ENDPOINT, headers=headers, timeout=15)
-            if r.status_code == 200 and r.text.strip().startswith("{"):
-                ITEMS_DB = r.json()
-                with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
-                    json.dump(ITEMS_DB, f, ensure_ascii=False)
-                print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
-            else:
-                print(f"[DB Local] Estado HTTP {r.status_code}. Se continuara resolviendo nombres en vivo.")
-        except Exception as e:
-            print(f"[DB Local] Descarga diferida ({e}). Los nombres se resolveran en vivo.")
-
-def get_item_name_instant(item_id):
-    if not item_id:
-        return "Objeto"
-    s_id = str(item_id)
-    if s_id in ITEMS_DB:
-        return ITEMS_DB[s_id]
-    if item_id in ITEMS_DB:
-        return ITEMS_DB[item_id]
-    
-    # Auto-resolución en vivo desde DofusDB oficial
-    try:
-        req = requests.get(f"https://api.dofusdb.fr/items/{item_id}", headers={"User-Agent": "DofusSniffer/2.0"}, timeout=2.0)
-        if req.status_code == 200:
-            item_data = req.json()
-            name_obj = item_data.get("name")
-            name_val = ""
-            if isinstance(name_obj, dict):
-                name_val = name_obj.get("es") or name_obj.get("fr") or name_obj.get("en") or ""
-            elif isinstance(name_obj, str):
-                name_val = name_obj
-            if name_val and name_val.strip():
-                clean_name = name_val.strip()
-                ITEMS_DB[s_id] = clean_name
-                try:
-                    with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
-                        json.dump(ITEMS_DB, f, ensure_ascii=False)
-                except Exception:
-                    pass
-                return clean_name
-    except Exception:
-        pass
-
-    return f"Objeto #{item_id}"
-
-def decode_varint(buf, off):
-    val, shift, read = 0, 0, 0
-    while off + read < len(buf):
-        b = buf[off + read]
-        read += 1
-        val |= (b & 0x7F) << shift
-        if (b & 0x80) == 0:
-            break
-        shift += 7
-    return val, read
-
-def parse_kbt(buf):
-    try:
-        idx = buf.find(b"kbt")
-        if idx == -1:
-            return None, []
-        off_12 = buf.find(b"\\x12", idx, idx + 20)
-        if off_12 == -1:
-            return None, []
-        off = off_12 + 1
-        if off >= len(buf):
-            return None, []
-        payload_len, br = decode_varint(buf, off)
-        off += br
-        payload = buf[off:off + payload_len]
-
-        p_off = 0
-        item_id = 0
-        prices = []
-
-        while p_off < len(payload):
-            tag = payload[p_off]
-            p_off += 1
-            field = tag >> 3
-            wire = tag & 7
-
-            if wire == 0:
-                val, br = decode_varint(payload, p_off)
-                p_off += br
-                if field == 2:
-                    item_id = val
-            elif wire == 2:
-                sub_len, br = decode_varint(payload, p_off)
-                p_off += br
-                sub = payload[p_off:p_off + sub_len]
-                p_off += sub_len
-
-                s_off = 0
-                while s_off < len(sub):
-                    s_tag = sub[s_off]
-                    s_off += 1
-                    s_field = s_tag >> 3
-                    s_wire = s_tag & 7
-                    if s_wire == 0:
-                        s_val, s_br = decode_varint(sub, s_off)
-                        s_off += s_br
-                        if s_field in (2, 5):
-                            item_id = s_val
-                    elif s_wire == 2:
-                        in_len, s_br = decode_varint(sub, s_off)
-                        s_off += s_br
-                        inner = sub[s_off:s_off + in_len]
-                        s_off += in_len
-                        if s_field == 6:
-                            i_off = 0
-                            while i_off < len(inner):
-                                pv, pbr = decode_varint(inner, i_off)
-                                i_off += pbr
-                                if pv > 0:
-                                    prices.append(pv)
-                    else:
-                        break
-        return item_id, prices
-    except Exception:
-        pass
-    return None, []
-
-price_queue = queue.Queue()
-session = requests.Session()
-
-def async_worker():
-    headers = {
-        "Content-Type": "application/json",
-        "X-Market-Sniffer-Secret": SECRET_KEY
-    }
-    while True:
-        batch = []
-        try:
-            first_item = price_queue.get(timeout=0.5)
-            batch.append(first_item)
-            price_queue.task_done()
-            while len(batch) < 50:
-                try:
-                    next_item = price_queue.get_nowait()
-                    batch.append(next_item)
-                    price_queue.task_done()
-                except queue.Empty:
-                    break
-        except queue.Empty:
-            continue
-
-        if not batch:
-            continue
-
-        try:
-            payload = {"server": SERVER_NAME, "items": batch}
-            resp = session.post(BATCH_ENDPOINT, json=payload, headers=headers, timeout=5)
-            if resp.status_code != 200:
-                for item in batch:
-                    try:
-                        session.post(UPDATE_ENDPOINT, json={"server": SERVER_NAME, **item}, headers=headers, timeout=3)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-def process_packet(packet):
-    if not (packet.haslayer(TCP) and packet.haslayer(Raw)):
-        return
-    payload = bytes(packet[Raw].load)
-    item_id, raw_prices = parse_kbt(payload)
-    if not item_id or not raw_prices:
-        return
-    valid_prices = [p for p in raw_prices if isinstance(p, int) and p > 0]
-    if not valid_prices:
-        return
-    lowest_unit_price = min(valid_prices)
-    name = get_item_name_instant(item_id)
-    hora = time.strftime("%H:%M:%S")
-    print(f"[{hora}]  [RECURSO] {name} (#{item_id}) -> {lowest_unit_price:,.0f} k (Guardado)")
-
-    price_queue.put({
-        "itemId": int(item_id),
-        "itemName": name,
-        "price": int(lowest_unit_price),
-        "allPrices": valid_prices,
-        "source": "sniffer",
-        "timestamp": int(time.time() * 1000)
-    })
-
-def main():
-    print("=" * 70)
-    print("    DOFUS UNITY - SINCRONIZADOR EN VIVO (ALTO RENDIMIENTO)")
-    print(f"  Servidor Destino : {SERVER_NAME}")
-    print(f"  Base de Datos    : Turso / LibSQL Cloud")
-    print("=" * 70)
-
-    load_or_download_items_db()
-
-    worker_thread = threading.Thread(target=async_worker, daemon=True)
-    worker_thread.start()
-
-    print("\\n Escuchando paquetes en tiempo real...")
-    print("Abre el mercadillo en Dofus Unity e inspecciona los objetos.")
-    print("Presiona Ctrl+C para salir.\\n")
-
-    try:
-        sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
-    except KeyboardInterrupt:
-        print("\\n\\nSincronizador detenido por el usuario.")
-    except Exception as e:
-        print(f"\\n[Error Sniffer]: {e}")
-        traceback.print_exc()
-        input("\\nPresiona Enter para cerrar...")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"\\n[ERROR CRITICO NO CONTROLADO]: {e}")
-        traceback.print_exc()
-        input("\\nPresiona Enter para cerrar...")
-`;
-
-  const scriptBase64 = Buffer.from(scriptContent, "utf-8").toString("base64");
+  const snifferScriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
+  const itemsDbDownloadUrl = `${baseUrl}/api/market/download-items-db`;
 
   const batContent = `@echo off
+chcp 65001 >nul
 title Dofus Unity - Sincronizador de Mercadillo (${server})
 cd /d "%~dp0"
 
@@ -1531,11 +1255,38 @@ echo       Servidor: ${server}
 echo ===================================================================
 echo.
 
-:: 1. Escribir o actualizar dofus_sniffer.py directamente desde el codigo base
-echo [INICIALIZANDO] Preparando dofus_sniffer.py...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$b = [System.Convert]::FromBase64String('${scriptBase64}'); [System.IO.File]::WriteAllBytes('dofus_sniffer.py', $b)"
+:: 1. Descargar/actualizar dofus_sniffer.py desde el servidor
+echo [1/2] Descargando dofus_sniffer.py...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -fsSL "${snifferScriptUrl}" -o "dofus_sniffer.py"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${snifferScriptUrl}' -OutFile 'dofus_sniffer.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
+)
+if not exist "dofus_sniffer.py" (
+    echo [ERROR] No se pudo descargar dofus_sniffer.py. Verifica tu conexion a internet.
+    goto :error
+)
 
-:: 2. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
+:: 2. Descargar/actualizar la base de nombres de objetos items_db.json
+echo [2/2] Descargando items_db.json...
+where curl >nul 2>&1
+if %errorlevel% equ 0 (
+    curl -fsSL "${itemsDbDownloadUrl}" -o "items_db.json"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { Write-Host $_.Exception.Message }"
+)
+if not exist "items_db.json" (
+    echo [Aviso] No se pudo descargar items_db.json ahora mismo. El script la descargara automaticamente al iniciar.
+)
+
+echo.
+echo ===================================================================
+echo  Archivos listos. Iniciando sincronizador...
+echo ===================================================================
+echo.
+
+:: 3. Ejecutar con Python (el script maneja permisos de Admin automaticamente)
 where py >nul 2>&1
 if %errorlevel% equ 0 (
     py -3 dofus_sniffer.py --server "${server}"
@@ -1562,6 +1313,13 @@ echo  1. Descarga Python gratis desde: https://www.python.org/downloads/
 echo  2. IMPORTANTE: En el instalador marca la casilla:
 echo     [X] "Add Python to PATH"
 echo ===================================================================
+goto :fin
+
+:error
+echo.
+echo ===================================================================
+echo  El proceso se detuvo por un error de descarga.
+echo ===================================================================
 
 :fin
 echo.
@@ -1573,14 +1331,19 @@ pause
 
   const safeFilename = `sincronizar_mercadillo_${server.toLowerCase().replace(/[^a-z0-9]/g, "_")}.bat`;
   const crlfBat = batContent.replace(/\r?\n/g, "\r\n");
-  res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${safeFilename}"`,
+  );
   res.setHeader("Content-Type", "application/x-bat; charset=utf-8");
   res.send(crlfBat);
 });
 
 app.get("/api/market/download-py", (req, res) => {
   const server = (req.query.server as string) || "Draconiros";
-  res.redirect(`/api/market/sniffer-script?server=${encodeURIComponent(server)}`);
+  res.redirect(
+    `/api/market/sniffer-script?server=${encodeURIComponent(server)}`,
+  );
 });
 
 app.get("/api/dofusdb/proxy/*", async (req, res) => {
@@ -1718,9 +1481,18 @@ app.get("/api/dofusdb/effects", async (req, res) => {
 // ----------------------------------------------------------------------------
 app.post("/api/dofusbook/analyze", async (req, res) => {
   try {
-    const { url, excludeDofus = true, excludeTrophies = false, profileId } = req.body;
+    const {
+      url,
+      excludeDofus = true,
+      excludeTrophies = false,
+      profileId,
+    } = req.body;
     if (!url || typeof url !== "string" || !url.trim()) {
-      return res.status(400).json({ error: "Debes ingresar un enlace o código de Dofusbook válido." });
+      return res
+        .status(400)
+        .json({
+          error: "Debes ingresar un enlace o código de Dofusbook válido.",
+        });
     }
 
     const analysis = await analyzeDofusbookBuild(url.trim(), {
@@ -1732,7 +1504,11 @@ app.post("/api/dofusbook/analyze", async (req, res) => {
     res.json(analysis);
   } catch (err: any) {
     console.error("[Dofusbook Analyze Error]:", err);
-    res.status(500).json({ error: err.message || "Error analizando el build de Dofusbook." });
+    res
+      .status(500)
+      .json({
+        error: err.message || "Error analizando el build de Dofusbook.",
+      });
   }
 });
 
@@ -1741,7 +1517,9 @@ app.get("/api/dofusbook/analyze", async (req, res) => {
     const url = req.query.url as string;
     const excludeDofus = req.query.excludeDofus !== "false";
     const excludeTrophies = req.query.excludeTrophies === "true";
-    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const profileId = req.query.profileId
+      ? Number(req.query.profileId)
+      : undefined;
 
     if (!url || !url.trim()) {
       return res.status(400).json({ error: "Parámetro url es requerido." });
@@ -1756,7 +1534,11 @@ app.get("/api/dofusbook/analyze", async (req, res) => {
     res.json(analysis);
   } catch (err: any) {
     console.error("[Dofusbook Analyze Error]:", err);
-    res.status(500).json({ error: err.message || "Error analizando el build de Dofusbook." });
+    res
+      .status(500)
+      .json({
+        error: err.message || "Error analizando el build de Dofusbook.",
+      });
   }
 });
 
@@ -1766,15 +1548,19 @@ app.get("/api/dofusbook/analyze", async (req, res) => {
 const DOFOCUS_BASE_URL = "https://dofocus.fr/api";
 const DOFOCUS_HEADERS = {
   "X-Dofocus-Client": "web",
-  "Referer": "https://dofocus.fr/",
-  "Origin": "https://dofocus.fr",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/plain, */*",
+  Referer: "https://dofocus.fr/",
+  Origin: "https://dofocus.fr",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "application/json, text/plain, */*",
 };
 
 // In-memory caches for DoFocus responses
 let cachedServers: { data: any[]; timestamp: number } | null = null;
-const cachedCoefficientsByServer = new Map<string, { data: any[]; timestamp: number }>();
+const cachedCoefficientsByServer = new Map<
+  string,
+  { data: any[]; timestamp: number }
+>();
 
 const DOFOCUS_SERVER_NAME_MAP: Record<string, string> = {
   draconiros: "Draconiros",
@@ -1837,7 +1623,11 @@ app.get("/api/dofocus/servers", async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("[DoFocus Servers Error]:", err);
-    res.status(500).json({ error: err.message || "Error al consultar servidores de DoFocus" });
+    res
+      .status(500)
+      .json({
+        error: err.message || "Error al consultar servidores de DoFocus",
+      });
   }
 });
 
@@ -1865,11 +1655,20 @@ app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
     });
 
     if (!response.ok) {
-      throw new Error(`DoFocus respondió con status ${response.status}: ${response.statusText}`);
+      throw new Error(
+        `DoFocus respondió con status ${response.status}: ${response.statusText}`,
+      );
     }
 
-    const data = (await response.json()) as Array<{ itemId: number; coefficient: number; dateUpdated?: string }>;
-    cachedCoefficientsByServer.set(serverName.toLowerCase(), { data, timestamp: now });
+    const data = (await response.json()) as Array<{
+      itemId: number;
+      coefficient: number;
+      dateUpdated?: string;
+    }>;
+    cachedCoefficientsByServer.set(serverName.toLowerCase(), {
+      data,
+      timestamp: now,
+    });
 
     res.json({
       server: serverName,
@@ -1879,8 +1678,15 @@ app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
       timestamp: now,
     });
   } catch (err: any) {
-    console.error(`[DoFocus Coefficients Error for ${req.params.serverName}]:`, err);
-    res.status(500).json({ error: err.message || "Error al sincronizar coeficientes de DoFocus" });
+    console.error(
+      `[DoFocus Coefficients Error for ${req.params.serverName}]:`,
+      err,
+    );
+    res
+      .status(500)
+      .json({
+        error: err.message || "Error al sincronizar coeficientes de DoFocus",
+      });
   }
 });
 
@@ -1916,8 +1722,15 @@ app.get("/api/dofocus/item/:itemId", async (req, res) => {
     });
 
     if (response.ok) {
-      const list = (await response.json()) as Array<{ itemId: number; coefficient: number; dateUpdated?: string }>;
-      cachedCoefficientsByServer.set(serverName.toLowerCase(), { data: list, timestamp: Date.now() });
+      const list = (await response.json()) as Array<{
+        itemId: number;
+        coefficient: number;
+        dateUpdated?: string;
+      }>;
+      cachedCoefficientsByServer.set(serverName.toLowerCase(), {
+        data: list,
+        timestamp: Date.now(),
+      });
       const match = list.find((c) => c.itemId === itemId);
       if (match) {
         return res.json({
@@ -1939,7 +1752,11 @@ app.get("/api/dofocus/item/:itemId", async (req, res) => {
     });
   } catch (err: any) {
     console.error(`[DoFocus Item Error]:`, err);
-    res.status(500).json({ error: err.message || "Error al consultar coeficiente en DoFocus" });
+    res
+      .status(500)
+      .json({
+        error: err.message || "Error al consultar coeficiente en DoFocus",
+      });
   }
 });
 
