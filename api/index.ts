@@ -1052,26 +1052,26 @@ def main():
     worker_thread = threading.Thread(target=async_worker, daemon=True)
     worker_thread.start()
 
-    print("\n Escuchando paquetes en tiempo real...")
+    print("\\n Escuchando paquetes en tiempo real...")
     print("Abre el mercadillo en Dofus Unity e inspecciona los objetos.")
-    print("Presiona Ctrl+C para salir.\n")
+    print("Presiona Ctrl+C para salir.\\n")
 
     try:
         sniff(filter=DOFUS_PORTS, prn=process_packet, store=False)
     except KeyboardInterrupt:
-        print("\n\nSincronizador detenido por el usuario.")
+        print("\\n\\nSincronizador detenido por el usuario.")
     except Exception as e:
-        print(f"\n[Error Sniffer]: {e}")
+        print(f"\\n[Error Sniffer]: {e}")
         traceback.print_exc()
-        input("\nPresiona Enter para cerrar...")
+        input("\\nPresiona Enter para cerrar...")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print(f"\n[ERROR CRITICO NO CONTROLADO]: {e}")
+        print(f"\\n[ERROR CRITICO NO CONTROLADO]: {e}")
         traceback.print_exc()
-        input("\nPresiona Enter para cerrar...")
+        input("\\nPresiona Enter para cerrar...")
 `;
 
   res.setHeader("Content-Disposition", `attachment; filename=dofus_sniffer.py`);
