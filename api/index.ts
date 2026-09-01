@@ -871,20 +871,25 @@ ITEMS_DB = {}
 packet_queue = queue.Queue(maxsize=2000)
 http_session = requests.Session()
 
-def load_or_download_items_db():
+def load_or_download_items_db(force=False):
     global ITEMS_DB
-    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 100:
+    need_download = force or not os.path.exists(LOCAL_DB_FILE) or os.path.getsize(LOCAL_DB_FILE) < 100
+    if not need_download:
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 ITEMS_DB = json.load(f)
-            print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
-            return
+            # Si la base local no tiene runas básicas (1519, 1522), actualizar automáticamente
+            if "1519" not in ITEMS_DB or "1522" not in ITEMS_DB:
+                need_download = True
+            else:
+                print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
+                return
         except Exception as e:
-            print(f"[Aviso] Error leyendo items_db.json local: {e}. Re-descargando...")
+            need_download = True
 
-    print(f"[DB Local] Descargando base de nombres desde el servidor ({API_DICT_URL})...")
+    print(f"[DB Local] Descargando base de nombres actualizada desde el servidor ({API_DICT_URL})...")
     try:
-        r = http_session.get(API_DICT_URL, timeout=12.0)
+        r = http_session.get(API_DICT_URL, timeout=15.0)
         if r.status_code == 200:
             ITEMS_DB = r.json()
             with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:

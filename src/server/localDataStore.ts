@@ -2,7 +2,9 @@ import { createClient } from "@libsql/client";
 import fs from "fs";
 import path from "path";
 import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs.js";
-import { extractItemStats } from "../data/dofusRuneWeights.js";
+import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights.js";
+import { CRAFTABLE_RUNES } from "../data/craftableRunesData.js";
+import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems.js";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData.js";
 import {
   DofusEffect,
@@ -267,6 +269,9 @@ export async function initDB() {
         }
       }
     }
+
+    // Always ensure all official base and craftable runes are present in the items table
+    await ensureRunesInDatabase();
 
     console.log("[Database] Turso / LibSQL schemas and indexes initialized successfully.");
   } catch (e) {
@@ -583,6 +588,107 @@ const SERVER_KNOWN_ITEMS: Record<number, Partial<DofusItem>> = {
     type: { id: 41, superCategoryId: 9, name: { es: "Pescado", fr: "Poisson", en: "Fish" } },
   },
 };
+
+export function getStaticItemById(itemId: number): DofusItem | null {
+  if (!itemId || itemId <= 0) return null;
+
+  const baseRune = DOFUS_BASE_RUNES.find((r) => r.id === itemId);
+  if (baseRune) {
+    return {
+      id: baseRune.id,
+      level: 1,
+      typeId: 78,
+      iconId: baseRune.iconId || 78000,
+      name: {
+        es: baseRune.name,
+        fr: baseRune.nameFr || baseRune.name,
+        en: baseRune.nameEn || baseRune.name,
+      },
+      type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+      hasRecipe: false,
+    };
+  }
+
+  const craftable = CRAFTABLE_RUNES.find((r) => r.id === itemId);
+  if (craftable) {
+    return {
+      id: craftable.id,
+      level: craftable.level || 1,
+      typeId: 78,
+      iconId: craftable.iconId || 78000,
+      name: {
+        es: craftable.name.es,
+        fr: craftable.name.fr,
+        en: craftable.name.en,
+      },
+      type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+      hasRecipe: true,
+    };
+  }
+
+  const preset = PRESET_CRAFTABLE_ITEMS.find((p) => p.id === itemId);
+  if (preset) {
+    return preset as DofusItem;
+  }
+
+  const known = SERVER_KNOWN_ITEMS[itemId];
+  if (known && known.name?.es) {
+    return normalizeSpanishItem(known as any);
+  }
+
+  return null;
+}
+
+export async function ensureRunesInDatabase(): Promise<void> {
+  try {
+    const allRuneItems: DofusItem[] = [];
+    const allRuneRecipes: DofusRecipe[] = [];
+
+    for (const baseRune of DOFUS_BASE_RUNES) {
+      allRuneItems.push({
+        id: baseRune.id,
+        level: 1,
+        typeId: 78,
+        iconId: baseRune.iconId || 78000,
+        name: {
+          es: baseRune.name,
+          fr: baseRune.nameFr || baseRune.name,
+          en: baseRune.nameEn || baseRune.name,
+        },
+        type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+        hasRecipe: false,
+      });
+    }
+
+    for (const craftable of CRAFTABLE_RUNES) {
+      allRuneItems.push({
+        id: craftable.id,
+        level: craftable.level || 1,
+        typeId: 78,
+        iconId: craftable.iconId || 78000,
+        name: {
+          es: craftable.name.es,
+          fr: craftable.name.fr,
+          en: craftable.name.en,
+        },
+        type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+        hasRecipe: true,
+      });
+      if (craftable.recipeData) {
+        allRuneRecipes.push(craftable.recipeData);
+      }
+    }
+
+    if (allRuneItems.length > 0) {
+      await upsertItems(allRuneItems);
+    }
+    if (allRuneRecipes.length > 0) {
+      await upsertRecipes(allRuneRecipes);
+    }
+  } catch (err) {
+    console.warn("[Database] Error ensuring runes in database:", err);
+  }
+}
 
 function cleanEffects(effectsList: unknown): DofusEffect[] | undefined {
   if (!Array.isArray(effectsList) || effectsList.length === 0) return undefined;
@@ -1983,8 +2089,14 @@ export async function getStoredItemById(itemId: number) {
 
 export async function getOrFetchItemById(itemId: number) {
   const stored = await getStoredItemById(itemId);
-  if (stored && stored.name?.es && !stored.name.es.startsWith("Objeto #"))
+  if (stored && stored.name?.es && !stored.name.es.startsWith("Objeto #") && !stored.name.es.startsWith("Item #"))
     return stored;
+
+  const staticItem = getStaticItemById(itemId);
+  if (staticItem && staticItem.name?.es && !staticItem.name.es.startsWith("Objeto #")) {
+    await upsertItems([staticItem]);
+    return staticItem;
+  }
 
   try {
     const queryRes = await fetchJson<{ data?: Record<string, unknown>[] }>(
@@ -2554,8 +2666,13 @@ export async function processAndIngestMarketPricesBatch(
 
     let resolvedName = (payload.item_name || '').trim();
     if (!resolvedName || resolvedName.startsWith('Item #') || resolvedName.startsWith('Objeto #')) {
-      if (SERVER_KNOWN_ITEMS[itemId]?.name?.es) {
+      const staticItem = getStaticItemById(itemId);
+      if (staticItem?.name?.es) {
+        resolvedName = staticItem.name.es;
+      } else if (SERVER_KNOWN_ITEMS[itemId]?.name?.es) {
         resolvedName = SERVER_KNOWN_ITEMS[itemId].name.es;
+      } else if (cachedItemsDictionary && cachedItemsDictionary[String(itemId)]) {
+        resolvedName = cachedItemsDictionary[String(itemId)];
       } else {
         resolvedName = `Objeto #${itemId}`;
       }
@@ -2720,21 +2837,52 @@ let lastItemsDictionaryFetch = 0;
 
 export async function getItemsDictionary(): Promise<Record<string, string>> {
   const now = Date.now();
-  // Cache for 15 minutes in RAM
-  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 0 && now - lastItemsDictionaryFetch < 15 * 60 * 1000) {
+  // Cache for 10 minutes in RAM
+  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 0 && now - lastItemsDictionaryFetch < 10 * 60 * 1000) {
     return cachedItemsDictionary;
   }
 
   const dict: Record<string, string> = {};
 
-  // 1. Seed with known server items
+  // 1. All base runes (all official Dofus runes)
+  for (const rune of DOFUS_BASE_RUNES) {
+    if (rune.id && rune.name) {
+      dict[String(rune.id)] = rune.name;
+    }
+  }
+
+  // 2. All craftable runes (Bu, Su, Pa, Ra variants)
+  for (const rune of CRAFTABLE_RUNES) {
+    if (rune.id && rune.name?.es) {
+      dict[String(rune.id)] = rune.name.es;
+    }
+  }
+
+  // 3. Preset items
+  for (const preset of PRESET_CRAFTABLE_ITEMS) {
+    if (preset.id && preset.name?.es) {
+      dict[String(preset.id)] = preset.name.es;
+    }
+  }
+
+  // 4. Seed with known server items
   for (const [idStr, item] of Object.entries(SERVER_KNOWN_ITEMS)) {
     if (item.name?.es) {
       dict[idStr] = item.name.es;
     }
   }
 
-  // 2. Query all items with names in database
+  // 5. Seed data from bundle
+  const seedData = getDofusDbSeedData();
+  if (seedData && Array.isArray(seedData.items)) {
+    for (const item of seedData.items) {
+      if (item.id && item.name?.es && !item.name.es.startsWith("Objeto #") && !item.name.es.startsWith("Item #")) {
+        dict[String(item.id)] = item.name.es;
+      }
+    }
+  }
+
+  // 6. Query all items with names in database
   try {
     const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != ''");
     for (const row of result.rows) {
