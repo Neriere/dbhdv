@@ -1,6 +1,6 @@
 // Base de datos oficial y completa de Cacerías Legendarias de Se Busca (Avis de Recherche) de Dofus
 // Sincronizada con DofusDB y DofusPourLesNoobs con IDs oficiales de Dofus Unity
-import bycRawData from "./bycGeneratedDb.json";
+import bycRawData from "./bycGeneratedDb.json" with { type: "json" };
 
 export interface BycRecipeIngredient {
   id: number;
