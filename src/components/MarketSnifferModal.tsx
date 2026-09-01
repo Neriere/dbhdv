@@ -810,32 +810,29 @@ pause
 
           {activeTab === 'script' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs text-slate-400">
-                  Script Python con decodificación de paquetes Protobuf de Dofus Unity para el servidor <strong className="text-amber-400">{activeServerTarget}</strong>.
-                </p>
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-emerald-400" /> Código Fuente Python (dofus_sniffer.py) &mdash; {activeServerTarget}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Motor principal de captura en vivo, decodificación Protobuf y envío HTTP asíncrono a Turso.
+                  </p>
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleCopyScript}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
                   >
                     {copiedScript ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedScript ? '¡Copiado!' : 'Copiar Código'}
+                    {copiedScript ? '¡Código Copiado!' : 'Copiar Código .py'}
                   </button>
                   <button
                     onClick={handleDownloadScript}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Descargar .py
-                  </button>
-                  <button
-                    onClick={handleDownloadBat}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/20"
-                    title="Doble clic y listo para Windows"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Descargar .bat
                   </button>
                 </div>
               </div>
