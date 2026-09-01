@@ -628,12 +628,14 @@ function verifySnifferAuth(req: express.Request): boolean {
   if (!secret || secret.trim() === "") {
     return true; // No secret configured -> open access
   }
+  const cleanSecret = secret.trim();
   const headerKey =
     req.headers["x-api-key"] ||
-    req.headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
+    req.headers["x-market-sniffer-secret"] ||
+    (typeof req.headers["authorization"] === "string" ? req.headers["authorization"].replace(/^Bearer\s+/i, "") : undefined) ||
     req.query.key ||
     req.query.api_key;
-  return headerKey === secret;
+  return typeof headerKey === "string" && headerKey.trim() === cleanSecret;
 }
 
 app.post(["/api/market/update", "/api/market-prices/ingest"], async (req, res) => {
@@ -696,7 +698,8 @@ app.get("/api/market/items-dictionary", async (req, res) => {
     res.json(dict);
   } catch (error: any) {
     console.error("[Items Dictionary API Error]:", error);
-    res.status(500).json({ error: "Error al obtener diccionario de objetos" });
+    // Return empty dict rather than 500 so sniffer scripts don't fail
+    res.status(200).json({});
   }
 });
 
@@ -709,7 +712,7 @@ app.get("/api/market/download-items-db", async (req, res) => {
     res.send(JSON.stringify(dict, null, 2));
   } catch (error: any) {
     console.error("[Download Items DB Error]:", error);
-    res.status(500).json({ error: "Error al descargar base de items" });
+    res.status(200).json({});
   }
 });
 
@@ -1273,16 +1276,16 @@ ITEMS_DB = {}
 def load_or_download_items_db():
     global ITEMS_DB
     need_download = False
-    if os.path.exists(LOCAL_DB_FILE):
+    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 500:
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 ITEMS_DB = json.load(f)
-            if "1519" not in ITEMS_DB or "1522" not in ITEMS_DB or "15379" not in ITEMS_DB or "32194" not in ITEMS_DB:
-                need_download = True
-            else:
+            if len(ITEMS_DB) > 50:
                 print(f"[DB Local] Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
                 return
-        except Exception as e:
+            else:
+                need_download = True
+        except Exception:
             need_download = True
     else:
         need_download = True
@@ -1290,14 +1293,20 @@ def load_or_download_items_db():
     if need_download:
         print("[DB Local] Descargando diccionario maestro de nombres desde tu app...")
         try:
-            r = requests.get(DICT_ENDPOINT, timeout=10)
-            if r.status_code == 200:
+            headers = {"User-Agent": "DofusSniffer/1.0"}
+            if SECRET_KEY:
+                headers["x-api-key"] = SECRET_KEY
+                headers["X-Market-Sniffer-Secret"] = SECRET_KEY
+            r = requests.get(DICT_ENDPOINT, headers=headers, timeout=15)
+            if r.status_code == 200 and r.text.strip().startswith("{"):
                 ITEMS_DB = r.json()
                 with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(ITEMS_DB, f, ensure_ascii=False)
                 print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
+            else:
+                print(f"[DB Local] Estado HTTP {r.status_code}. Se continuara resolviendo nombres en vivo.")
         except Exception as e:
-            print(f"[Aviso] Error descargando diccionario: {e}")
+            print(f"[DB Local] Descarga diferida ({e}). Los nombres se resolveran en vivo.")
 
 def get_item_name_instant(item_id):
     s_id = str(item_id)

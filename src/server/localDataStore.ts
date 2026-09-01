@@ -57,227 +57,189 @@ export const UNITY_SERVER_PROFILES: Array<{
   { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
-const dbUrl =
-  process.env.TURSO_DATABASE_URL ||
-  process.env.LIBSQL_URL ||
-  process.env.DATABASE_URL ||
-  process.env.TURSO_URL ||
-  "file:local.db";
+function resolveDbUrl(): string {
+  const customUrl =
+    process.env.TURSO_DATABASE_URL ||
+    process.env.LIBSQL_URL ||
+    process.env.DATABASE_URL ||
+    process.env.TURSO_URL;
+  if (customUrl && customUrl.trim()) {
+    return customUrl.trim();
+  }
+  // Serverless environment safe fallback (Vercel / AWS Lambda / Read-only containers)
+  if (
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.NOW_REGION
+  ) {
+    return "file:/tmp/dofus_local.db";
+  }
+  return "file:local.db";
+}
 
-const dbAuthToken =
-  process.env.TURSO_AUTH_TOKEN ||
-  process.env.LIBSQL_AUTH_TOKEN ||
-  process.env.DATABASE_AUTH_TOKEN ||
-  process.env.TURSO_TOKEN ||
-  undefined;
+function resolveDbAuthToken(): string | undefined {
+  const token =
+    process.env.TURSO_AUTH_TOKEN ||
+    process.env.LIBSQL_AUTH_TOKEN ||
+    process.env.DATABASE_AUTH_TOKEN ||
+    process.env.TURSO_TOKEN;
+  return token && token.trim() ? token.trim() : undefined;
+}
 
 export const database = createClient({
-  url: dbUrl,
-  authToken: dbAuthToken,
+  url: resolveDbUrl(),
+  authToken: resolveDbAuthToken(),
 });
 
+let initDbPromise: Promise<void> | null = null;
+
 export async function initDB() {
-  try {
-    // High-performance SQLite pragmas for fast concurrent reads and responsive queries
+  if (initDbPromise) return initDbPromise;
+
+  initDbPromise = (async () => {
     try {
-      await database.execute("PRAGMA journal_mode = WAL;");
-      await database.execute("PRAGMA synchronous = NORMAL;");
-      await database.execute("PRAGMA temp_store = MEMORY;");
-      await database.execute("PRAGMA cache_size = -64000;");
-    } catch {
-      // Ignore if running against a remote Turso HTTP connection that restricts PRAGMAs
-    }
-
-    await database.executeMultiple(`
-      CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY,
-        level INTEGER NOT NULL DEFAULT 1,
-        type_id INTEGER NOT NULL DEFAULT 0,
-        super_category_id INTEGER NOT NULL DEFAULT 0,
-        icon_id INTEGER NOT NULL DEFAULT 0,
-        name_es TEXT NOT NULL DEFAULT '',
-        has_recipe INTEGER NOT NULL DEFAULT 0,
-        payload_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS item_stats (
-        item_id INTEGER NOT NULL,
-        rune_id INTEGER NOT NULL,
-        stat_order INTEGER NOT NULL DEFAULT 0,
-        characteristic_id INTEGER NOT NULL DEFAULT 0,
-        effect_id INTEGER NOT NULL DEFAULT 0,
-        rune_name TEXT NOT NULL,
-        rune_weight REAL NOT NULL,
-        stat_min REAL NOT NULL,
-        stat_max REAL NOT NULL,
-        stat_avg REAL NOT NULL,
-        formatted_text TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (item_id, rune_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS recipes (
-        result_id INTEGER PRIMARY KEY,
-        job_id INTEGER,
-        payload_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS recipe_ingredients (
-        recipe_id INTEGER NOT NULL,
-        ingredient_id INTEGER NOT NULL,
-        quantity INTEGER NOT NULL,
-        PRIMARY KEY (recipe_id, ingredient_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS meta (
-        key TEXT PRIMARY KEY,
-        value_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS price_profiles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        slug TEXT NOT NULL UNIQUE,
-        category TEXT NOT NULL DEFAULT 'monocuenta_clasico',
-        category_label TEXT NOT NULL DEFAULT 'Monocuenta Clásico',
-        is_default INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS profile_prices (
-        profile_id INTEGER NOT NULL,
-        item_id INTEGER NOT NULL,
-        price INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, item_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS price_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        profile_id INTEGER NOT NULL,
-        item_id INTEGER NOT NULL,
-        price INTEGER NOT NULL,
-        old_price INTEGER NOT NULL DEFAULT 0,
-        difference INTEGER NOT NULL DEFAULT 0,
-        percentage_change REAL NOT NULL DEFAULT 0,
-        source TEXT NOT NULL DEFAULT 'manual',
-        timestamp INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS profile_coefficients (
-        profile_id INTEGER NOT NULL,
-        item_id INTEGER NOT NULL,
-        coefficient INTEGER NOT NULL DEFAULT 100,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, item_id)
-      );
-
-      /* Optimized indexes for lightning-fast lookups */
-      CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
-      CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
-      CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
-      CREATE INDEX IF NOT EXISTS idx_items_level ON items(level DESC);
-      CREATE INDEX IF NOT EXISTS idx_items_recipe_level ON items(has_recipe, level DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_item_stats_item ON item_stats(item_id);
-      CREATE INDEX IF NOT EXISTS idx_item_stats_rune ON item_stats(rune_id);
-      CREATE INDEX IF NOT EXISTS idx_item_stats_rune_item ON item_stats(rune_id, item_id);
-
-      CREATE INDEX IF NOT EXISTS idx_recipes_job ON recipes(job_id);
-      CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
-      CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id);
-
-      CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
-      CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
-      CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_updated ON profile_prices(profile_id, updated_at DESC);
-
-      CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_id ON profile_coefficients(profile_id);
-      CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_item ON profile_coefficients(profile_id, item_id);
-
-      CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_price_history_timestamp ON price_history(timestamp DESC);
-    `);
-
-    // Clean up obsolete table if present
-    try {
-      await database.execute("DROP TABLE IF EXISTS prices;");
-    } catch {
-      // Ignored
-    }
-
-    // Ensure category columns exist in price_profiles
-    try {
-      await database.execute("ALTER TABLE price_profiles ADD COLUMN category TEXT NOT NULL DEFAULT 'monocuenta_clasico';");
-    } catch {
-      // Column might already exist
-    }
-    try {
-      await database.execute("ALTER TABLE price_profiles ADD COLUMN category_label TEXT NOT NULL DEFAULT 'Monocuenta Clásico';");
-    } catch {
-      // Column might already exist
-    }
-
-    try {
-      await database.execute("ALTER TABLE items ADD COLUMN has_recipe INTEGER NOT NULL DEFAULT 0;");
-    } catch {
-      // Column might already exist
-    }
-
-    await database.execute(`
-      UPDATE items SET has_recipe = 1 WHERE id IN (SELECT result_id FROM recipes);
-    `);
-
-    // Purge any quest items, test dummy items, or non-commercial tokens from SQLite
-    try {
-      await database.execute(`
-        DELETE FROM items WHERE 
-          super_category_id IN (4, 5, 14, 15, 23) OR 
-          type_id IN (24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 149, 155, 156, 168, 171, 178, 186, 198, 312) OR
-          name_es LIKE '[!]%' OR
-          name_es LIKE '%insignias de expedición%' OR
-          name_es LIKE '%insignia de expedición%' OR
-          name_es LIKE '%abono desértico%' OR
-          name_es LIKE '%abono desertico%' OR
-          name_es LIKE '%selocalipsis%';
-      `);
-      await database.execute(`
-        DELETE FROM item_stats WHERE item_id NOT IN (SELECT id FROM items);
-      `);
-    } catch {
-      // Ignored
-    }
-
-    // Check if database is empty - if so, auto-populate from bundled dataset
-    const countItemsRes = await database.execute("SELECT COUNT(*) as cnt FROM items");
-    const totalItemsInDb = Number(countItemsRes.rows[0]?.cnt ?? 0);
-    if (totalItemsInDb === 0) {
-      console.log("[Database] Empty database detected. Auto-seeding full Dofus dataset into Turso/SQLite...");
-      await seedDatabaseFromBundle();
-    } else {
-      // Sync stats for items already in DB if item_stats is empty
-      const statsCountRes = await database.execute("SELECT COUNT(*) as cnt FROM item_stats");
-      const count = Number(statsCountRes.rows[0]?.cnt ?? 0);
-      if (count === 0) {
-        const itemsRes = await database.execute("SELECT payload_json FROM items");
-        const currentItems = itemsRes.rows.map(r => JSON.parse(r.payload_json as string) as DofusItem);
-        if (currentItems.length > 0) {
-          await syncItemStats(currentItems);
-        }
+      // Pragmas for fast reads (only for local SQLite)
+      try {
+        await database.execute("PRAGMA journal_mode = WAL;");
+        await database.execute("PRAGMA synchronous = NORMAL;");
+        await database.execute("PRAGMA temp_store = MEMORY;");
+      } catch {
+        // Ignored for remote HTTP LibSQL/Turso
       }
+
+      await database.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS items (
+          id INTEGER PRIMARY KEY,
+          level INTEGER NOT NULL DEFAULT 1,
+          type_id INTEGER NOT NULL DEFAULT 0,
+          super_category_id INTEGER NOT NULL DEFAULT 0,
+          icon_id INTEGER NOT NULL DEFAULT 0,
+          name_es TEXT NOT NULL DEFAULT '',
+          has_recipe INTEGER NOT NULL DEFAULT 0,
+          payload_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS item_stats (
+          item_id INTEGER NOT NULL,
+          rune_id INTEGER NOT NULL,
+          stat_order INTEGER NOT NULL DEFAULT 0,
+          characteristic_id INTEGER NOT NULL DEFAULT 0,
+          effect_id INTEGER NOT NULL DEFAULT 0,
+          rune_name TEXT NOT NULL,
+          rune_weight REAL NOT NULL,
+          stat_min REAL NOT NULL,
+          stat_max REAL NOT NULL,
+          stat_avg REAL NOT NULL,
+          formatted_text TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (item_id, rune_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS recipes (
+          result_id INTEGER PRIMARY KEY,
+          job_id INTEGER,
+          payload_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS recipe_ingredients (
+          recipe_id INTEGER NOT NULL,
+          ingredient_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL,
+          PRIMARY KEY (recipe_id, ingredient_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS meta (
+          key TEXT PRIMARY KEY,
+          value_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS price_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          category TEXT NOT NULL DEFAULT 'monocuenta_clasico',
+          category_label TEXT NOT NULL DEFAULT 'Monocuenta Clásico',
+          is_default INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_prices (
+          profile_id INTEGER NOT NULL,
+          item_id INTEGER NOT NULL,
+          price INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, item_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS price_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profile_id INTEGER NOT NULL,
+          item_id INTEGER NOT NULL,
+          price INTEGER NOT NULL,
+          old_price INTEGER NOT NULL DEFAULT 0,
+          difference INTEGER NOT NULL DEFAULT 0,
+          percentage_change REAL NOT NULL DEFAULT 0,
+          source TEXT NOT NULL DEFAULT 'manual',
+          timestamp INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_coefficients (
+          profile_id INTEGER NOT NULL,
+          item_id INTEGER NOT NULL,
+          coefficient INTEGER NOT NULL DEFAULT 100,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, item_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
+        CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
+        CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
+        CREATE INDEX IF NOT EXISTS idx_items_level ON items(level DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_item_stats_item ON item_stats(item_id);
+        CREATE INDEX IF NOT EXISTS idx_item_stats_rune ON item_stats(rune_id);
+
+        CREATE INDEX IF NOT EXISTS idx_recipes_job ON recipes(job_id);
+        CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
+        CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id);
+
+        CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_id ON profile_prices(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_prices_item_id ON profile_prices(item_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_prices_profile_updated ON profile_prices(profile_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_id ON profile_coefficients(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_item ON profile_coefficients(profile_id, item_id);
+
+        CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
+      `);
+
+      // Ensure price profiles exist
+      try {
+        await ensureDefaultPriceProfile();
+      } catch (err) {
+        console.warn("[Database] ensureDefaultPriceProfile warning:", err);
+      }
+
+      // Ensure runes
+      try {
+        await ensureRunesInDatabase();
+      } catch (err) {
+        console.warn("[Database] ensureRunesInDatabase warning:", err);
+      }
+
+      console.log("[Database] Database initialized successfully.");
+    } catch (e) {
+      console.warn("[Database] Initialization warning (running in resilience mode):", e);
     }
+  })();
 
-    // Always ensure all official base and craftable runes are present in the items table
-    await ensureRunesInDatabase();
-
-    console.log("[Database] Turso / LibSQL schemas and indexes initialized successfully.");
-  } catch (e) {
-    console.warn("[Database] Database initialization error (fallback mode):", e);
-  }
+  return initDbPromise;
 }
 
 export async function seedStepInit(): Promise<{ totalItems: number; totalRecipes: number; itemChunks: number; recipeChunks: number }> {
@@ -898,42 +860,60 @@ async function getPriceProfiles(): Promise<PriceProfile[]> {
     return cachedPriceProfiles;
   }
 
-  const result = await database.execute(
-    `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
-  );
-  const bySlug = new Map(
-    result.rows.map((row) => [
-      row.slug as string,
-      {
-        id: row.id as number,
-        name: row.name as string,
-        slug: row.slug as string,
-        category:
-          (row.category as ServerCategory) ||
-          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.category ||
-          "monocuenta_clasico",
-        categoryLabel:
-          (row.category_label as string) ||
-          UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.categoryLabel ||
-          "Monocuenta Clásico",
-        isDefault: (row.is_default as number) === 1,
-      } as PriceProfile,
-    ]),
-  );
-  const profilesList: PriceProfile[] = [];
-  for (const profile of UNITY_SERVER_PROFILES) {
-    const existing = bySlug.get(profile.slug);
-    if (existing) {
-      profilesList.push({
-        ...existing,
-        name: profile.name,
-        category: profile.category,
-        categoryLabel: profile.categoryLabel,
-      });
+  try {
+    const result = await database.execute(
+      `SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC`,
+    );
+    const bySlug = new Map(
+      result.rows.map((row) => [
+        row.slug as string,
+        {
+          id: row.id as number,
+          name: row.name as string,
+          slug: row.slug as string,
+          category:
+            (row.category as ServerCategory) ||
+            UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.category ||
+            "monocuenta_clasico",
+          categoryLabel:
+            (row.category_label as string) ||
+            UNITY_SERVER_PROFILES.find((p) => p.slug === row.slug)?.categoryLabel ||
+            "Monocuenta Clásico",
+          isDefault: (row.is_default as number) === 1,
+        } as PriceProfile,
+      ]),
+    );
+    const profilesList: PriceProfile[] = [];
+    for (const profile of UNITY_SERVER_PROFILES) {
+      const existing = bySlug.get(profile.slug);
+      if (existing) {
+        profilesList.push({
+          ...existing,
+          name: profile.name,
+          category: profile.category,
+          categoryLabel: profile.categoryLabel,
+        });
+      }
     }
+    if (profilesList.length > 0) {
+      cachedPriceProfiles = profilesList;
+      return profilesList;
+    }
+  } catch (err) {
+    console.warn("[getPriceProfiles] Database query warning (using default list):", err);
   }
-  cachedPriceProfiles = profilesList;
-  return profilesList;
+
+  // Fallback to official list with artificial IDs
+  const fallbackList = UNITY_SERVER_PROFILES.map((p, idx) => ({
+    id: idx + 1,
+    name: p.name,
+    slug: p.slug,
+    category: p.category,
+    categoryLabel: p.categoryLabel,
+    isDefault: !!p.isDefault,
+  }));
+  cachedPriceProfiles = fallbackList;
+  return fallbackList;
 }
 
 let serverBootstrapCache: { data: BootstrapData; expiresAt: number } | null = null;
@@ -2839,99 +2819,119 @@ let lastItemsDictionaryFetch = 0;
 export async function getItemsDictionary(): Promise<Record<string, string>> {
   const now = Date.now();
   // Cache for 10 minutes in RAM
-  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 0 && now - lastItemsDictionaryFetch < 10 * 60 * 1000) {
+  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 500 && now - lastItemsDictionaryFetch < 10 * 60 * 1000) {
     return cachedItemsDictionary;
   }
 
   const dict: Record<string, string> = {};
 
-  // 1. All base runes (all official Dofus runes)
-  for (const rune of DOFUS_BASE_RUNES) {
-    if (rune.id && rune.name) {
-      dict[String(rune.id)] = rune.name;
-    }
-  }
-
-  // 2. All craftable runes (Bu, Su, Pa, Ra variants)
-  for (const rune of CRAFTABLE_RUNES) {
-    if (rune.id && rune.name?.es) {
-      dict[String(rune.id)] = rune.name.es;
-    }
-  }
-
-  // 3. Preset items
-  for (const preset of PRESET_CRAFTABLE_ITEMS) {
-    if (preset.id && preset.name?.es) {
-      dict[String(preset.id)] = preset.name.es;
-    }
-  }
-
-  // 4. Seed with known server items
-  for (const [idStr, item] of Object.entries(SERVER_KNOWN_ITEMS)) {
-    if (item.name?.es) {
-      dict[idStr] = item.name.es;
-    }
-  }
-
-  // 5. Seed data from bundle
-  const seedData = getDofusDbSeedData();
-  if (seedData && Array.isArray(seedData.items)) {
-    for (const item of seedData.items) {
-      if (item.id && item.name?.es && !item.name.es.startsWith("Objeto #") && !item.name.es.startsWith("Item #")) {
-        dict[String(item.id)] = item.name.es;
+  try {
+    // 1. All base runes (all official Dofus runes)
+    if (Array.isArray(DOFUS_BASE_RUNES)) {
+      for (const rune of DOFUS_BASE_RUNES) {
+        if (rune && rune.id && rune.name) {
+          dict[String(rune.id)] = rune.name;
+        }
       }
     }
-  }
 
-  // 6. ByC hunts, maps, fragments and items
-  if (Array.isArray(bycGeneratedDb)) {
-    for (const hunt of bycGeneratedDb as any[]) {
-      if (hunt.mapItem?.id && hunt.mapItem?.name) {
-        dict[String(hunt.mapItem.id)] = hunt.mapItem.name;
+    // 2. All craftable runes (Bu, Su, Pa, Ra variants)
+    if (Array.isArray(CRAFTABLE_RUNES)) {
+      for (const rune of CRAFTABLE_RUNES) {
+        if (rune && rune.id && rune.name?.es) {
+          dict[String(rune.id)] = rune.name.es;
+        }
       }
-      if (Array.isArray(hunt.fragments)) {
-        for (const f of hunt.fragments) {
-          if (f.id && f.name) {
-            dict[String(f.id)] = f.name;
+    }
+
+    // 3. Preset items
+    if (Array.isArray(PRESET_CRAFTABLE_ITEMS)) {
+      for (const preset of PRESET_CRAFTABLE_ITEMS) {
+        if (preset && preset.id && preset.name?.es) {
+          dict[String(preset.id)] = preset.name.es;
+        }
+      }
+    }
+
+    // 4. Seed with known server items
+    if (SERVER_KNOWN_ITEMS) {
+      for (const [idStr, item] of Object.entries(SERVER_KNOWN_ITEMS)) {
+        if (item && item.name?.es) {
+          dict[idStr] = item.name.es;
+        }
+      }
+    }
+
+    // 5. Seed data from bundle
+    try {
+      const seedData = getDofusDbSeedData();
+      if (seedData && Array.isArray(seedData.items)) {
+        for (const item of seedData.items) {
+          if (item && item.id && item.name?.es && !item.name.es.startsWith("Objeto #") && !item.name.es.startsWith("Item #")) {
+            dict[String(item.id)] = item.name.es;
           }
         }
       }
-      if (hunt.resource?.id && hunt.resource?.name) {
-        dict[String(hunt.resource.id)] = hunt.resource.name;
-      }
-      if (Array.isArray(hunt.equipments)) {
-        for (const eq of hunt.equipments) {
-          if (eq.id && eq.name) {
-            dict[String(eq.id)] = eq.name;
+    } catch (e) {
+      console.warn("[getItemsDictionary] Seed data warning:", e);
+    }
+
+    // 6. ByC hunts, maps, fragments and items
+    if (Array.isArray(bycGeneratedDb)) {
+      for (const hunt of bycGeneratedDb as any[]) {
+        if (hunt?.mapItem?.id && hunt?.mapItem?.name) {
+          dict[String(hunt.mapItem.id)] = hunt.mapItem.name;
+        }
+        if (Array.isArray(hunt?.fragments)) {
+          for (const f of hunt.fragments) {
+            if (f?.id && f?.name) {
+              dict[String(f.id)] = f.name;
+            }
           }
-          if (Array.isArray(eq.recipeIngredients)) {
-            for (const ing of eq.recipeIngredients) {
-              if (ing.id && ing.name) {
-                dict[String(ing.id)] = ing.name;
+        }
+        if (hunt?.resource?.id && hunt?.resource?.name) {
+          dict[String(hunt.resource.id)] = hunt.resource.name;
+        }
+        if (Array.isArray(hunt?.equipments)) {
+          for (const eq of hunt.equipments) {
+            if (eq?.id && eq?.name) {
+              dict[String(eq.id)] = eq.name;
+            }
+            if (Array.isArray(eq?.recipeIngredients)) {
+              for (const ing of eq.recipeIngredients) {
+                if (ing?.id && ing?.name) {
+                  dict[String(ing.id)] = ing.name;
+                }
               }
             }
           }
         }
       }
     }
-  }
 
-  // 7. Query all items with names in database
-  try {
-    const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != ''");
-    for (const row of result.rows) {
-      const id = String(row.id);
-      const name = String(row.name_es || "").trim();
-      if (name && !name.startsWith("Objeto #") && !name.startsWith("Item #")) {
-        dict[id] = name;
+    // 7. Query all items with names in database
+    try {
+      const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != '' LIMIT 30000");
+      if (result && Array.isArray(result.rows)) {
+        for (const row of result.rows) {
+          const id = String(row.id);
+          const name = String(row.name_es || "").trim();
+          if (name && !name.startsWith("Objeto #") && !name.startsWith("Item #")) {
+            dict[id] = name;
+          }
+        }
       }
+    } catch (err) {
+      // Safe fallback - DB might not be ready or empty
     }
   } catch (err) {
-    console.warn("[getItemsDictionary] DB query warning:", err);
+    console.error("[getItemsDictionary] Error building dictionary:", err);
   }
 
-  cachedItemsDictionary = dict;
-  lastItemsDictionaryFetch = now;
+  if (Object.keys(dict).length > 0) {
+    cachedItemsDictionary = dict;
+    lastItemsDictionaryFetch = now;
+  }
   return dict;
 }
 
