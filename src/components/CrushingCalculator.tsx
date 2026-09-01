@@ -512,7 +512,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           isCraftCheaper = true;
         }
 
-        drafts[ingId] = String(marketPrices[ingId] ?? unitPrice);
+        drafts[ingId] = String(marketPrices[ingId] || 0);
 
         ingDetails.push({
           id: ingId,
@@ -541,13 +541,16 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   // Run calculation for current selected item in Detail view
   const crushingSimulation = useMemo<CrushingResult | null>(() => {
     if (!selectedItem) return null;
-    const singleCraftCost = getItemCraftCost(selectedItem);
+    const detailCraftCost =
+      recipeIngredients.length > 0
+        ? recipeIngredients.reduce((sum, ing) => sum + (ing.totalCost || 0), 0)
+        : getItemCraftCost(selectedItem);
     return calculateItemCrushing(
       selectedItem,
       coefficientPercent,
       focusedRuneId,
       marketPrices,
-      singleCraftCost,
+      detailCraftCost,
       'avg',
       customStatValues,
     );
@@ -557,6 +560,8 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     focusedRuneId,
     marketPrices,
     customStatValues,
+    recipeIngredients,
+    selectedBycMethods,
   ]);
 
   // Quick reset buttons to set all stats to Min, Avg, or Max

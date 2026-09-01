@@ -80,6 +80,7 @@ import {
   saveMarketPrice,
   buildRecipeTree,
   calculateTreeCraftCost,
+  getLowestDetectedPrice,
   getItemName,
   getItemTypeName,
   getItemIconUrl,
@@ -412,7 +413,7 @@ export const RecipeCraftingCalculator: React.FC<{
     if (item.recipeData && item.recipeData.ingredientIds) {
       item.recipeData.ingredientIds.forEach((ingId, idx) => {
         const qty = item.recipeData.quantities[idx] || 1;
-        const ingPrice = marketPrices[ingId] || 0;
+        const ingPrice = getLowestDetectedPrice(ingId, marketPrices);
         cost += ingPrice * qty;
       });
     }
@@ -1466,8 +1467,16 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
     ? calculateTreeCraftCost(node, "auto_optimal", marketPrices)
     : directBuyCost;
 
-  const isSubcraftCheaper = hasSubCraft && currentPrice > 0 && subCraftCost < directBuyCost;
-  const savings = Math.abs(directBuyCost - subCraftCost);
+  // Effective cost used for this ingredient in the optimal crafting route
+  const optimalCostForIngredient =
+    hasSubCraft && subCraftCost > 0
+      ? currentPrice > 0
+        ? Math.min(directBuyCost, subCraftCost)
+        : subCraftCost
+      : directBuyCost;
+
+  const isSubcraftCheaper = hasSubCraft && subCraftCost > 0 && (currentPrice === 0 || subCraftCost < directBuyCost);
+  const savings = currentPrice > 0 ? Math.abs(directBuyCost - subCraftCost) : 0;
 
   const handleInputChange = (val: string) => {
     setDraftPrice(val);
@@ -1620,6 +1629,11 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
             <span className="text-xs font-bold text-slate-400">
               Subtotal ({node.quantity}x):
             </span>
+            {hasSubCraft && currentPrice === 0 && subCraftCost > 0 && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-sans font-bold">
+                Sub-crafteo
+              </span>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -1634,7 +1648,7 @@ const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> = ({
             </button>
           </div>
           <span className="text-emerald-400 font-black text-base">
-            {totalPriceForQuantity.toLocaleString()} K
+            {optimalCostForIngredient.toLocaleString()} K
           </span>
         </div>
 

@@ -2215,7 +2215,13 @@ export function calculateTreeCraftCost(
 
   if (strategy === "direct_buy") {
     return node.subIngredients.reduce((total, child) => {
-      const childPrice = marketPrices[child.itemId] || child.marketPrice || 0;
+      let childPrice = marketPrices[child.itemId] || child.marketPrice || 0;
+      if (childPrice === 0 && child.isCraftable && child.subIngredients && child.subIngredients.length > 0) {
+        const childSubCost = calculateTreeCraftCost(child, "direct_buy", marketPrices);
+        if (childSubCost > 0) {
+          return total + childSubCost;
+        }
+      }
       return total + childPrice * child.quantity;
     }, 0);
   }
@@ -2246,13 +2252,27 @@ export function calculateTreeCraftCost(
         "auto_optimal",
         marketPrices,
       );
-      return total + Math.min(childBuyPrice, childCraftCost);
+
+      let bestCost = childBuyPrice;
+      if (childBuyPrice > 0 && childCraftCost > 0) {
+        bestCost = Math.min(childBuyPrice, childCraftCost);
+      } else if (childCraftCost > 0) {
+        bestCost = childCraftCost;
+      }
+
+      return total + bestCost;
     }, 0);
   }
 
   return node.subIngredients.reduce((total, child) => {
     if (child.decision === "buy" || !child.isCraftable) {
-      const childPrice = marketPrices[child.itemId] || child.marketPrice || 0;
+      let childPrice = marketPrices[child.itemId] || child.marketPrice || 0;
+      if (childPrice === 0 && child.isCraftable && child.subIngredients && child.subIngredients.length > 0) {
+        const childHybridCost = calculateTreeCraftCost(child, "custom_hybrid", marketPrices);
+        if (childHybridCost > 0) {
+          return total + childHybridCost;
+        }
+      }
       return total + childPrice * child.quantity;
     }
 

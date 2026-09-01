@@ -835,6 +835,8 @@ def ensure_dependencies():
 ensure_dependencies()
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 try:
     from scapy.all import sniff, TCP, Raw
 except Exception as e:
@@ -869,7 +871,18 @@ LOCAL_DB_FILE = os.path.join(SCRIPT_DIR, "items_db.json")
 
 ITEMS_DB = {}
 packet_queue = queue.Queue(maxsize=2000)
+
+# Configurar sesión HTTP robusta con keep-alive y reintentos automáticos
 http_session = requests.Session()
+retries = Retry(
+    total=3,
+    backoff_factor=0.3,
+    status_forcelist=[500, 502, 503, 504],
+    raise_on_status=False
+)
+adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=20)
+http_session.mount("http://", adapter)
+http_session.mount("https://", adapter)
 
 def load_or_download_items_db(force=False):
     global ITEMS_DB
@@ -920,69 +933,72 @@ def decode_varint(buf, off):
     return val, read
 
 def parse_kbt(buf):
-    """Extrae ItemID y precios del paquete Protobuf kbt de Dofus Unity"""
+    """Extrae ItemID y precios del paquete Protobuf kbt de Dofus Unity con detección dinámica de offset"""
     try:
-        idx = buf.find(b"type.ankama.com/kbt")
+        idx = buf.find(b"kbt")
         if idx == -1:
-            idx = buf.find(b"kbt")
-            if idx == -1:
-                return None, []
-            idx = idx - 16
+            return None, []
 
-        off = idx + 19
-        if off < len(buf) and buf[off] == 0x12:
-            off += 1
-            payload_len, br = decode_varint(buf, off)
-            off += br
-            payload = buf[off:off + payload_len]
+        # Buscar el byte 0x12 (tag del payload Any) en una ventana de 20 bytes tras 'kbt'
+        off_12 = buf.find(b"\x12", idx, idx + 20)
+        if off_12 == -1:
+            return None, []
 
-            p_off = 0
-            item_id = 0
-            prices = []
+        off = off_12 + 1
+        if off >= len(buf):
+            return None, []
 
-            while p_off < len(payload):
-                tag = payload[p_off]
-                p_off += 1
-                field = tag >> 3
-                wire = tag & 7
+        payload_len, br = decode_varint(buf, off)
+        off += br
+        payload = buf[off:off + payload_len]
 
-                if wire == 0:
-                    val, br = decode_varint(payload, p_off)
-                    p_off += br
-                    if field == 2:
-                        item_id = val
-                elif wire == 2:
-                    sub_len, br = decode_varint(payload, p_off)
-                    p_off += br
-                    sub = payload[p_off:p_off + sub_len]
-                    p_off += sub_len
+        p_off = 0
+        item_id = 0
+        prices = []
 
-                    s_off = 0
-                    while s_off < len(sub):
-                        s_tag = sub[s_off]
-                        s_off += 1
-                        s_field = s_tag >> 3
-                        s_wire = s_tag & 7
-                        if s_wire == 0:
-                            s_val, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            if s_field in (2, 5):
-                                item_id = s_val
-                        elif s_wire == 2:
-                            in_len, s_br = decode_varint(sub, s_off)
-                            s_off += s_br
-                            inner = sub[s_off:s_off + in_len]
-                            s_off += in_len
-                            if s_field == 6:
-                                i_off = 0
-                                while i_off < len(inner):
-                                    pv, pbr = decode_varint(inner, i_off)
-                                    i_off += pbr
-                                    if pv > 0:
-                                        prices.append(pv)
-                        else:
-                            break
-            return item_id, prices
+        while p_off < len(payload):
+            tag = payload[p_off]
+            p_off += 1
+            field = tag >> 3
+            wire = tag & 7
+
+            if wire == 0:
+                val, br = decode_varint(payload, p_off)
+                p_off += br
+                if field == 2:
+                    item_id = val
+            elif wire == 2:
+                sub_len, br = decode_varint(payload, p_off)
+                p_off += br
+                sub = payload[p_off:p_off + sub_len]
+                p_off += sub_len
+
+                s_off = 0
+                while s_off < len(sub):
+                    s_tag = sub[s_off]
+                    s_off += 1
+                    s_field = s_tag >> 3
+                    s_wire = s_tag & 7
+                    if s_wire == 0:
+                        s_val, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        if s_field in (2, 5):
+                            item_id = s_val
+                    elif s_wire == 2:
+                        in_len, s_br = decode_varint(sub, s_off)
+                        s_off += s_br
+                        inner = sub[s_off:s_off + in_len]
+                        s_off += in_len
+                        if s_field == 6:
+                            i_off = 0
+                            while i_off < len(inner):
+                                pv, pbr = decode_varint(inner, i_off)
+                                i_off += pbr
+                                if pv > 0:
+                                    prices.append(pv)
+                    else:
+                        break
+        return item_id, prices
     except Exception:
         pass
     return None, []
@@ -1040,8 +1056,18 @@ def async_worker():
                     print(f"[{now_str}]  [LOTE PROCESADO] {tot} objetos sincronizados con Turso")
                 else:
                     print(f"[{now_str}]  Error de lote {res.status_code}: {res.text}")
+        except requests.exceptions.RequestException as req_err:
+            # Reintentar en caso de reseteo de socket temporal
+            try:
+                time.sleep(0.3)
+                if len(items_batch) == 1:
+                    http_session.post(API_UPDATE_URL, json=items_batch[0], headers=headers, timeout=6.0)
+                else:
+                    http_session.post(API_BATCH_URL, json={"items": items_batch}, headers=headers, timeout=10.0)
+            except Exception:
+                pass
         except Exception as e:
-            print(f"[{now_str}] [Aviso Conexion]: {e}")
+            print(f"[{now_str}] [Aviso]: {e}")
 
 def process_packet(pkt):
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
