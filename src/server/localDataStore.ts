@@ -6,7 +6,7 @@ import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights.js"
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData.js";
 import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems.js";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData.js";
-import bycGeneratedDb from "../data/bycGeneratedDb.json" with { type: "json" };
+import bycGeneratedDb from "../data/bycGeneratedDb.json";
 import {
   DofusEffect,
   DofusItem,

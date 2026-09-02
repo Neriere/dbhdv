@@ -34,7 +34,7 @@ import {
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
-import bycGeneratedDb from "../data/bycGeneratedDb.json" with { type: "json" };
+import bycGeneratedDb from "../data/bycGeneratedDb.json";
 import {
   BASE_RUNES_BY_ID,
   DOFUS_BASE_RUNES,
