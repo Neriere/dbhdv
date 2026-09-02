@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import compression from "compression";
 import path from "path";
 import basicAuth from "express-basic-auth";
@@ -79,9 +79,18 @@ app.use(compression());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Normalize URL prefix for Vercel Serverless Functions
+app.use((req, res, next) => {
+  if (req.url && !req.url.startsWith("/api") && !req.url.startsWith("/assets")) {
+    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+  }
+  next();
+});
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
 });
+
 
 if (
   BASIC_AUTH_USER &&

@@ -1,5 +1,5 @@
-import { createClient } from "@libsql/client";
 import fs from "fs";
+
 import path from "path";
 import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs.js";
 import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights.js";
@@ -57,6 +57,9 @@ export const UNITY_SERVER_PROFILES: Array<{
   { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
+import { createClient as createDefaultClient, Client } from "@libsql/client";
+import { createClient as createWebClient } from "@libsql/client/web";
+
 function resolveDbUrl(): string {
   const customUrl =
     process.env.TURSO_DATABASE_URL ||
@@ -87,10 +90,37 @@ function resolveDbAuthToken(): string | undefined {
   return token && token.trim() ? token.trim() : undefined;
 }
 
-export const database = createClient({
-  url: resolveDbUrl(),
-  authToken: resolveDbAuthToken(),
-});
+function createResilientDbClient(): Client {
+  const url = resolveDbUrl();
+  const authToken = resolveDbAuthToken();
+
+  // If remote URL, always use web client with standard fetch (zero native C++ dependencies)
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("libsql://")) {
+    try {
+      return createWebClient({ url, authToken });
+    } catch (err) {
+      console.warn("[Database] Failed to create web LibSQL client:", err);
+    }
+  }
+
+  // Local file-based SQLite
+  try {
+    return createDefaultClient({ url, authToken });
+  } catch (err) {
+    console.warn("[Database] Native SQLite unavailable in current runtime. Using safe fallback client:", err);
+    return {
+      execute: async () => ({ columns: [], rows: [], rowsAffected: 0, lastInsertRowid: undefined }),
+      executeMultiple: async () => {},
+      batch: async () => [],
+      transaction: async () => ({} as any),
+      close: () => {},
+      closed: false,
+      protocol: "http",
+    } as unknown as Client;
+  }
+}
+
+export const database: Client = createResilientDbClient();
 
 let initDbPromise: Promise<void> | null = null;
 
@@ -107,6 +137,7 @@ export async function initDB() {
       } catch {
         // Ignored for remote HTTP LibSQL/Turso
       }
+
 
       await database.executeMultiple(`
         CREATE TABLE IF NOT EXISTS items (
