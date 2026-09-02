@@ -447,3 +447,60 @@ html[data-theme="calm"],
   background: var(--accent);
 }
 
+/* ----------------------------------------------------
+ * Tab Content Fade Transition
+ * ---------------------------------------------------- */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tab-content-enter {
+  animation: tab-fade-in 140ms ease-out both;
+}
+
+/* ----------------------------------------------------
+ * Sniffer Status Pulse
+ * ---------------------------------------------------- */
+@keyframes sniffer-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+  50%       { opacity: 0.75; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+}
+
+.sniffer-dot-active {
+  animation: sniffer-pulse 2s ease-in-out infinite;
+}
+
+/* ----------------------------------------------------
+ * Numeric Monospace — for prices and quantities
+ * ---------------------------------------------------- */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ----------------------------------------------------
+ * Nav tab bottom-border active indicator
+ * ---------------------------------------------------- */
+.nav-tab {
+  position: relative;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.nav-tab::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent, #f59e0b);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.nav-tab.active::after {
+  opacity: 1;
+}
+
