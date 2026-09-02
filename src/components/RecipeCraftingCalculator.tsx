@@ -16,11 +16,12 @@ import {
   getStoredSalesVolumeMap,
   ItemSalesVolume,
 } from "../services/salesVolumeService";
-import { DofusItem, PresetCraftableItem, RecipeTreeNode } from "../types";
+import { DofusItem, RecipeTreeNode } from "../types";
 import { isOmittedItem } from "../data/dofusJobs";
 import {
   PRESET_CRAFTABLE_ITEMS,
   DEFAULT_INGREDIENT_PRICES,
+  PresetCraftableItem,
 } from "../data/presetCraftableItems";
 import {
   getCraftableItemsSnapshot,
@@ -141,17 +142,20 @@ export const RecipeCraftingCalculator: React.FC<{
       } else {
         const itemJob = initialSelectedItem.type?.name?.es || "Receta";
         const tempPreset: PresetCraftableItem = {
-          id: initialSelectedItem.id,
-          name: getItemName(initialSelectedItem),
-          level: initialSelectedItem.level || 1,
+          ...initialSelectedItem,
           jobId: 0,
           jobNameEs: itemJob,
-          recipe: [],
-          type: initialSelectedItem.type,
-          item: initialSelectedItem,
+          defaultMarketSalePrice: 0,
+          recipeData: (initialSelectedItem as any).recipeData || {
+            id: 0,
+            resultId: initialSelectedItem.id,
+            ingredientIds: [],
+            quantities: [],
+          },
         };
         setActivePresetItem(tempPreset);
         setIsDetailView(true);
+
       }
     }
   }, [initialSelectedItem]);
@@ -223,14 +227,16 @@ export const RecipeCraftingCalculator: React.FC<{
 
     allCraftableItems.forEach((item) => {
       let directCost = 0;
-      if (item.recipe && item.recipe.length > 0) {
-        item.recipe.forEach((ing) => {
-          const p = marketPrices[ing.itemId] || ing.marketPrice || 0;
-          directCost += p * ing.quantity;
+      if (item.recipeData && item.recipeData.ingredientIds) {
+        item.recipeData.ingredientIds.forEach((ingId, idx) => {
+          const qty = item.recipeData.quantities?.[idx] || 1;
+          const p = marketPrices[ingId] || 0;
+          directCost += p * qty;
         });
       }
 
       const sale = marketPrices[item.id] || 0;
+
       const tax = sale > 0 ? Math.ceil(sale * 0.03) : 0;
       const net = sale > 0 ? sale - tax - directCost : -directCost;
       const roi = directCost > 0 && sale > 0 ? (net / directCost) * 100 : 0;
@@ -262,13 +268,11 @@ export const RecipeCraftingCalculator: React.FC<{
         if (searchTerm.trim() !== "") {
           const name = getItemName(item);
           const type = getItemTypeName(item);
-          if (
-            !matchesSearchQuery(name, searchTerm) &&
-            !matchesSearchQuery(type, searchTerm)
-          ) {
+          if (!matchesSearchQuery([name, type], searchTerm)) {
             return false;
           }
         }
+
 
         const metrics = itemMetricsMap.get(item.id);
         const hasSalePrice = metrics && metrics.salePrice > 0;

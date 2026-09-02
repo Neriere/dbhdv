@@ -124,7 +124,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
   ]);
 
-  const { marketPrices: basePrices, updatePrice } = useMarketPrices();
+  const { marketPrices: basePrices, activeProfileId, updatePrice } = useMarketPrices();
   const marketPrices = useMemo(
     () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
     [basePrices]
@@ -153,7 +153,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
     const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];
     return raw.filter((item) => !isOmittedItem(item));
-  }, [databaseVersion]);
+  }, [activeProfileId]);
 
   const rankedItems: CalculatedRecipeRanking[] = useMemo(() => {
     const results: CalculatedRecipeRanking[] = [];

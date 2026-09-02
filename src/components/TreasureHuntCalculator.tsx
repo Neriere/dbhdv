@@ -413,8 +413,9 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
             }
           }}
           onPriceChange={(itemId, newPrice) => {
-            setMarketPrices((prev) => ({ ...prev, [itemId]: newPrice }));
+            updatePrice(itemId, newPrice);
           }}
+
           onNavigateToShopping={onNavigateToShopping}
           onNavigateToBank={onNavigateToBank}
           showToast={showToast}

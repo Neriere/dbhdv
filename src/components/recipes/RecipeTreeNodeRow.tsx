@@ -129,10 +129,11 @@ export const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
         <div className="flex items-center gap-2.5 min-w-0">
           <SafeImage
             src={getItemIconUrl(sub.itemId)}
-            fallbackSrc={getItemFallbackIconUrl()}
+            fallbackSrc={getItemFallbackIconUrl(sub.item || { id: sub.itemId })}
             alt={subName}
             className="w-8 h-8 rounded-lg object-contain bg-slate-950 p-0.5 border border-slate-700 shrink-0"
           />
+
           <div className="min-w-0">
             <span className="font-bold text-white text-xs block truncate">
               {subName}
@@ -319,15 +320,13 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
       const res = analyzeBycResourceCost(node.item.id, marketPrices);
       setBycAnalysis(res);
       if (res) {
-        if (res.isFragmentsCheaper) setSelectedBycMethod("fragments");
-        else if (res.isMapCheaper) setSelectedBycMethod("map");
-        else setSelectedBycMethod("direct");
+        setSelectedBycMethod(res.bestMethod);
       }
     }
   }, [isByc, node.item.id, marketPrices]);
 
   const optimalCostForIngredient = isByc
-    ? getOptimizedIngredientCost(node.item.id, node.quantity, marketPrices)
+    ? getOptimizedIngredientCost(node.item.id, marketPrices, selectedBycMethod).cost * node.quantity
     : hasSubCraft && currentPrice === 0
       ? subCraftCost
       : isSubcraftCheaper
@@ -374,11 +373,12 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
             <div className="relative shrink-0">
               <SafeImage
                 src={getItemIconUrl(node.itemId)}
-                fallbackSrc={getItemFallbackIconUrl()}
+                fallbackSrc={getItemFallbackIconUrl(node.item)}
                 alt={itemName}
                 className="w-10 h-10 rounded-xl object-contain bg-slate-900 p-1 border border-slate-700 shadow-md"
               />
             </div>
+
 
             <div className="min-w-0">
               <span className="font-black text-white text-sm block truncate leading-tight">

@@ -1,18 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { MarketPriceMap, PriceProfile } from '../types';
+import { MarketPriceMap, PriceProfile, PriceUpdatedAtMap } from '../types';
 import {
   getStoredMarketPrices,
   getActivePriceProfile,
+  getActivePriceProfileId,
+  getStoredPriceUpdatedAt,
   saveMarketPrice,
   saveAllMarketPrices,
 } from '../services/dofusDbService';
 
 export interface UseMarketPricesReturn {
   marketPrices: MarketPriceMap;
+  priceUpdatedAt: PriceUpdatedAtMap;
   activeProfile: PriceProfile | null;
+  activeProfileId: number;
   updatePrice: (itemId: number, price: number) => Promise<MarketPriceMap>;
   updateAllPrices: (newPrices: MarketPriceMap) => Promise<MarketPriceMap>;
   getPrice: (itemId: number, fallback?: number) => number;
+  refreshPrices: () => void;
 }
 
 /**
@@ -23,9 +28,22 @@ export function useMarketPrices(): UseMarketPricesReturn {
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>(() =>
     getStoredMarketPrices()
   );
+  const [priceUpdatedAt, setPriceUpdatedAt] = useState<PriceUpdatedAtMap>(() =>
+    getStoredPriceUpdatedAt()
+  );
   const [activeProfile, setActiveProfile] = useState<PriceProfile | null>(() =>
     getActivePriceProfile()
   );
+  const [activeProfileId, setActiveProfileId] = useState<number>(() =>
+    getActivePriceProfileId()
+  );
+
+  const refreshPrices = useCallback(() => {
+    setMarketPrices({ ...getStoredMarketPrices() });
+    setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
+    setActiveProfile(getActivePriceProfile());
+    setActiveProfileId(getActivePriceProfileId());
+  }, []);
 
   useEffect(() => {
     const handlePricesUpdated = (event?: Event) => {
@@ -38,11 +56,11 @@ export function useMarketPrices(): UseMarketPricesReturn {
       } else {
         setMarketPrices({ ...getStoredMarketPrices() });
       }
+      setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
     };
 
     const handleDatabaseUpdated = () => {
-      setMarketPrices({ ...getStoredMarketPrices() });
-      setActiveProfile(getActivePriceProfile());
+      refreshPrices();
     };
 
     const handleProfileChanged = (event?: Event) => {
@@ -52,7 +70,9 @@ export function useMarketPrices(): UseMarketPricesReturn {
       } else {
         setActiveProfile(getActivePriceProfile());
       }
+      setActiveProfileId(getActivePriceProfileId());
       setMarketPrices({ ...getStoredMarketPrices() });
+      setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
     };
 
     if (typeof window !== 'undefined') {
@@ -68,17 +88,19 @@ export function useMarketPrices(): UseMarketPricesReturn {
         window.removeEventListener('dofus_profile_changed', handleProfileChanged);
       }
     };
-  }, []);
+  }, [refreshPrices]);
 
   const updatePrice = useCallback(async (itemId: number, price: number) => {
     const updated = await saveMarketPrice(itemId, price);
     setMarketPrices({ ...updated });
+    setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
     return updated;
   }, []);
 
   const updateAllPrices = useCallback(async (newPrices: MarketPriceMap) => {
     const updated = await saveAllMarketPrices(newPrices);
     setMarketPrices({ ...updated });
+    setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
     return updated;
   }, []);
 
@@ -92,11 +114,14 @@ export function useMarketPrices(): UseMarketPricesReturn {
   return useMemo(
     () => ({
       marketPrices,
+      priceUpdatedAt,
       activeProfile,
+      activeProfileId,
       updatePrice,
       updateAllPrices,
       getPrice,
+      refreshPrices,
     }),
-    [marketPrices, activeProfile, updatePrice, updateAllPrices, getPrice]
+    [marketPrices, priceUpdatedAt, activeProfile, activeProfileId, updatePrice, updateAllPrices, getPrice, refreshPrices]
   );
 }

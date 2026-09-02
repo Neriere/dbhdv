@@ -73,10 +73,10 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
   ) => {
     const num = value === "" ? undefined : Math.max(0, parseInt(value, 10) || 0);
     const updated = saveItemSalesVolume(itemId, {
-      ...(activeSalesVolume || { id: itemId }),
+      ...activeSalesVolume,
       [field]: num,
     });
-    setSalesMap((prev) => ({ ...prev, [itemId]: updated }));
+    setSalesMap(updated);
   };
 
   return (
@@ -87,11 +87,12 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-slate-950 p-2 border border-slate-800 flex items-center justify-center shrink-0 shadow-lg">
             <SafeImage
               src={getItemIconUrl(item.id)}
-              fallbackSrc={getItemFallbackIconUrl()}
+              fallbackSrc={getItemFallbackIconUrl(item)}
               alt={getItemName(item)}
               className="w-full h-full object-contain"
             />
           </div>
+
           <div className="space-y-1">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
