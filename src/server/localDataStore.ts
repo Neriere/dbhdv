@@ -1013,7 +1013,17 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
     sql: "SELECT id, name, slug, category, category_label, is_default FROM price_profiles WHERE slug = ? LIMIT 1",
     args: [defaultSlug],
   });
-  const inserted = insertedResult.rows[0];
+  const inserted = insertedResult?.rows?.[0];
+  if (!inserted) {
+    return {
+      id: 1,
+      name: "Draconiros",
+      slug: "draconiros",
+      category: "monocuenta_clasico",
+      categoryLabel: "Monocuenta Clásico",
+      isDefault: true,
+    };
+  }
   const defaultProfileObj: PriceProfile = {
     id: inserted.id as number,
     name: inserted.name as string,
@@ -1024,6 +1034,7 @@ async function ensureDefaultPriceProfile(): Promise<PriceProfile> {
   };
   cachedPriceProfiles = null; // force fresh reload on next getPriceProfiles()
   return defaultProfileObj;
+
 }
 
 async function ensureLegacyPriceMigration(
