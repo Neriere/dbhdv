@@ -1,11 +1,11 @@
 import fs from "fs";
 
 import path from "path";
-import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs.js";
-import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights.js";
-import { CRAFTABLE_RUNES } from "../data/craftableRunesData.js";
-import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems.js";
-import { getDofusDbSeedData } from "../data/dofusDbSeedData.js";
+import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
+import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights";
+import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
+import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
+import { getDofusDbSeedData } from "../data/dofusDbSeedData";
 import bycGeneratedDb from "../data/bycGeneratedDb.json";
 import {
   DofusEffect,
@@ -19,7 +19,8 @@ import {
   ServerCategory,
   SyncSettings,
   SyncStatus,
-} from "../types.js";
+} from "../types";
+
 
 const DOFUS_API_BASE = "https://api.dofusdb.fr";
 
