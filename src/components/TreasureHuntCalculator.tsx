@@ -348,13 +348,10 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         if (levelFilter === "20-90" && (h.monsterLevel < 20 || h.monsterLevel > 90)) return false;
 
         // Zone filter (Exact BYC Zones)
-        if (zoneFilter === "astrub" && !h.zone.toLowerCase().includes("astrub")) return false;
-        if (zoneFilter === "castillo_amakna" && !h.zone.toLowerCase().includes("castillo") && !h.zone.toLowerCase().includes("amakna")) return false;
-        if (zoneFilter === "frigost_1" && h.zone !== "Frigost I") return false;
-        if (zoneFilter === "frigost_2" && h.zone !== "Frigost II") return false;
-        if (zoneFilter === "frigost_3" && h.zone !== "Frigost III") return false;
-        if (zoneFilter === "dimensiones" && !["anutropía", "sramvil", "zurcalia", "dimensiones"].some(d => h.zone.toLowerCase().includes(d))) return false;
-        if (zoneFilter === "justicieros" && !h.zone.toLowerCase().includes("justiciero")) return false;
+        if (zoneFilter === "bajo_nivel" && h.zone !== "Bajo nivel") return false;
+        if (zoneFilter === "amakna_cania" && h.zone !== "Amakna / Cania") return false;
+        if (zoneFilter === "frigost_pandala" && h.zone !== "Frigost / Pandala") return false;
+        if (zoneFilter === "frigost_3" && h.zone !== "Frigost 3 / Épico") return false;
 
         // Profitable only (Check if pure hunt is profitable OR craft is profitable)
         if (onlyProfitable && h.netProfit <= 0 && (!h.bestCraftEquipment || h.bestCraftEquipment.optimalNetProfit <= 0)) return false;
@@ -590,13 +587,10 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
             <div className="flex items-center gap-1 overflow-x-auto">
               {[
                 { id: "all", label: "Todas las zonas" },
-                { id: "astrub", label: "Astrub" },
-                { id: "castillo_amakna", label: "Castillo de Amakna" },
-                { id: "frigost_1", label: "Frigost I" },
-                { id: "frigost_2", label: "Frigost II" },
-                { id: "frigost_3", label: "Frigost III" },
-                { id: "dimensiones", label: "Dimensiones Divinas" },
-                { id: "justicieros", label: "Base Justicieros" },
+                { id: "bajo_nivel", label: "Bajo nivel" },
+                { id: "amakna_cania", label: "Amakna / Cania" },
+                { id: "frigost_pandala", label: "Frigost / Pandala" },
+                { id: "frigost_3", label: "Frigost 3 / Épico" },
               ].map((z) => (
                 <button
                   key={z.id}
