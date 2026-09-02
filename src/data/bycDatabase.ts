@@ -1,4 +1,5 @@
-import bycRawData from "./bycGeneratedDb.json";
+import bycRawData from "./bycGeneratedDbData";
+
 
 export interface BycRecipeIngredient {
   id: number;

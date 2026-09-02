@@ -1,4 +1,4 @@
-import { processAndIngestMarketPricesBatch } from "../../src/server/localDataStore";
+import { ingestBatchPrices } from "../lib/marketPriceCalculator";
 
 function verifySnifferAuth(req: any): boolean {
   const secret =
@@ -49,7 +49,7 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "Se requiere un array de items" });
     }
 
-    const result = await processAndIngestMarketPricesBatch(items);
+    const result = await ingestBatchPrices(items);
     res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(200).json(result);
   } catch (error: any) {

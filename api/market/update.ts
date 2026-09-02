@@ -1,4 +1,4 @@
-import { processAndIngestMarketPrice } from "../../src/server/localDataStore";
+import { ingestSinglePrice } from "../lib/marketPriceCalculator";
 
 function verifySnifferAuth(req: any): boolean {
   const secret =
@@ -45,7 +45,7 @@ export default async function handler(req: any, res: any) {
         .json({ error: "Cuerpo de solicitud JSON requerido" });
     }
 
-    const result = await processAndIngestMarketPrice(payload);
+    const result = await ingestSinglePrice(payload);
     res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(200).json(result);
   } catch (error: any) {

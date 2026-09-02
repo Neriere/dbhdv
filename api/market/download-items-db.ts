@@ -1,4 +1,4 @@
-import { buildItemsDictionary } from "../../src/data/itemsDictionaryData";
+import { STATIC_ITEMS_DICT } from "../data/staticItemsDict";
 
 export default function handler(req: any, res: any) {
   try {
@@ -7,8 +7,7 @@ export default function handler(req: any, res: any) {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=600, s-maxage=1800");
 
-    const dict = buildItemsDictionary();
-    return res.status(200).send(JSON.stringify(dict, null, 2));
+    return res.status(200).send(JSON.stringify(STATIC_ITEMS_DICT, null, 2));
   } catch (error: any) {
     console.error("[Download Items DB Error]:", error);
     res.setHeader("Access-Control-Allow-Origin", "*");

@@ -7,8 +7,8 @@ import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
 import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData";
 import { buildItemsDictionary } from "../data/itemsDictionaryData";
+import bycGeneratedDb from "../data/bycGeneratedDbData";
 
-import bycGeneratedDb from "../data/bycGeneratedDb.json";
 
 
 import {
