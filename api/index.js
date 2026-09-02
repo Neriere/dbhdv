@@ -33897,7 +33897,6 @@ var bycGeneratedDb_default = [
 ];
 
 // src/server/localDataStore.ts
-import { createClient as createDefaultClient } from "@libsql/client";
 import { createClient as createWebClient } from "@libsql/client/web";
 var DOFUS_API_BASE = "https://api.dofusdb.fr";
 var DEFAULT_SYNC_SETTINGS = {
@@ -33927,10 +33926,7 @@ function resolveDbUrl() {
   if (customUrl && customUrl.trim()) {
     return customUrl.trim();
   }
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.NOW_REGION) {
-    return "file:/tmp/dofus_local.db";
-  }
-  return "file:local.db";
+  return "";
 }
 function resolveDbAuthToken() {
   const token = process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.TURSO_TOKEN;
@@ -33946,22 +33942,17 @@ function createResilientDbClient() {
       console.warn("[Database] Failed to create web LibSQL client:", err);
     }
   }
-  try {
-    return createDefaultClient({ url, authToken });
-  } catch (err) {
-    console.warn("[Database] Native SQLite unavailable in current runtime. Using safe fallback client:", err);
-    return {
-      execute: async () => ({ columns: [], rows: [], rowsAffected: 0, lastInsertRowid: void 0 }),
-      executeMultiple: async () => {
-      },
-      batch: async () => [],
-      transaction: async () => ({}),
-      close: () => {
-      },
-      closed: false,
-      protocol: "http"
-    };
-  }
+  return {
+    execute: async () => ({ columns: [], rows: [], rowsAffected: 0, lastInsertRowid: void 0 }),
+    executeMultiple: async () => {
+    },
+    batch: async () => [],
+    transaction: async () => ({}),
+    close: () => {
+    },
+    closed: false,
+    protocol: "http"
+  };
 }
 var database = createResilientDbClient();
 var initDbPromise = null;
