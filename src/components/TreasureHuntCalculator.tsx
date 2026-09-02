@@ -78,6 +78,19 @@ export interface CalculatedBycEquipment {
 
 const SEBUSCALIN_STORAGE_KEY = "dofus_sebuscalin_unit_price_v1";
 
+const ZONE_FILTERS = [
+  { id: "all", label: "Todas las zonas" },
+  { id: "Astrub", label: "Astrub" },
+  { id: "Castillo de Amakna", label: "Castillo de Amakna" },
+  { id: "Base de los Justicieros", label: "Base de los Justicieros" },
+  { id: "Frigost I", label: "Frigost I" },
+  { id: "Frigost II", label: "Frigost II" },
+  { id: "Frigost III", label: "Frigost III" },
+  { id: "Anutropía", label: "Anutropía" },
+  { id: "Sramvil", label: "Sramvil" },
+  { id: "Zurcalia", label: "Zurcalia" },
+];
+
 // Helper to format values in kk/mk or standard K
 const formatKamas = (amount: number): string => {
   const abs = Math.abs(amount);
@@ -348,10 +361,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         if (levelFilter === "20-90" && (h.monsterLevel < 20 || h.monsterLevel > 90)) return false;
 
         // Zone filter (Exact BYC Zones)
-        if (zoneFilter === "bajo_nivel" && h.zone !== "Bajo nivel") return false;
-        if (zoneFilter === "amakna_cania" && h.zone !== "Amakna / Cania") return false;
-        if (zoneFilter === "frigost_pandala" && h.zone !== "Frigost / Pandala") return false;
-        if (zoneFilter === "frigost_3" && h.zone !== "Frigost 3 / Épico") return false;
+        if (zoneFilter !== "all" && h.zone !== zoneFilter) return false;
 
         // Profitable only (Check if pure hunt is profitable OR craft is profitable)
         if (onlyProfitable && h.netProfit <= 0 && (!h.bestCraftEquipment || h.bestCraftEquipment.optimalNetProfit <= 0)) return false;
@@ -582,23 +592,17 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
         {/* Second Filter Row */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/60 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">Zona:</span>
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {[
-                { id: "all", label: "Todas las zonas" },
-                { id: "bajo_nivel", label: "Bajo nivel" },
-                { id: "amakna_cania", label: "Amakna / Cania" },
-                { id: "frigost_pandala", label: "Frigost / Pandala" },
-                { id: "frigost_3", label: "Frigost 3 / Épico" },
-              ].map((z) => (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-400 font-medium shrink-0">Zona:</span>
+            <div className="flex flex-wrap items-center gap-1">
+              {ZONE_FILTERS.map((z) => (
                 <button
                   key={z.id}
                   type="button"
                   onClick={() => setZoneFilter(z.id)}
-                  className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${
+                  className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap text-xs ${
                     zoneFilter === z.id
-                      ? "bg-slate-800 text-amber-300 font-semibold border border-amber-500/40"
+                      ? "bg-slate-800 text-amber-300 font-semibold border border-amber-500/40 shadow-sm"
                       : "text-slate-400 hover:text-slate-200 bg-slate-950/60"
                   }`}
                 >

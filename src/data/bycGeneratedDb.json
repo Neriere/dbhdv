@@ -5,7 +5,7 @@
     "monsterNameFr": "Gein",
     "monsterLevel": 200,
     "monsterId": 3761,
-    "category": "Frigost 3 / Épico",
+    "category": "Sramvil",
     "mapItem": {
       "id": 15382,
       "name": "Mapa de Lonyon",
@@ -331,7 +331,7 @@
     "monsterNameFr": "Frakacia Leukocytine",
     "monsterLevel": 30,
     "monsterId": 460,
-    "category": "Bajo nivel",
+    "category": "Astrub",
     "mapItem": {
       "id": 15378,
       "name": "Mapa de Tortacia",
@@ -505,7 +505,7 @@
     "monsterNameFr": "Dremoan",
     "monsterLevel": 180,
     "monsterId": 2908,
-    "category": "Frigost / Pandala",
+    "category": "Frigost II",
     "mapItem": {
       "id": 15479,
       "name": "Mapa de Dremoan",
@@ -807,7 +807,7 @@
     "monsterNameFr": "Ali Grothor",
     "monsterLevel": 130,
     "monsterId": 3524,
-    "category": "Frigost / Pandala",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 15534,
       "name": "Mapa de Ali Grothor",
@@ -1109,7 +1109,7 @@
     "monsterNameFr": "Fouduglen l'Écureuil",
     "monsterLevel": 10,
     "monsterId": 463,
-    "category": "Bajo nivel",
+    "category": "Astrub",
     "mapItem": {
       "id": 15904,
       "name": "Mapa de Peazo Beyota",
@@ -1243,7 +1243,7 @@
     "monsterNameFr": "Brumen Tinctorias",
     "monsterLevel": 60,
     "monsterId": 464,
-    "category": "Bajo nivel",
+    "category": "Astrub",
     "mapItem": {
       "id": 16040,
       "name": "Mapa de Brumen Tinctorias",
@@ -1449,7 +1449,7 @@
     "monsterNameFr": "Pantèroz",
     "monsterLevel": 130,
     "monsterId": 3762,
-    "category": "Frigost / Pandala",
+    "category": "Sramvil",
     "mapItem": {
       "id": 16041,
       "name": "Mapa de Panterrosa",
@@ -1751,7 +1751,7 @@
     "monsterNameFr": "Hyperscampe",
     "monsterLevel": 200,
     "monsterId": 3533,
-    "category": "Frigost 3 / Épico",
+    "category": "Base de los Justicieros",
     "mapItem": {
       "id": 16042,
       "name": "Mapa de Hiperescampo",
@@ -2077,7 +2077,7 @@
     "monsterNameFr": "Grand Kongoku",
     "monsterLevel": 200,
     "monsterId": 4028,
-    "category": "Frigost 3 / Épico",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 17230,
       "name": "Mapa de Kongoku",
@@ -2403,7 +2403,7 @@
     "monsterNameFr": "Voldelor",
     "monsterLevel": 200,
     "monsterId": 3668,
-    "category": "Frigost 3 / Épico",
+    "category": "Anutropía",
     "mapItem": {
       "id": 17240,
       "name": "Mapa de Dambeldoro",
@@ -2729,7 +2729,7 @@
     "monsterNameFr": "Guerrier du K.O.",
     "monsterLevel": 180,
     "monsterId": 4016,
-    "category": "Frigost / Pandala",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 17247,
       "name": "Mapa del Guerrero del Kaos",
@@ -3031,7 +3031,7 @@
     "monsterNameFr": "Anatak Diskedor",
     "monsterLevel": 160,
     "monsterId": 4017,
-    "category": "Frigost / Pandala",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 17254,
       "name": "Mapa de Nataka",
@@ -3333,7 +3333,7 @@
     "monsterNameFr": "Zatoïshwan",
     "monsterLevel": 150,
     "monsterId": 555,
-    "category": "Frigost / Pandala",
+    "category": "Astrub",
     "mapItem": {
       "id": 17262,
       "name": "Mapa de Zatoïshwan",
@@ -3635,7 +3635,7 @@
     "monsterNameFr": "Atcham",
     "monsterLevel": 200,
     "monsterId": 4329,
-    "category": "Frigost 3 / Épico",
+    "category": "Zurcalia",
     "mapItem": {
       "id": 17643,
       "name": "Mapa de Atcham",
@@ -3961,7 +3961,7 @@
     "monsterNameFr": "Chevalier de Glace",
     "monsterLevel": 200,
     "monsterId": 3403,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost III",
     "mapItem": {
       "id": 19115,
       "name": "Mapa del Caballero de Hielo",
@@ -4287,7 +4287,7 @@
     "monsterNameFr": "Bouflouth",
     "monsterLevel": 120,
     "monsterId": 2901,
-    "category": "Amakna / Cania",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32281,
       "name": "Mapa de Jalalut",
@@ -4589,7 +4589,7 @@
     "monsterNameFr": "Monsieur Pingouin",
     "monsterLevel": 130,
     "monsterId": 2902,
-    "category": "Frigost / Pandala",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32282,
       "name": "Mapa de Elpin Güino",
@@ -4891,7 +4891,7 @@
     "monsterNameFr": "Katigrou",
     "monsterLevel": 140,
     "monsterId": 2903,
-    "category": "Frigost / Pandala",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32283,
       "name": "Mapa de Katigrú",
@@ -5193,7 +5193,7 @@
     "monsterNameFr": "Fantômayte",
     "monsterLevel": 150,
     "monsterId": 2904,
-    "category": "Frigost / Pandala",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32284,
       "name": "Mapa de Phantomeyt",
@@ -5495,7 +5495,7 @@
     "monsterNameFr": "Vengeuse Masquée",
     "monsterLevel": 160,
     "monsterId": 2905,
-    "category": "Frigost / Pandala",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32285,
       "name": "Mapa de la Vengadora Enmascarada",
@@ -5797,7 +5797,7 @@
     "monsterNameFr": "YeCh'Ti",
     "monsterLevel": 170,
     "monsterId": 2906,
-    "category": "Frigost / Pandala",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32286,
       "name": "Mapa de YeCh'Ti",
@@ -6099,7 +6099,7 @@
     "monsterNameFr": "Fuji Givrefoux",
     "monsterLevel": 190,
     "monsterId": 2970,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost II",
     "mapItem": {
       "id": 32287,
       "name": "Mapa de Fuji Gélifux",
@@ -7710,7 +7710,7 @@
     "monsterNameFr": "Flasho",
     "monsterLevel": 190,
     "monsterId": 2909,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost II",
     "mapItem": {
       "id": 32288,
       "name": "Mapa de Tejash",
@@ -8012,7 +8012,7 @@
     "monsterNameFr": "Docteur Eggob",
     "monsterLevel": 190,
     "monsterId": 3400,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost I",
     "mapItem": {
       "id": 32289,
       "name": "Mapa del doctor Eggob",
@@ -8314,7 +8314,7 @@
     "monsterNameFr": "Viti Glourson",
     "monsterLevel": 190,
     "monsterId": 2910,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost II",
     "mapItem": {
       "id": 32290,
       "name": "Mapa de Huini Golosote",
@@ -8616,7 +8616,7 @@
     "monsterNameFr": "Glourdorak",
     "monsterLevel": 200,
     "monsterId": 3373,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost III",
     "mapItem": {
       "id": 32292,
       "name": "Mapa de Golosorak",
@@ -8942,7 +8942,7 @@
     "monsterNameFr": "Mekamouth",
     "monsterLevel": 200,
     "monsterId": 3401,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost III",
     "mapItem": {
       "id": 32293,
       "name": "Mapa de Mecanimut",
@@ -9268,7 +9268,7 @@
     "monsterNameFr": "Psikopompe",
     "monsterLevel": 200,
     "monsterId": 3413,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost III",
     "mapItem": {
       "id": 32294,
       "name": "Mapa de Psikopomzopato",
@@ -9594,7 +9594,7 @@
     "monsterNameFr": "Culbutœuf",
     "monsterLevel": 200,
     "monsterId": 3402,
-    "category": "Frigost 3 / Épico",
+    "category": "Frigost III",
     "mapItem": {
       "id": 32291,
       "name": "Mapa de Tentenhuevo",
@@ -9920,7 +9920,7 @@
     "monsterNameFr": "Ogivol Scalarcin",
     "monsterLevel": 50,
     "monsterId": 462,
-    "category": "Bajo nivel",
+    "category": "Astrub",
     "mapItem": {
       "id": 32933,
       "name": "Mapa de Ogivol Scarratero",
@@ -10214,7 +10214,7 @@
     "monsterNameFr": "Marzwel le Gobelin",
     "monsterLevel": 60,
     "monsterId": 554,
-    "category": "Bajo nivel",
+    "category": "Astrub",
     "mapItem": {
       "id": 32934,
       "name": "Mapa de Marzwelo el Goblin",
@@ -10436,7 +10436,7 @@
     "monsterNameFr": "Qil Bil",
     "monsterLevel": 70,
     "monsterId": 481,
-    "category": "Amakna / Cania",
+    "category": "Astrub",
     "mapItem": {
       "id": 32935,
       "name": "Mapa de Qil Bil",
@@ -10658,7 +10658,7 @@
     "monsterNameFr": "Tyranne la Terrible",
     "monsterLevel": 80,
     "monsterId": 4014,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32936,
       "name": "Mapa de Tirana la Terrible",
@@ -10904,7 +10904,7 @@
     "monsterNameFr": "Aermyne 'Braco' Scalptaras",
     "monsterLevel": 80,
     "monsterId": 446,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32937,
       "name": "Mapa de Aermyn Scalptaras",
@@ -11150,7 +11150,7 @@
     "monsterNameFr": "Musha L'Oni",
     "monsterLevel": 80,
     "monsterId": 552,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32938,
       "name": "Mapa de Musha el Maldito",
@@ -11396,7 +11396,7 @@
     "monsterNameFr": "Simbadas",
     "monsterLevel": 90,
     "monsterId": 4814,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32939,
       "name": "Mapa de Simbadás",
@@ -11642,7 +11642,7 @@
     "monsterNameFr": "Rok Gnorok",
     "monsterLevel": 90,
     "monsterId": 550,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32940,
       "name": "Mapa de Rok Gnorok",
@@ -11888,7 +11888,7 @@
     "monsterNameFr": "Carlita de l'Aguerfelde",
     "monsterLevel": 100,
     "monsterId": 4815,
-    "category": "Amakna / Cania",
+    "category": "Castillo de Amakna",
     "mapItem": {
       "id": 32941,
       "name": "Mapa de Carlita de La Guerfeld",
