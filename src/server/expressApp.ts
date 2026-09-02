@@ -47,7 +47,8 @@ import {
   getItemsDictionary,
   getLatestMarketPricesDelta,
   getProfileIdByServerNameOrSlug,
-} from "../src/server/localDataStore";
+} from "./localDataStore";
+
 
 
 const DOFUSDB_BASE_URL = "https://api.dofusdb.fr";
