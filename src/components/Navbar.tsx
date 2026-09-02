@@ -10,8 +10,6 @@ import {
   Sparkles,
   Vault,
   Map as MapIcon,
-  HardDriveDownload,
-  Circle,
 } from 'lucide-react';
 import {
   getActivePriceProfileId,
@@ -25,7 +23,7 @@ import {
 } from '../services/dofusDbService';
 import { DofusTheme } from '../types';
 import { groupPriceProfilesByCategory } from '../utils/serverUtils';
-import { BackupModal } from './common/BackupModal';
+
 
 export type ActiveTab =
   | 'recipes'
@@ -88,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const [shoppingCount, setShoppingCount] = useState(getShoppingList().length);
   const [bankCount, setBankCount] = useState(getStoredBankInventory().length);
   const [currentTheme, setCurrentTheme] = useState<DofusTheme>(getStoredTheme());
-  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+
 
   // Badge map so we can look up quickly per tab id
   const badgeMap: Partial<Record<ActiveTab, number>> = {
@@ -240,16 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 </select>
               </div>
 
-              {/* Backup button */}
-              <button
-                type="button"
-                onClick={() => setIsBackupModalOpen(true)}
-                className="px-2.5 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg text-xs font-bold text-slate-400 hover:text-amber-300 transition-all flex items-center gap-1.5 cursor-pointer"
-                title="Copia de seguridad / restaurar datos"
-              >
-                <HardDriveDownload className="w-3.5 h-3.5 text-amber-500/80" />
-                <span className="hidden xl:inline">Backup</span>
-              </button>
+
             </div>
           </div>
 
@@ -297,10 +286,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         </div>
       </header>
 
-      <BackupModal
-        isOpen={isBackupModalOpen}
-        onClose={() => setIsBackupModalOpen(false)}
-      />
+
     </>
   );
 };
