@@ -6,7 +6,11 @@ import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
 import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData";
+import { buildItemsDictionary } from "../data/itemsDictionaryData";
+
 import bycGeneratedDb from "../data/bycGeneratedDb.json";
+
+
 import {
   DofusEffect,
   DofusItem,
@@ -2846,125 +2850,26 @@ let cachedItemsDictionary: Record<string, string> | null = null;
 let lastItemsDictionaryFetch = 0;
 
 export async function getItemsDictionary(): Promise<Record<string, string>> {
-  const now = Date.now();
-  // Cache for 10 minutes in RAM
-  if (cachedItemsDictionary && Object.keys(cachedItemsDictionary).length > 500 && now - lastItemsDictionaryFetch < 10 * 60 * 1000) {
-    return cachedItemsDictionary;
-  }
-
-  const dict: Record<string, string> = {};
-
+  const dict = { ...buildItemsDictionary() };
   try {
-    // 1. All base runes (all official Dofus runes)
-    if (Array.isArray(DOFUS_BASE_RUNES)) {
-      for (const rune of DOFUS_BASE_RUNES) {
-        if (rune && rune.id && rune.name) {
-          dict[String(rune.id)] = rune.name;
+    const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != '' LIMIT 30000");
+    if (result && Array.isArray(result.rows)) {
+      for (const row of result.rows) {
+        const id = String(row.id);
+        const name = String(row.name_es || "").trim();
+        if (name && !name.startsWith("Objeto #") && !name.startsWith("Item #")) {
+          dict[id] = name;
         }
       }
-    }
-
-    // 2. All craftable runes (Bu, Su, Pa, Ra variants)
-    if (Array.isArray(CRAFTABLE_RUNES)) {
-      for (const rune of CRAFTABLE_RUNES) {
-        if (rune && rune.id && rune.name?.es) {
-          dict[String(rune.id)] = rune.name.es;
-        }
-      }
-    }
-
-    // 3. Preset items
-    if (Array.isArray(PRESET_CRAFTABLE_ITEMS)) {
-      for (const preset of PRESET_CRAFTABLE_ITEMS) {
-        if (preset && preset.id && preset.name?.es) {
-          dict[String(preset.id)] = preset.name.es;
-        }
-      }
-    }
-
-    // 4. Seed with known server items
-    if (SERVER_KNOWN_ITEMS) {
-      for (const [idStr, item] of Object.entries(SERVER_KNOWN_ITEMS)) {
-        if (item && item.name?.es) {
-          dict[idStr] = item.name.es;
-        }
-      }
-    }
-
-    // 5. Seed data from bundle
-    try {
-      const seedData = getDofusDbSeedData();
-      if (seedData && Array.isArray(seedData.items)) {
-        for (const item of seedData.items) {
-          if (item && item.id && item.name?.es && !item.name.es.startsWith("Objeto #") && !item.name.es.startsWith("Item #")) {
-            dict[String(item.id)] = item.name.es;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[getItemsDictionary] Seed data warning:", e);
-    }
-
-    // 6. ByC hunts, maps, fragments and items
-    if (Array.isArray(bycGeneratedDb)) {
-      for (const hunt of bycGeneratedDb as any[]) {
-        if (hunt?.mapItem?.id && hunt?.mapItem?.name) {
-          dict[String(hunt.mapItem.id)] = hunt.mapItem.name;
-        }
-        if (Array.isArray(hunt?.fragments)) {
-          for (const f of hunt.fragments) {
-            if (f?.id && f?.name) {
-              dict[String(f.id)] = f.name;
-            }
-          }
-        }
-        if (hunt?.resource?.id && hunt?.resource?.name) {
-          dict[String(hunt.resource.id)] = hunt.resource.name;
-        }
-        if (Array.isArray(hunt?.equipments)) {
-          for (const eq of hunt.equipments) {
-            if (eq?.id && eq?.name) {
-              dict[String(eq.id)] = eq.name;
-            }
-            if (Array.isArray(eq?.recipeIngredients)) {
-              for (const ing of eq.recipeIngredients) {
-                if (ing?.id && ing?.name) {
-                  dict[String(ing.id)] = ing.name;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 7. Query all items with names in database
-    try {
-      const result = await database.execute("SELECT id, name_es FROM items WHERE name_es != '' LIMIT 30000");
-      if (result && Array.isArray(result.rows)) {
-        for (const row of result.rows) {
-          const id = String(row.id);
-          const name = String(row.name_es || "").trim();
-          if (name && !name.startsWith("Objeto #") && !name.startsWith("Item #")) {
-            dict[id] = name;
-          }
-        }
-      }
-    } catch (err) {
-      // Safe fallback - DB might not be ready or empty
     }
   } catch (err) {
-    console.error("[getItemsDictionary] Error building dictionary:", err);
-  }
-
-  if (Object.keys(dict).length > 0) {
-    cachedItemsDictionary = dict;
-    lastItemsDictionaryFetch = now;
+    // Safe fallback if DB is not initialized
   }
   return dict;
 }
 
 export async function getPriceProfileState() {
+
   const pid = await getActivePriceProfileId();
   return {
     activePriceProfileId: pid,
