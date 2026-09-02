@@ -500,76 +500,6 @@
     "iceKamas": 0
   },
   {
-    "id": 14,
-    "monsterName": "Momia Nova",
-    "monsterNameFr": "Momie Nova",
-    "monsterLevel": 130,
-    "monsterId": 404,
-    "category": "Frigost / Pandala",
-    "mapItem": {
-      "id": 15391,
-      "name": "Tabla de Totankama",
-      "name_fr": "Tablette de Totankama",
-      "iconId": 126026,
-      "img": "https://api.dofusdb.fr/img/items/126026.png",
-      "defaultPrice": 450000
-    },
-    "fragments": [
-      {
-        "id": 15394,
-        "name": "Trozo de la tabla de Totankama 1/5",
-        "name_fr": "Morceau de tablette de Totankama 1/5",
-        "iconId": 126027,
-        "img": "https://api.dofusdb.fr/img/items/126027.png",
-        "defaultPrice": 51000
-      },
-      {
-        "id": 15395,
-        "name": "Trozo de la tabla de Totankama 2/5",
-        "name_fr": "Morceau de tablette de Totankama 2/5",
-        "iconId": 126027,
-        "img": "https://api.dofusdb.fr/img/items/126027.png",
-        "defaultPrice": 57000
-      },
-      {
-        "id": 15396,
-        "name": "Trozo de la tabla de Totankama 3/5",
-        "name_fr": "Morceau de tablette de Totankama 3/5",
-        "iconId": 126027,
-        "img": "https://api.dofusdb.fr/img/items/126027.png",
-        "defaultPrice": 63000
-      },
-      {
-        "id": 15397,
-        "name": "Trozo de la tabla de Totankama 4/5",
-        "name_fr": "Morceau de tablette de Totankama 4/5",
-        "iconId": 126027,
-        "img": "https://api.dofusdb.fr/img/items/126027.png",
-        "defaultPrice": 51000
-      },
-      {
-        "id": 15398,
-        "name": "Trozo de la tabla de Totankama 5/5",
-        "name_fr": "Morceau de tablette de Totankama 5/5",
-        "iconId": 126027,
-        "img": "https://api.dofusdb.fr/img/items/126027.png",
-        "defaultPrice": 57000
-      }
-    ],
-    "resource": {
-      "id": 15441,
-      "name": "Recurso de Momia Nova",
-      "name_fr": "Ressource de Momie Nova",
-      "iconId": 15302,
-      "img": "https://api.dofusdb.fr/img/items/15302.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 350000
-    },
-    "equipments": [],
-    "sebuscalines": 195,
-    "iceKamas": 7
-  },
-  {
     "id": 15,
     "monsterName": "Dremoan",
     "monsterNameFr": "Dremoan",
@@ -1316,8 +1246,8 @@
     "category": "Bajo nivel",
     "mapItem": {
       "id": 16040,
-      "name": "Mapa de Brumen",
-      "name_fr": "Carte de Brumen",
+      "name": "Mapa de Brumen Tinctorias",
+      "name_fr": "Carte de Brumen Tinctorias",
       "iconId": 77041,
       "img": "https://api.dofusdb.fr/img/items/77041.png",
       "defaultPrice": 80000
@@ -1357,15 +1287,159 @@
       }
     ],
     "resource": {
-      "id": 12073,
-      "name": "Llave del Laboratorio de Brumen Tinctorias",
-      "name_fr": "Clef du Laboratoire de Brumen Tinctorias",
-      "iconId": 84716,
-      "img": "https://api.dofusdb.fr/img/items/84716.png",
-      "type": "Llave",
-      "defaultPrice": 180000
+      "id": 16009,
+      "name": "Elixir de Brumen",
+      "name_fr": "Élixir de Brumen",
+      "iconId": 164050,
+      "img": "https://api.dofusdb.fr/img/items/164050.png",
+      "type": "Recurso variado",
+      "defaultPrice": 45000
     },
-    "equipments": [],
+    "equipments": [
+      {
+        "id": 15996,
+        "name": "Colgante curativo",
+        "name_fr": "Pendentif Curatif",
+        "level": 60,
+        "type": "Amuleto",
+        "iconId": 1267,
+        "img": "https://api.dofusdb.fr/img/items/1267.png",
+        "defaultSalePrice": 150000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 2502,
+            "name": "Patita de colmillo blando",
+            "quantity": 7,
+            "defaultPrice": 1000,
+            "iconId": 103526,
+            "img": "https://api.dofusdb.fr/img/items/103526.png"
+          },
+          {
+            "id": 2321,
+            "name": "Morros de mata",
+            "quantity": 6,
+            "defaultPrice": 1000,
+            "iconId": 15463,
+            "img": "https://api.dofusdb.fr/img/items/15463.png"
+          },
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          },
+          {
+            "id": 16009,
+            "name": "Elixir de Brumen",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164050,
+            "img": "https://api.dofusdb.fr/img/items/164050.png"
+          }
+        ]
+      },
+      {
+        "id": 15997,
+        "name": "Cinturón anestésico",
+        "name_fr": "Ceinture Anesthésiante",
+        "level": 62,
+        "type": "Cinturón",
+        "iconId": 10288,
+        "img": "https://api.dofusdb.fr/img/items/10288.png",
+        "defaultSalePrice": 150000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 2505,
+            "name": "Pelotita",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 176011,
+            "img": "https://api.dofusdb.fr/img/items/176011.png"
+          },
+          {
+            "id": 2488,
+            "name": "Vísceras de scorbuto",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 15445,
+            "img": "https://api.dofusdb.fr/img/items/15445.png"
+          },
+          {
+            "id": 2500,
+            "name": "Kólerat muerto",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15524,
+            "img": "https://api.dofusdb.fr/img/items/15524.png"
+          },
+          {
+            "id": 16009,
+            "name": "Elixir de Brumen",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164050,
+            "img": "https://api.dofusdb.fr/img/items/164050.png"
+          },
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          }
+        ]
+      },
+      {
+        "id": 15998,
+        "name": "Alianza tranquilizadora",
+        "name_fr": "Alliance Apaisante",
+        "level": 59,
+        "type": "Anillo",
+        "iconId": 9302,
+        "img": "https://api.dofusdb.fr/img/items/9302.png",
+        "defaultSalePrice": 150000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          },
+          {
+            "id": 12737,
+            "name": "Guijarro carmesí",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15290,
+            "img": "https://api.dofusdb.fr/img/items/15290.png"
+          },
+          {
+            "id": 16009,
+            "name": "Elixir de Brumen",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164050,
+            "img": "https://api.dofusdb.fr/img/items/164050.png"
+          },
+          {
+            "id": 2056,
+            "name": "Ojo de crowrajo",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 109326,
+            "img": "https://api.dofusdb.fr/img/items/109326.png"
+          }
+        ]
+      }
+    ],
     "sebuscalines": 90,
     "iceKamas": 0
   },
@@ -2707,15 +2781,247 @@
       }
     ],
     "resource": {
-      "id": 16233,
-      "name": "Recurso de Guerrero de Kaos",
-      "name_fr": "Ressource de Guerrier du K.O.",
-      "iconId": 32116,
-      "img": "https://api.dofusdb.fr/img/items/32116.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 600000
+      "id": 17116,
+      "name": "Hombrera maciza de Kaos",
+      "name_fr": "Épaulière Massive du K.O.",
+      "iconId": 164081,
+      "img": "https://api.dofusdb.fr/img/items/164081.png",
+      "type": "Recurso variado",
+      "defaultPrice": 80000
     },
-    "equipments": [],
+    "equipments": [
+      {
+        "id": 17119,
+        "name": "Cinturón de Kaos",
+        "name_fr": "Ceinture du K.O.",
+        "level": 183,
+        "type": "Cinturón",
+        "iconId": 10298,
+        "img": "https://api.dofusdb.fr/img/items/10298.png",
+        "defaultSalePrice": 1200000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 11936,
+            "name": "Pelos de golosote",
+            "quantity": 55,
+            "defaultPrice": 1000,
+            "iconId": 54682,
+            "img": "https://api.dofusdb.fr/img/items/54682.png"
+          },
+          {
+            "id": 11939,
+            "name": "Incisivo de golourmet",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 47686,
+            "img": "https://api.dofusdb.fr/img/items/47686.png"
+          },
+          {
+            "id": 11937,
+            "name": "Lana de golornado",
+            "quantity": 9,
+            "defaultPrice": 1000,
+            "iconId": 57214,
+            "img": "https://api.dofusdb.fr/img/items/57214.png"
+          },
+          {
+            "id": 11944,
+            "name": "Hueso del carpo de Golosotrón Real",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 47687,
+            "img": "https://api.dofusdb.fr/img/items/47687.png"
+          },
+          {
+            "id": 9281,
+            "name": "Fragmento de Ugahlureta",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15041,
+            "img": "https://api.dofusdb.fr/img/items/15041.png"
+          },
+          {
+            "id": 7035,
+            "name": "Piruta",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 40708,
+            "img": "https://api.dofusdb.fr/img/items/40708.png"
+          },
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 8,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          },
+          {
+            "id": 17116,
+            "name": "Hombrera maciza de Kaos",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164081,
+            "img": "https://api.dofusdb.fr/img/items/164081.png"
+          }
+        ]
+      },
+      {
+        "id": 17120,
+        "name": "Amuleto de Kaos",
+        "name_fr": "Amulette du K.O.",
+        "level": 181,
+        "type": "Amuleto",
+        "iconId": 1272,
+        "img": "https://api.dofusdb.fr/img/items/1272.png",
+        "defaultSalePrice": 1200000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 11945,
+            "name": "Cola de golosimiel",
+            "quantity": 62,
+            "defaultPrice": 1000,
+            "iconId": 65762,
+            "img": "https://api.dofusdb.fr/img/items/65762.png"
+          },
+          {
+            "id": 11934,
+            "name": "Oreja de golosorubik",
+            "quantity": 59,
+            "defaultPrice": 1000,
+            "iconId": 106634,
+            "img": "https://api.dofusdb.fr/img/items/106634.png"
+          },
+          {
+            "id": 11940,
+            "name": "Tejido de golourmet",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 55736,
+            "img": "https://api.dofusdb.fr/img/items/55736.png"
+          },
+          {
+            "id": 11944,
+            "name": "Hueso del carpo de Golosotrón Real",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 47687,
+            "img": "https://api.dofusdb.fr/img/items/47687.png"
+          },
+          {
+            "id": 15721,
+            "name": "Cuerno de XLII",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 15901,
+            "img": "https://api.dofusdb.fr/img/items/15901.png"
+          },
+          {
+            "id": 29444,
+            "name": "Guijarro reluciente",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 152001,
+            "img": "https://api.dofusdb.fr/img/items/152001.png"
+          },
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 8,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          },
+          {
+            "id": 17116,
+            "name": "Hombrera maciza de Kaos",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164081,
+            "img": "https://api.dofusdb.fr/img/items/164081.png"
+          }
+        ]
+      },
+      {
+        "id": 17121,
+        "name": "Botas de Kaos",
+        "name_fr": "Bottes du K.O.",
+        "level": 180,
+        "type": "Bota",
+        "iconId": 11292,
+        "img": "https://api.dofusdb.fr/img/items/11292.png",
+        "defaultSalePrice": 1200000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 11938,
+            "name": "Cuero de golornado",
+            "quantity": 47,
+            "defaultPrice": 1000,
+            "iconId": 56663,
+            "img": "https://api.dofusdb.fr/img/items/56663.png"
+          },
+          {
+            "id": 11942,
+            "name": "Antena de golosojorro",
+            "quantity": 47,
+            "defaultPrice": 1000,
+            "iconId": 15787,
+            "img": "https://api.dofusdb.fr/img/items/15787.png"
+          },
+          {
+            "id": 11933,
+            "name": "Vómer de golosorubik",
+            "quantity": 8,
+            "defaultPrice": 1000,
+            "iconId": 47684,
+            "img": "https://api.dofusdb.fr/img/items/47684.png"
+          },
+          {
+            "id": 11944,
+            "name": "Hueso del carpo de Golosotrón Real",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 47687,
+            "img": "https://api.dofusdb.fr/img/items/47687.png"
+          },
+          {
+            "id": 7385,
+            "name": "Brasas azuladas",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 164740,
+            "img": "https://api.dofusdb.fr/img/items/164740.png"
+          },
+          {
+            "id": 16459,
+            "name": "Concentrado de bosque tropical",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 177002,
+            "img": "https://api.dofusdb.fr/img/items/177002.png"
+          },
+          {
+            "id": 14921,
+            "name": "Tejido misterioso",
+            "quantity": 6,
+            "defaultPrice": 1000,
+            "iconId": 15848,
+            "img": "https://api.dofusdb.fr/img/items/15848.png"
+          },
+          {
+            "id": 17116,
+            "name": "Hombrera maciza de Kaos",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164081,
+            "img": "https://api.dofusdb.fr/img/items/164081.png"
+          }
+        ]
+      }
+    ],
     "sebuscalines": 270,
     "iceKamas": 9
   },
@@ -3325,8 +3631,8 @@
   },
   {
     "id": 50,
-    "monsterName": "Pun",
-    "monsterNameFr": "Fou",
+    "monsterName": "Atcham",
+    "monsterNameFr": "Atcham",
     "monsterLevel": 200,
     "monsterId": 4329,
     "category": "Frigost 3 / Épico",
@@ -3650,35 +3956,6 @@
     "iceKamas": 10
   },
   {
-    "id": 51,
-    "monsterName": "Huevo de arakna gigante",
-    "monsterNameFr": "Œuf d'Arakne Géante",
-    "monsterLevel": 186,
-    "monsterId": 4402,
-    "category": "Frigost / Pandala",
-    "mapItem": {
-      "id": 17855,
-      "name": "Tarjeta de Araknas",
-      "name_fr": "Carte d'Araknas",
-      "iconId": 77041,
-      "img": "https://api.dofusdb.fr/img/items/77041.png",
-      "defaultPrice": 750000
-    },
-    "fragments": [],
-    "resource": {
-      "id": 17905,
-      "name": "Recurso de Huevo de arakna gigante",
-      "name_fr": "Ressource de Œuf d'Arakne Géante",
-      "iconId": 15302,
-      "img": "https://api.dofusdb.fr/img/items/15302.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 600000
-    },
-    "equipments": [],
-    "sebuscalines": 279,
-    "iceKamas": 9
-  },
-  {
     "id": 52,
     "monsterName": "Caballero de Hielo",
     "monsterNameFr": "Chevalier de Glace",
@@ -3760,873 +4037,249 @@
       }
     ],
     "resource": {
-      "id": 7102,
-      "name": "Espada del Caballero de Hielo",
-      "name_fr": "Épée du Chevalier de Glace",
-      "iconId": 6051,
-      "img": "https://api.dofusdb.fr/img/items/6051.png",
-      "type": "Espada",
-      "defaultPrice": 1000000
+      "id": 32256,
+      "name": "Alma helada del Caballero de Hielo",
+      "name_fr": "Âme glacée du Chevalier de Glace",
+      "iconId": 80049,
+      "img": "https://api.dofusdb.fr/img/items/80049.png",
+      "type": "Recurso variado",
+      "defaultPrice": 200000
     },
     "equipments": [
       {
-        "id": 8993,
-        "name": "Espada maldita del gran Desangrador Guerrero",
-        "name_fr": "Épée Maudite du Saigneur Guerrier",
+        "id": 32233,
+        "name": "Pavés congelado del Caballero de Hielo",
+        "name_fr": "Pavois frigorifié du Chevalier de Glace",
+        "level": 200,
+        "type": "Escudo",
+        "iconId": 82562,
+        "img": "https://api.dofusdb.fr/img/items/82562.png",
+        "defaultSalePrice": 2500000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32256,
+            "name": "Alma helada del Caballero de Hielo",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 80049,
+            "img": "https://api.dofusdb.fr/img/items/80049.png"
+          },
+          {
+            "id": 13936,
+            "name": "Bragas de Mizz Frizz",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164011,
+            "img": "https://api.dofusdb.fr/img/items/164011.png"
+          },
+          {
+            "id": 22204,
+            "name": "Cuerno de Corrupción",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 24275,
+            "img": "https://api.dofusdb.fr/img/items/24275.png"
+          },
+          {
+            "id": 13934,
+            "name": "Bigote de portoskarcha",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 54690,
+            "img": "https://api.dofusdb.fr/img/items/54690.png"
+          },
+          {
+            "id": 13932,
+            "name": "Cerebro de hielathos",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 15827,
+            "img": "https://api.dofusdb.fr/img/items/15827.png"
+          },
+          {
+            "id": 13930,
+            "name": "Martillo de dantartánico",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 15826,
+            "img": "https://api.dofusdb.fr/img/items/15826.png"
+          },
+          {
+            "id": 19975,
+            "name": "Cuerno de vueloceronte",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 47864,
+            "img": "https://api.dofusdb.fr/img/items/47864.png"
+          },
+          {
+            "id": 12740,
+            "name": "Guijarro brasa",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 15289,
+            "img": "https://api.dofusdb.fr/img/items/15289.png"
+          }
+        ]
+      },
+      {
+        "id": 32232,
+        "name": "Hoja helada del Caballero de Hielo",
+        "name_fr": "Lame givrée du Chevalier de Glace",
         "level": 200,
         "type": "Espada",
-        "iconId": 6083,
-        "img": "https://api.dofusdb.fr/img/items/6083.png",
-        "defaultSalePrice": 4000000,
+        "iconId": 6761,
+        "img": "https://api.dofusdb.fr/img/items/6761.png",
+        "defaultSalePrice": 2500000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 4241,
-            "name": "Garra Rosa",
+            "id": 32256,
+            "name": "Alma helada del Caballero de Hielo",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6041,
-            "img": "https://api.dofusdb.fr/img/items/6041.png"
+            "defaultPrice": 1000,
+            "iconId": 80049,
+            "img": "https://api.dofusdb.fr/img/items/80049.png"
           },
           {
-            "id": 7192,
-            "name": "Garra de Grizmoh Guay",
+            "id": 13936,
+            "name": "Bragas de Mizz Frizz",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6059,
-            "img": "https://api.dofusdb.fr/img/items/6059.png"
+            "defaultPrice": 1000,
+            "iconId": 164011,
+            "img": "https://api.dofusdb.fr/img/items/164011.png"
           },
           {
-            "id": 65,
-            "name": "Gúltar",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6017,
-            "img": "https://api.dofusdb.fr/img/items/6017.png"
+            "id": 26037,
+            "name": "Máscara pesadillesca del Conflicto Eterno",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 165044,
+            "img": "https://api.dofusdb.fr/img/items/165044.png"
           },
           {
-            "id": 202,
-            "name": "Raciela",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6016,
-            "img": "https://api.dofusdb.fr/img/items/6016.png"
+            "id": 13928,
+            "name": "Etmoides de estalarkmis",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 47808,
+            "img": "https://api.dofusdb.fr/img/items/47808.png"
           },
           {
-            "id": 8094,
-            "name": "La Espada Risueña",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6066,
-            "img": "https://api.dofusdb.fr/img/items/6066.png"
+            "id": 13926,
+            "name": "Muela de barrilicoso",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 47806,
+            "img": "https://api.dofusdb.fr/img/items/47806.png"
           },
           {
-            "id": 7102,
-            "name": "Espada del Caballero de Hielo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6051,
-            "img": "https://api.dofusdb.fr/img/items/6051.png"
+            "id": 13934,
+            "name": "Bigote de portoskarcha",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 54690,
+            "img": "https://api.dofusdb.fr/img/items/54690.png"
           },
           {
-            "id": 2639,
-            "name": "Falsa Garra de Ceangal",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6035,
-            "img": "https://api.dofusdb.fr/img/items/6035.png"
+            "id": 12728,
+            "name": "Ardonita",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 40710,
+            "img": "https://api.dofusdb.fr/img/items/40710.png"
           },
           {
-            "id": 7195,
-            "name": "Karnak",
+            "id": 14635,
+            "name": "Pepita",
+            "quantity": 2000,
+            "defaultPrice": 1000,
+            "iconId": 50718,
+            "img": "https://api.dofusdb.fr/img/items/50718.png"
+          }
+        ]
+      },
+      {
+        "id": 32231,
+        "name": "Cesto helado del Caballero de Hielo",
+        "name_fr": "Ceste gelé du Chevalier de Glace",
+        "level": 200,
+        "type": "Anillo",
+        "iconId": 9401,
+        "img": "https://api.dofusdb.fr/img/items/9401.png",
+        "defaultSalePrice": 2500000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32256,
+            "name": "Alma helada del Caballero de Hielo",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 6060,
-            "img": "https://api.dofusdb.fr/img/items/6060.png"
+            "defaultPrice": 1000,
+            "iconId": 80049,
+            "img": "https://api.dofusdb.fr/img/items/80049.png"
+          },
+          {
+            "id": 13936,
+            "name": "Bragas de Mizz Frizz",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 164011,
+            "img": "https://api.dofusdb.fr/img/items/164011.png"
+          },
+          {
+            "id": 31628,
+            "name": "Melena de la Despedazadora",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 54720,
+            "img": "https://api.dofusdb.fr/img/items/54720.png"
+          },
+          {
+            "id": 13932,
+            "name": "Cerebro de hielathos",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 15827,
+            "img": "https://api.dofusdb.fr/img/items/15827.png"
+          },
+          {
+            "id": 13928,
+            "name": "Etmoides de estalarkmis",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 47808,
+            "img": "https://api.dofusdb.fr/img/items/47808.png"
+          },
+          {
+            "id": 13930,
+            "name": "Martillo de dantartánico",
+            "quantity": 10,
+            "defaultPrice": 1000,
+            "iconId": 15826,
+            "img": "https://api.dofusdb.fr/img/items/15826.png"
+          },
+          {
+            "id": 16460,
+            "name": "Concentrado de selva",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 177003,
+            "img": "https://api.dofusdb.fr/img/items/177003.png"
+          },
+          {
+            "id": 26870,
+            "name": "Fragmento de anomalía",
+            "quantity": 15,
+            "defaultPrice": 1000,
+            "iconId": 176051,
+            "img": "https://api.dofusdb.fr/img/items/176051.png"
           }
         ]
       }
     ],
     "sebuscalines": 300,
     "iceKamas": 10
-  },
-  {
-    "id": 53,
-    "monsterName": "Tesoro",
-    "monsterNameFr": "Trésor",
-    "monsterLevel": 80,
-    "monsterId": 3724,
-    "category": "Amakna / Cania",
-    "mapItem": {
-      "id": 20192,
-      "name": "Mapa de Elkaar Ybe",
-      "name_fr": "Carte d'Ekar Hahib",
-      "iconId": 77041,
-      "img": "https://api.dofusdb.fr/img/items/77041.png",
-      "defaultPrice": 200000
-    },
-    "fragments": [],
-    "resource": {
-      "id": 276,
-      "name": "Pieza del tesoro del Badulo",
-      "name_fr": "Pièce du Trésor du Badoul",
-      "iconId": 15268,
-      "img": "https://api.dofusdb.fr/img/items/15268.png",
-      "type": "Recurso variado",
-      "defaultPrice": 240000
-    },
-    "equipments": [
-      {
-        "id": 7128,
-        "name": "Anillo Karina",
-        "name_fr": "Anneau Karina",
-        "level": 54,
-        "type": "Anillo",
-        "iconId": 9089,
-        "img": "https://api.dofusdb.fr/img/items/9089.png",
-        "defaultSalePrice": 648000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 411,
-            "name": "Pico de kwak de hielo",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 47133,
-            "img": "https://api.dofusdb.fr/img/items/47133.png"
-          },
-          {
-            "id": 8752,
-            "name": "Bulbo de mohito",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 36005,
-            "img": "https://api.dofusdb.fr/img/items/36005.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 8388,
-            "name": "Piel de Bworka",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 59615,
-            "img": "https://api.dofusdb.fr/img/items/59615.png"
-          }
-        ]
-      },
-      {
-        "id": 12702,
-        "name": "Iniciador menor",
-        "name_fr": "Initiateur mineur",
-        "level": 50,
-        "type": "Trofeo",
-        "iconId": 151037,
-        "img": "https://api.dofusdb.fr/img/items/151037.png",
-        "defaultSalePrice": 600000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 2540,
-            "name": "Concentrado de oquedal",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 26017,
-            "img": "https://api.dofusdb.fr/img/items/26017.png"
-          },
-          {
-            "id": 12737,
-            "name": "Guijarro carmesí",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 15290,
-            "img": "https://api.dofusdb.fr/img/items/15290.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          },
-          {
-            "id": 10831,
-            "name": "Bananaranja",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 46001,
-            "img": "https://api.dofusdb.fr/img/items/46001.png"
-          },
-          {
-            "id": 379,
-            "name": "Pinza de cangrejo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 47051,
-            "img": "https://api.dofusdb.fr/img/items/47051.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 5,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          }
-        ]
-      },
-      {
-        "id": 13138,
-        "name": "Cofrellar",
-        "name_fr": "Pendentiffre",
-        "level": 56,
-        "type": "Amuleto",
-        "iconId": 1218,
-        "img": "https://api.dofusdb.fr/img/items/1218.png",
-        "defaultSalePrice": 672000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 13342,
-            "name": "Tatuaje de chico malo",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 15132,
-            "img": "https://api.dofusdb.fr/img/items/15132.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 13140,
-            "name": "Cerradura del cofre de los herreros",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 15799,
-            "img": "https://api.dofusdb.fr/img/items/15799.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          }
-        ]
-      }
-    ],
-    "sebuscalines": 120,
-    "iceKamas": 0
-  },
-  {
-    "id": 54,
-    "monsterName": "Tesoro",
-    "monsterNameFr": "Trésor",
-    "monsterLevel": 140,
-    "monsterId": 3724,
-    "category": "Frigost / Pandala",
-    "mapItem": {
-      "id": 20193,
-      "name": "Mapa de la Capitana Ligna",
-      "name_fr": "Carte de la Capitaine Hébreuze",
-      "iconId": 77041,
-      "img": "https://api.dofusdb.fr/img/items/77041.png",
-      "defaultPrice": 450000
-    },
-    "fragments": [],
-    "resource": {
-      "id": 276,
-      "name": "Pieza del tesoro del Badulo",
-      "name_fr": "Pièce du Trésor du Badoul",
-      "iconId": 15268,
-      "img": "https://api.dofusdb.fr/img/items/15268.png",
-      "type": "Recurso variado",
-      "defaultPrice": 420000
-    },
-    "equipments": [
-      {
-        "id": 7128,
-        "name": "Anillo Karina",
-        "name_fr": "Anneau Karina",
-        "level": 54,
-        "type": "Anillo",
-        "iconId": 9089,
-        "img": "https://api.dofusdb.fr/img/items/9089.png",
-        "defaultSalePrice": 648000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 411,
-            "name": "Pico de kwak de hielo",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 47133,
-            "img": "https://api.dofusdb.fr/img/items/47133.png"
-          },
-          {
-            "id": 8752,
-            "name": "Bulbo de mohito",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 36005,
-            "img": "https://api.dofusdb.fr/img/items/36005.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 8388,
-            "name": "Piel de Bworka",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 59615,
-            "img": "https://api.dofusdb.fr/img/items/59615.png"
-          }
-        ]
-      },
-      {
-        "id": 12702,
-        "name": "Iniciador menor",
-        "name_fr": "Initiateur mineur",
-        "level": 50,
-        "type": "Trofeo",
-        "iconId": 151037,
-        "img": "https://api.dofusdb.fr/img/items/151037.png",
-        "defaultSalePrice": 600000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 2540,
-            "name": "Concentrado de oquedal",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 26017,
-            "img": "https://api.dofusdb.fr/img/items/26017.png"
-          },
-          {
-            "id": 12737,
-            "name": "Guijarro carmesí",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 15290,
-            "img": "https://api.dofusdb.fr/img/items/15290.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          },
-          {
-            "id": 10831,
-            "name": "Bananaranja",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 46001,
-            "img": "https://api.dofusdb.fr/img/items/46001.png"
-          },
-          {
-            "id": 379,
-            "name": "Pinza de cangrejo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 47051,
-            "img": "https://api.dofusdb.fr/img/items/47051.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 5,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          }
-        ]
-      },
-      {
-        "id": 13138,
-        "name": "Cofrellar",
-        "name_fr": "Pendentiffre",
-        "level": 56,
-        "type": "Amuleto",
-        "iconId": 1218,
-        "img": "https://api.dofusdb.fr/img/items/1218.png",
-        "defaultSalePrice": 672000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 13342,
-            "name": "Tatuaje de chico malo",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 15132,
-            "img": "https://api.dofusdb.fr/img/items/15132.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 13140,
-            "name": "Cerradura del cofre de los herreros",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 15799,
-            "img": "https://api.dofusdb.fr/img/items/15799.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          }
-        ]
-      }
-    ],
-    "sebuscalines": 210,
-    "iceKamas": 7
-  },
-  {
-    "id": 55,
-    "monsterName": "Tesoro",
-    "monsterNameFr": "Trésor",
-    "monsterLevel": 180,
-    "monsterId": 3724,
-    "category": "Frigost / Pandala",
-    "mapItem": {
-      "id": 20194,
-      "name": "Mapa de María Red",
-      "name_fr": "Carte de Marie Ride",
-      "iconId": 77041,
-      "img": "https://api.dofusdb.fr/img/items/77041.png",
-      "defaultPrice": 750000
-    },
-    "fragments": [],
-    "resource": {
-      "id": 276,
-      "name": "Pieza del tesoro del Badulo",
-      "name_fr": "Pièce du Trésor du Badoul",
-      "iconId": 15268,
-      "img": "https://api.dofusdb.fr/img/items/15268.png",
-      "type": "Recurso variado",
-      "defaultPrice": 540000
-    },
-    "equipments": [
-      {
-        "id": 7128,
-        "name": "Anillo Karina",
-        "name_fr": "Anneau Karina",
-        "level": 54,
-        "type": "Anillo",
-        "iconId": 9089,
-        "img": "https://api.dofusdb.fr/img/items/9089.png",
-        "defaultSalePrice": 648000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 411,
-            "name": "Pico de kwak de hielo",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 47133,
-            "img": "https://api.dofusdb.fr/img/items/47133.png"
-          },
-          {
-            "id": 8752,
-            "name": "Bulbo de mohito",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 36005,
-            "img": "https://api.dofusdb.fr/img/items/36005.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 8388,
-            "name": "Piel de Bworka",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 59615,
-            "img": "https://api.dofusdb.fr/img/items/59615.png"
-          }
-        ]
-      },
-      {
-        "id": 12702,
-        "name": "Iniciador menor",
-        "name_fr": "Initiateur mineur",
-        "level": 50,
-        "type": "Trofeo",
-        "iconId": 151037,
-        "img": "https://api.dofusdb.fr/img/items/151037.png",
-        "defaultSalePrice": 600000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 2540,
-            "name": "Concentrado de oquedal",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 26017,
-            "img": "https://api.dofusdb.fr/img/items/26017.png"
-          },
-          {
-            "id": 12737,
-            "name": "Guijarro carmesí",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 15290,
-            "img": "https://api.dofusdb.fr/img/items/15290.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          },
-          {
-            "id": 10831,
-            "name": "Bananaranja",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 46001,
-            "img": "https://api.dofusdb.fr/img/items/46001.png"
-          },
-          {
-            "id": 379,
-            "name": "Pinza de cangrejo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 47051,
-            "img": "https://api.dofusdb.fr/img/items/47051.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 5,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          }
-        ]
-      },
-      {
-        "id": 13138,
-        "name": "Cofrellar",
-        "name_fr": "Pendentiffre",
-        "level": 56,
-        "type": "Amuleto",
-        "iconId": 1218,
-        "img": "https://api.dofusdb.fr/img/items/1218.png",
-        "defaultSalePrice": 672000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 13342,
-            "name": "Tatuaje de chico malo",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 15132,
-            "img": "https://api.dofusdb.fr/img/items/15132.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 13140,
-            "name": "Cerradura del cofre de los herreros",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 15799,
-            "img": "https://api.dofusdb.fr/img/items/15799.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          }
-        ]
-      }
-    ],
-    "sebuscalines": 270,
-    "iceKamas": 9
-  },
-  {
-    "id": 56,
-    "monsterName": "Tesoro",
-    "monsterNameFr": "Trésor",
-    "monsterLevel": 200,
-    "monsterId": 3724,
-    "category": "Frigost 3 / Épico",
-    "mapItem": {
-      "id": 20195,
-      "name": "Mapa de Machab el Sanguinario",
-      "name_fr": "Carte de Machab le Sanguinaire",
-      "iconId": 77041,
-      "img": "https://api.dofusdb.fr/img/items/77041.png",
-      "defaultPrice": 1200000
-    },
-    "fragments": [],
-    "resource": {
-      "id": 276,
-      "name": "Pieza del tesoro del Badulo",
-      "name_fr": "Pièce du Trésor du Badoul",
-      "iconId": 15268,
-      "img": "https://api.dofusdb.fr/img/items/15268.png",
-      "type": "Recurso variado",
-      "defaultPrice": 1000000
-    },
-    "equipments": [
-      {
-        "id": 7128,
-        "name": "Anillo Karina",
-        "name_fr": "Anneau Karina",
-        "level": 54,
-        "type": "Anillo",
-        "iconId": 9089,
-        "img": "https://api.dofusdb.fr/img/items/9089.png",
-        "defaultSalePrice": 648000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 411,
-            "name": "Pico de kwak de hielo",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 47133,
-            "img": "https://api.dofusdb.fr/img/items/47133.png"
-          },
-          {
-            "id": 8752,
-            "name": "Bulbo de mohito",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 36005,
-            "img": "https://api.dofusdb.fr/img/items/36005.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 8388,
-            "name": "Piel de Bworka",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 59615,
-            "img": "https://api.dofusdb.fr/img/items/59615.png"
-          }
-        ]
-      },
-      {
-        "id": 12702,
-        "name": "Iniciador menor",
-        "name_fr": "Initiateur mineur",
-        "level": 50,
-        "type": "Trofeo",
-        "iconId": 151037,
-        "img": "https://api.dofusdb.fr/img/items/151037.png",
-        "defaultSalePrice": 600000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 2540,
-            "name": "Concentrado de oquedal",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 26017,
-            "img": "https://api.dofusdb.fr/img/items/26017.png"
-          },
-          {
-            "id": 12737,
-            "name": "Guijarro carmesí",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 15290,
-            "img": "https://api.dofusdb.fr/img/items/15290.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          },
-          {
-            "id": 10831,
-            "name": "Bananaranja",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 46001,
-            "img": "https://api.dofusdb.fr/img/items/46001.png"
-          },
-          {
-            "id": 379,
-            "name": "Pinza de cangrejo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 47051,
-            "img": "https://api.dofusdb.fr/img/items/47051.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 5,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          }
-        ]
-      },
-      {
-        "id": 13138,
-        "name": "Cofrellar",
-        "name_fr": "Pendentiffre",
-        "level": 56,
-        "type": "Amuleto",
-        "iconId": 1218,
-        "img": "https://api.dofusdb.fr/img/items/1218.png",
-        "defaultSalePrice": 672000,
-        "resourceQuantityNeeded": 1,
-        "recipeIngredients": [
-          {
-            "id": 13342,
-            "name": "Tatuaje de chico malo",
-            "quantity": 6,
-            "defaultPrice": 10000,
-            "iconId": 15132,
-            "img": "https://api.dofusdb.fr/img/items/15132.png"
-          },
-          {
-            "id": 276,
-            "name": "Pieza del tesoro del Badulo",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15268,
-            "img": "https://api.dofusdb.fr/img/items/15268.png"
-          },
-          {
-            "id": 13140,
-            "name": "Cerradura del cofre de los herreros",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 15799,
-            "img": "https://api.dofusdb.fr/img/items/15799.png"
-          },
-          {
-            "id": 748,
-            "name": "Magnesita",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40659,
-            "img": "https://api.dofusdb.fr/img/items/40659.png"
-          }
-        ]
-      }
-    ],
-    "sebuscalines": 300,
-    "iceKamas": 10
-  },
-  {
-    "id": 57,
-    "monsterName": "Nomekop el Crío",
-    "monsterNameFr": "Nomekop le Crapoteur",
-    "monsterLevel": 100,
-    "monsterId": 6542,
-    "category": "Amakna / Cania",
-    "mapItem": {
-      "id": 23743,
-      "name": "Mapa de Cania",
-      "name_fr": "Carte de Cania",
-      "iconId": 164779,
-      "img": "https://api.dofusdb.fr/img/items/164779.png",
-      "defaultPrice": 200000
-    },
-    "fragments": [
-      {
-        "id": 23740,
-        "name": "Copia de mapa de Cania 1/3",
-        "name_fr": "Copie de carte de Cania 1/3",
-        "iconId": 164778,
-        "img": "https://api.dofusdb.fr/img/items/164778.png",
-        "defaultPrice": 25500
-      },
-      {
-        "id": 23741,
-        "name": "Copia de mapa de Cania 2/3",
-        "name_fr": "Copie de carte de Cania 2/3",
-        "iconId": 164778,
-        "img": "https://api.dofusdb.fr/img/items/164778.png",
-        "defaultPrice": 28500
-      },
-      {
-        "id": 23742,
-        "name": "Copia de mapa de Cania 3/3",
-        "name_fr": "Copie de carte de Cania 3/3",
-        "iconId": 164778,
-        "img": "https://api.dofusdb.fr/img/items/164778.png",
-        "defaultPrice": 31500
-      }
-    ],
-    "resource": {
-      "id": 14999,
-      "name": "Cráneo maldito",
-      "name_fr": "Crâne Maudit",
-      "iconId": 47031,
-      "img": "https://api.dofusdb.fr/img/items/47031.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 150000
-    },
-    "equipments": [],
-    "sebuscalines": 150,
-    "iceKamas": 5
   },
   {
     "id": 65,
@@ -10312,8 +9965,8 @@
     ],
     "resource": {
       "id": 6876,
-      "name": "Recurso de Ogivol Scarratero",
-      "name_fr": "Ressource de Ogivol Scalarcin",
+      "name": "Token de Ogivol Scarratero",
+      "name_fr": "Token d'Ogivol Scalarcin",
       "iconId": 32009,
       "img": "https://api.dofusdb.fr/img/items/32009.png",
       "type": "Recurso de Se Busca",
@@ -11049,13 +10702,13 @@
       }
     ],
     "resource": {
-      "id": 16228,
-      "name": "Recurso de Tirana la Terrible",
-      "name_fr": "Ressource de Tyranne la Terrible",
-      "iconId": 32111,
-      "img": "https://api.dofusdb.fr/img/items/32111.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 600000
+      "id": 32570,
+      "name": "Garra de Tirana",
+      "name_fr": "Griffe de Tyranne",
+      "iconId": 47900,
+      "img": "https://api.dofusdb.fr/img/items/47900.png",
+      "type": "Hueso",
+      "defaultPrice": 35000
     },
     "equipments": [
       {
@@ -11296,8 +10949,8 @@
     ],
     "resource": {
       "id": 7350,
-      "name": "Recurso de Aermyn 'Braco' Scalptaras",
-      "name_fr": "Ressource de Aermyne 'Braco' Scalptaras",
+      "name": "Token de Aermyn Scalptaras",
+      "name_fr": "Token d'Aermyne Scalptaras",
       "iconId": 32016,
       "img": "https://api.dofusdb.fr/img/items/32016.png",
       "type": "Recurso de Se Busca",
@@ -11589,13 +11242,13 @@
       }
     ],
     "resource": {
-      "id": 7352,
-      "name": "Recurso de Musha, el Maldito",
-      "name_fr": "Ressource de Musha L'Oni",
-      "iconId": 32020,
-      "img": "https://api.dofusdb.fr/img/items/32020.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 350000
+      "id": 32572,
+      "name": "Globo ocular de Musha",
+      "name_fr": "Globe oculaire de Musha",
+      "iconId": 24521,
+      "img": "https://api.dofusdb.fr/img/items/24521.png",
+      "type": "Ojo",
+      "defaultPrice": 35000
     },
     "equipments": [
       {
@@ -11606,14 +11259,14 @@
         "type": "Sombrero",
         "iconId": 16893,
         "img": "https://api.dofusdb.fr/img/items/16893.png",
-        "defaultSalePrice": 1236000,
+        "defaultSalePrice": 150000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
             "id": 32572,
             "name": "Globo ocular de Musha",
             "quantity": 1,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 24521,
             "img": "https://api.dofusdb.fr/img/items/24521.png"
           },
@@ -11621,7 +11274,7 @@
             "id": 9388,
             "name": "Hoja de blop real",
             "quantity": 4,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 36013,
             "img": "https://api.dofusdb.fr/img/items/36013.png"
           },
@@ -11629,7 +11282,7 @@
             "id": 15271,
             "name": "Turmalina",
             "quantity": 1,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 50719,
             "img": "https://api.dofusdb.fr/img/items/50719.png"
           },
@@ -11637,7 +11290,7 @@
             "id": 21264,
             "name": "Tejido de Dragenerys",
             "quantity": 3,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 55739,
             "img": "https://api.dofusdb.fr/img/items/55739.png"
           },
@@ -11645,7 +11298,7 @@
             "id": 16215,
             "name": "Glándula de arak-hai",
             "quantity": 5,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 164064,
             "img": "https://api.dofusdb.fr/img/items/164064.png"
           },
@@ -11653,7 +11306,7 @@
             "id": 16217,
             "name": "Lana de arapúas",
             "quantity": 12,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 57661,
             "img": "https://api.dofusdb.fr/img/items/57661.png"
           }
@@ -11667,14 +11320,14 @@
         "type": "Capa",
         "iconId": 17681,
         "img": "https://api.dofusdb.fr/img/items/17681.png",
-        "defaultSalePrice": 1236000,
+        "defaultSalePrice": 150000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
             "id": 32572,
             "name": "Globo ocular de Musha",
             "quantity": 1,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 24521,
             "img": "https://api.dofusdb.fr/img/items/24521.png"
           },
@@ -11682,7 +11335,7 @@
             "id": 9388,
             "name": "Hoja de blop real",
             "quantity": 4,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 36013,
             "img": "https://api.dofusdb.fr/img/items/36013.png"
           },
@@ -11690,7 +11343,7 @@
             "id": 2543,
             "name": "Concentrado de fajina",
             "quantity": 1,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 26018,
             "img": "https://api.dofusdb.fr/img/items/26018.png"
           },
@@ -11698,7 +11351,7 @@
             "id": 18371,
             "name": "Coraza de Mantícoro",
             "quantity": 3,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 107738,
             "img": "https://api.dofusdb.fr/img/items/107738.png"
           },
@@ -11706,7 +11359,7 @@
             "id": 16215,
             "name": "Glándula de arak-hai",
             "quantity": 5,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 164064,
             "img": "https://api.dofusdb.fr/img/items/164064.png"
           },
@@ -11714,9 +11367,70 @@
             "id": 16219,
             "name": "Hilo de nacilandera",
             "quantity": 12,
-            "defaultPrice": 10000,
+            "defaultPrice": 1000,
             "iconId": 164065,
             "img": "https://api.dofusdb.fr/img/items/164065.png"
+          }
+        ]
+      },
+      {
+        "id": 33576,
+        "name": "Escudojo de Musha",
+        "name_fr": "Boucliœil de Musha",
+        "level": 87,
+        "type": "Escudo",
+        "iconId": 82572,
+        "img": "https://api.dofusdb.fr/img/items/82572.png",
+        "defaultSalePrice": 150000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32572,
+            "name": "Globo ocular de Musha",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 24521,
+            "img": "https://api.dofusdb.fr/img/items/24521.png"
+          },
+          {
+            "id": 9388,
+            "name": "Hoja de blop real",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 36013,
+            "img": "https://api.dofusdb.fr/img/items/36013.png"
+          },
+          {
+            "id": 12737,
+            "name": "Guijarro carmesí",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 15290,
+            "img": "https://api.dofusdb.fr/img/items/15290.png"
+          },
+          {
+            "id": 14468,
+            "name": "Barba del Wey Wobot",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 54694,
+            "img": "https://api.dofusdb.fr/img/items/54694.png"
+          },
+          {
+            "id": 16215,
+            "name": "Glándula de arak-hai",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 164064,
+            "img": "https://api.dofusdb.fr/img/items/164064.png"
+          },
+          {
+            "id": 16220,
+            "name": "Ojo de araquesalta",
+            "quantity": 12,
+            "defaultPrice": 1000,
+            "iconId": 109611,
+            "img": "https://api.dofusdb.fr/img/items/109611.png"
           }
         ]
       }
@@ -12274,15 +11988,223 @@
       }
     ],
     "resource": {
-      "id": 18801,
-      "name": "Recurso de Carlita de La Guerfeld",
-      "name_fr": "Ressource de Carlita de l'Aguerfelde",
-      "iconId": 32154,
-      "img": "https://api.dofusdb.fr/img/items/32154.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 350000
+      "id": 32575,
+      "name": "Pólvora de Carlita",
+      "name_fr": "Poudre à canon de Carlita",
+      "iconId": 24523,
+      "img": "https://api.dofusdb.fr/img/items/24523.png",
+      "type": "Polvo",
+      "defaultPrice": 50000
     },
-    "equipments": [],
+    "equipments": [
+      {
+        "id": 33583,
+        "name": "Pañuelo de Carlita",
+        "name_fr": "Bandeau de Carlita",
+        "level": 102,
+        "type": "Sombrero",
+        "iconId": 16894,
+        "img": "https://api.dofusdb.fr/img/items/16894.png",
+        "defaultSalePrice": 500000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32575,
+            "name": "Pólvora de Carlita",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 24523,
+            "img": "https://api.dofusdb.fr/img/items/24523.png"
+          },
+          {
+            "id": 2806,
+            "name": "Testículos mágicos de Maxilubo",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15651,
+            "img": "https://api.dofusdb.fr/img/items/15651.png"
+          },
+          {
+            "id": 2581,
+            "name": "Dientes de milubo",
+            "quantity": 6,
+            "defaultPrice": 1000,
+            "iconId": 47587,
+            "img": "https://api.dofusdb.fr/img/items/47587.png"
+          },
+          {
+            "id": 12738,
+            "name": "Guijarro rutilante",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15291,
+            "img": "https://api.dofusdb.fr/img/items/15291.png"
+          },
+          {
+            "id": 15271,
+            "name": "Turmalina",
+            "quantity": 3,
+            "defaultPrice": 1000,
+            "iconId": 50719,
+            "img": "https://api.dofusdb.fr/img/items/50719.png"
+          },
+          {
+            "id": 8396,
+            "name": "Mojo de abuelubo",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 15752,
+            "img": "https://api.dofusdb.fr/img/items/15752.png"
+          },
+          {
+            "id": 291,
+            "name": "Pelos de milubonoke",
+            "quantity": 17,
+            "defaultPrice": 1000,
+            "iconId": 54008,
+            "img": "https://api.dofusdb.fr/img/items/54008.png"
+          }
+        ]
+      },
+      {
+        "id": 33584,
+        "name": "Correa de Carlita",
+        "name_fr": "Sangle de Carlita",
+        "level": 104,
+        "type": "Cinturón",
+        "iconId": 10368,
+        "img": "https://api.dofusdb.fr/img/items/10368.png",
+        "defaultSalePrice": 500000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32575,
+            "name": "Pólvora de Carlita",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 24523,
+            "img": "https://api.dofusdb.fr/img/items/24523.png"
+          },
+          {
+            "id": 2806,
+            "name": "Testículos mágicos de Maxilubo",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15651,
+            "img": "https://api.dofusdb.fr/img/items/15651.png"
+          },
+          {
+            "id": 2581,
+            "name": "Dientes de milubo",
+            "quantity": 6,
+            "defaultPrice": 1000,
+            "iconId": 47587,
+            "img": "https://api.dofusdb.fr/img/items/47587.png"
+          },
+          {
+            "id": 750,
+            "name": "Kuarzo",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 40664,
+            "img": "https://api.dofusdb.fr/img/items/40664.png"
+          },
+          {
+            "id": 33515,
+            "name": "Neurona de dragopavo",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 15295,
+            "img": "https://api.dofusdb.fr/img/items/15295.png"
+          },
+          {
+            "id": 439,
+            "name": "Canino de abuelubo",
+            "quantity": 16,
+            "defaultPrice": 1000,
+            "iconId": 47106,
+            "img": "https://api.dofusdb.fr/img/items/47106.png"
+          },
+          {
+            "id": 292,
+            "name": "Testículos de cerdolubo",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 15010,
+            "img": "https://api.dofusdb.fr/img/items/15010.png"
+          }
+        ]
+      },
+      {
+        "id": 33585,
+        "name": "Trabuco de Carlita",
+        "name_fr": "Tromblon de Carlita",
+        "level": 106,
+        "type": "Martillo",
+        "iconId": 183016,
+        "img": "https://api.dofusdb.fr/img/items/183016.png",
+        "defaultSalePrice": 500000,
+        "resourceQuantityNeeded": 1,
+        "recipeIngredients": [
+          {
+            "id": 32575,
+            "name": "Pólvora de Carlita",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 24523,
+            "img": "https://api.dofusdb.fr/img/items/24523.png"
+          },
+          {
+            "id": 2806,
+            "name": "Testículos mágicos de Maxilubo",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 15651,
+            "img": "https://api.dofusdb.fr/img/items/15651.png"
+          },
+          {
+            "id": 2581,
+            "name": "Dientes de milubo",
+            "quantity": 6,
+            "defaultPrice": 1000,
+            "iconId": 47587,
+            "img": "https://api.dofusdb.fr/img/items/47587.png"
+          },
+          {
+            "id": 14635,
+            "name": "Pepita",
+            "quantity": 150,
+            "defaultPrice": 1000,
+            "iconId": 50718,
+            "img": "https://api.dofusdb.fr/img/items/50718.png"
+          },
+          {
+            "id": 12744,
+            "name": "Concentrado de bosquecillo",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 12728,
+            "img": "https://api.dofusdb.fr/img/items/12728.png"
+          },
+          {
+            "id": 2575,
+            "name": "Cabellera de milubonoke",
+            "quantity": 2,
+            "defaultPrice": 1000,
+            "iconId": 15581,
+            "img": "https://api.dofusdb.fr/img/items/15581.png"
+          },
+          {
+            "id": 2578,
+            "name": "Ojo de cerdolubo",
+            "quantity": 19,
+            "defaultPrice": 1000,
+            "iconId": 109584,
+            "img": "https://api.dofusdb.fr/img/items/109584.png"
+          }
+        ]
+      }
+    ],
     "sebuscalines": 150,
     "iceKamas": 5
   }
