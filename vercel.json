@@ -1,13 +1,6 @@
 {
   "version": 2,
   "outputDirectory": "dist",
-  "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024,
-      "includeFiles": "src/**"
-    }
-  },
   "rewrites": [
     {
       "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
