@@ -34,12 +34,11 @@ import {
 } from "../data/bycEquipmentData";
 import { BycRecipeIngredient } from "../data/bycDatabase";
 import {
-  getStoredMarketPrices,
-  saveMarketPrice,
   addToShoppingListById,
-  getStoredBankInventory,
   getItemIconUrl,
 } from "../services/dofusDbService";
+import { useMarketPrices } from "../hooks/useMarketPrices";
+import { useBankInventory } from "../hooks/useBankInventory";
 import { BycDetailPage } from "./BycDetailPage";
 
 interface TreasureHuntCalculatorProps {
@@ -110,9 +109,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
   onNavigateToShopping,
   onNavigateToBank,
 }) => {
-  // Global market prices
-  const [marketPrices, setMarketPrices] = useState<Record<number, number>>({});
-  const [bankInventory, setBankInventory] = useState(getStoredBankInventory());
+  const { marketPrices, updatePrice } = useMarketPrices();
+  const { bankInventory, getBankQty } = useBankInventory();
 
   // Unit rate for Sebuscalines
   const [sebuscalinPrice, setSebuscalinPrice] = useState<number>(() => {
@@ -145,8 +143,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
   const handlePriceCommit = (itemId: number, rawVal: string) => {
     const parsed = Math.max(0, parseInt(rawVal.replace(/\D/g, ""), 10) || 0);
-    saveMarketPrice(itemId, parsed);
-    setMarketPrices((prev) => ({ ...prev, [itemId]: parsed }));
+    void updatePrice(itemId, parsed);
     setPriceDrafts((prev) => {
       const copy = { ...prev };
       delete copy[itemId];
@@ -166,21 +163,6 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  useEffect(() => {
-    const hydrate = () => {
-      setMarketPrices(getStoredMarketPrices());
-      setBankInventory(getStoredBankInventory());
-    };
-    hydrate();
-
-    window.addEventListener("dofus_database_updated", hydrate);
-    window.addEventListener("dofus_bank_inventory_updated", hydrate);
-    return () => {
-      window.removeEventListener("dofus_database_updated", hydrate);
-      window.removeEventListener("dofus_bank_inventory_updated", hydrate);
-    };
-  }, []);
-
   const handleSaveRates = () => {
     const s = Math.max(1, Number(tempSebuscalin) || 25);
     setSebuscalinPrice(s);
@@ -198,12 +180,6 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
       return marketPrices[itemId];
     }
     return defaultFallback;
-  };
-
-  // Bank quantity lookup helper
-  const getBankQty = (itemId: number): number => {
-    const entry = bankInventory.find((b) => b.itemId === itemId);
-    return entry ? entry.quantity : 0;
   };
 
   // Calculations for all hunts

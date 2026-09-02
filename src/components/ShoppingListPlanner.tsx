@@ -21,11 +21,10 @@ import {
   removeFromShoppingList,
   clearShoppingList,
   getConsolidatedShoppingIngredients,
-  getAllStoredPrices,
-  setLocalItemPrice,
   getItemIconUrl,
   getItemFallbackIconUrl,
 } from '../services/dofusDbService';
+import { useMarketPrices } from '../hooks/useMarketPrices';
 import { SafeImage } from './SafeImage';
 import { KamaDisplay } from './common/KamaDisplay';
 import { QuickSearchModal } from './QuickSearchModal';
@@ -42,7 +41,7 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
   onOpenQuickSearch,
 }) => {
   const [items, setItems] = useState<ShoppingListItem[]>(getShoppingList());
-  const [marketPrices, setMarketPrices] = useState(getAllStoredPrices());
+  const { marketPrices, updatePrice } = useMarketPrices();
   const [checkedMap, setCheckedMap] = useState<Record<number, boolean>>({});
   const [copied, setCopied] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
@@ -51,7 +50,6 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
 
   const refreshList = () => {
     setItems(getShoppingList());
-    setMarketPrices(getAllStoredPrices());
   };
 
   const handleOpenSearch = () => {
@@ -64,10 +62,8 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
 
   useEffect(() => {
     window.addEventListener('dofus_shopping_list_updated', refreshList);
-    window.addEventListener('dofus_database_updated', refreshList);
     return () => {
       window.removeEventListener('dofus_shopping_list_updated', refreshList);
-      window.removeEventListener('dofus_database_updated', refreshList);
     };
   }, []);
 
@@ -111,8 +107,7 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
   const handleSaveInlinePrice = async (itemId: number) => {
     const num = Number(editPriceValue.replace(/[^0-9]/g, ''));
     if (!Number.isNaN(num) && num >= 0) {
-      await setLocalItemPrice(itemId, num);
-      setMarketPrices(getAllStoredPrices());
+      await updatePrice(itemId, num);
     }
     setEditingPriceId(null);
     setEditPriceValue('');

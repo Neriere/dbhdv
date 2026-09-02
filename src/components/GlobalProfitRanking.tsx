@@ -49,6 +49,8 @@ import {
 import { calculateItemCrushing } from "../data/dofusRuneWeights";
 import { matchesSearchQuery } from "../utils/searchUtils";
 
+import { useMarketPrices } from "../hooks/useMarketPrices";
+
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   FlaskConical,
   Sword,
@@ -96,7 +98,6 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   const ITEMS_PER_PAGE = 25;
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  const [databaseVersion, setDatabaseVersion] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
   const [strategyFilter, setStrategyFilter] = useState<"all" | "hdv" | "crush" | "profitable">("all");
@@ -123,44 +124,18 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
   ]);
 
-  const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
-  const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>({});
+  const { marketPrices: basePrices, updatePrice } = useMarketPrices();
+  const marketPrices = useMemo(
+    () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
+    [basePrices]
+  );
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
   const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
   const [addedCartItemId, setAddedCartItemId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const hydrateState = () => {
-      setMarketPrices({
-        ...DEFAULT_INGREDIENT_PRICES,
-        ...getStoredMarketPrices(),
-      });
-      setPriceUpdatedAt(getStoredPriceUpdatedAt());
-      setDatabaseVersion((prev) => prev + 1);
-    };
-
-    initializeDatabase()
-      .then(() => {
-        hydrateState();
-      })
-      .catch((error) => {
-        console.error("Error inicializando base:", error);
-      });
-
-    const handleDbUpdate = () => {
-      hydrateState();
-    };
-    window.addEventListener("dofus_database_updated", handleDbUpdate);
-
-    return () => {
-      window.removeEventListener("dofus_database_updated", handleDbUpdate);
-    };
-  }, []);
-
   const handlePriceSave = (itemId: number, newPrice: number) => {
-    saveMarketPrice(itemId, newPrice)
-      .then((updated) => {
-        setMarketPrices({ ...DEFAULT_INGREDIENT_PRICES, ...updated });
+    updatePrice(itemId, newPrice)
+      .then(() => {
         setSavedFeedbackItemId(itemId);
         setTimeout(() => setSavedFeedbackItemId(null), 1500);
       })
