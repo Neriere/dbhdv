@@ -10948,243 +10948,195 @@
       }
     ],
     "resource": {
-      "id": 7350,
-      "name": "Token de Aermyn Scalptaras",
-      "name_fr": "Token d'Aermyne Scalptaras",
-      "iconId": 32016,
-      "img": "https://api.dofusdb.fr/img/items/32016.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 350000
+      "id": 32571,
+      "name": "Joya de los Scalptaras",
+      "name_fr": "Joyau des Scalptaras",
+      "iconId": 24520,
+      "img": "https://api.dofusdb.fr/img/items/24520.png",
+      "type": "Piedra preciosa",
+      "defaultPrice": 40000
     },
     "equipments": [
       {
-        "id": 13647,
-        "name": "Gorro de Aermyn",
-        "name_fr": "Coiffe d'Aermyne",
-        "level": 198,
-        "type": "Sombrero",
-        "iconId": 16347,
-        "img": "https://api.dofusdb.fr/img/items/16347.png",
-        "defaultSalePrice": 1236000,
+        "id": 33572,
+        "name": "Delantal de los Scalptaras",
+        "name_fr": "Tablier des Scalptaras",
+        "level": 84,
+        "type": "Cinturón",
+        "iconId": 10367,
+        "img": "https://api.dofusdb.fr/img/items/10367.png",
+        "defaultSalePrice": 150000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 11923,
-            "name": "Garra de tejestia",
-            "quantity": 53,
-            "defaultPrice": 10000,
-            "iconId": 47680,
-            "img": "https://api.dofusdb.fr/img/items/47680.png"
-          },
-          {
-            "id": 13741,
-            "name": "Calzoncillos marrones",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 164004,
-            "img": "https://api.dofusdb.fr/img/items/164004.png"
-          },
-          {
-            "id": 11522,
-            "name": "Fragmento de pepita de Kéfriho",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 51467,
-            "img": "https://api.dofusdb.fr/img/items/51467.png"
-          },
-          {
-            "id": 11932,
-            "name": "Tejido de Tejossus",
+            "id": 32571,
+            "name": "Joya de los Scalptaras",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 55735,
-            "img": "https://api.dofusdb.fr/img/items/55735.png"
+            "defaultPrice": 1000,
+            "iconId": 24520,
+            "img": "https://api.dofusdb.fr/img/items/24520.png"
           },
           {
-            "id": 11517,
-            "name": "Esquirla temporal",
+            "id": 8402,
+            "name": "Piedra de Trankitronko",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 50708,
-            "img": "https://api.dofusdb.fr/img/items/50708.png"
+            "defaultPrice": 1000,
+            "iconId": 51465,
+            "img": "https://api.dofusdb.fr/img/items/51465.png"
           },
           {
-            "id": 9401,
-            "name": "Piel de Bworker",
+            "id": 8002,
+            "name": "Tela de Dok Alako",
+            "quantity": 11,
+            "defaultPrice": 1000,
+            "iconId": 55720,
+            "img": "https://api.dofusdb.fr/img/items/55720.png"
+          },
+          {
+            "id": 8085,
+            "name": "Pelos de koalak forestal",
+            "quantity": 13,
+            "defaultPrice": 1000,
+            "iconId": 54004,
+            "img": "https://api.dofusdb.fr/img/items/54004.png"
+          },
+          {
+            "id": 7904,
+            "name": "Flor de kalipto",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 35001,
+            "img": "https://api.dofusdb.fr/img/items/35001.png"
+          },
+          {
+            "id": 2543,
+            "name": "Concentrado de fajina",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 59009,
-            "img": "https://api.dofusdb.fr/img/items/59009.png"
-          },
-          {
-            "id": 14921,
-            "name": "Tejido misterioso",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 15848,
-            "img": "https://api.dofusdb.fr/img/items/15848.png"
-          },
-          {
-            "id": 16460,
-            "name": "Concentrado de selva",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 177003,
-            "img": "https://api.dofusdb.fr/img/items/177003.png"
+            "defaultPrice": 1000,
+            "iconId": 26018,
+            "img": "https://api.dofusdb.fr/img/items/26018.png"
           }
         ]
       },
       {
-        "id": 13648,
-        "name": "Capa de Aermyn",
-        "name_fr": "Cape d'Aermyne",
-        "level": 196,
-        "type": "Capa",
-        "iconId": 17258,
-        "img": "https://api.dofusdb.fr/img/items/17258.png",
-        "defaultSalePrice": 1236000,
+        "id": 33573,
+        "name": "Botines de los Scalptaras",
+        "name_fr": "Bottines des Scalptaras",
+        "level": 86,
+        "type": "Bota",
+        "iconId": 11386,
+        "img": "https://api.dofusdb.fr/img/items/11386.png",
+        "defaultSalePrice": 150000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 11337,
-            "name": "Cuero de maho gélifux",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 56660,
-            "img": "https://api.dofusdb.fr/img/items/56660.png"
-          },
-          {
-            "id": 11887,
-            "name": "Oreja de galerina",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 106630,
-            "img": "https://api.dofusdb.fr/img/items/106630.png"
-          },
-          {
-            "id": 426,
-            "name": "Fibra de cáñamo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 55123,
-            "img": "https://api.dofusdb.fr/img/items/55123.png"
-          },
-          {
-            "id": 11883,
-            "name": "Cóndilo de Fuji Gélifux",
+            "id": 32571,
+            "name": "Joya de los Scalptaras",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 47677,
-            "img": "https://api.dofusdb.fr/img/items/47677.png"
+            "defaultPrice": 1000,
+            "iconId": 24520,
+            "img": "https://api.dofusdb.fr/img/items/24520.png"
           },
           {
-            "id": 9281,
-            "name": "Fragmento de Ugahlureta",
+            "id": 8402,
+            "name": "Piedra de Trankitronko",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15041,
-            "img": "https://api.dofusdb.fr/img/items/15041.png"
+            "defaultPrice": 1000,
+            "iconId": 51465,
+            "img": "https://api.dofusdb.fr/img/items/51465.png"
           },
           {
-            "id": 11895,
-            "name": "Pata de Cil",
+            "id": 8050,
+            "name": "Piel de koalak inmaduro",
+            "quantity": 12,
+            "defaultPrice": 1000,
+            "iconId": 59003,
+            "img": "https://api.dofusdb.fr/img/items/59003.png"
+          },
+          {
+            "id": 8077,
+            "name": "Bumerán de warko marrón",
+            "quantity": 13,
+            "defaultPrice": 1000,
+            "iconId": 15724,
+            "img": "https://api.dofusdb.fr/img/items/15724.png"
+          },
+          {
+            "id": 7904,
+            "name": "Flor de kalipto",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 35001,
+            "img": "https://api.dofusdb.fr/img/items/35001.png"
+          },
+          {
+            "id": 12737,
+            "name": "Guijarro carmesí",
             "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 103580,
-            "img": "https://api.dofusdb.fr/img/items/103580.png"
-          },
-          {
-            "id": 16460,
-            "name": "Concentrado de selva",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 177003,
-            "img": "https://api.dofusdb.fr/img/items/177003.png"
-          },
-          {
-            "id": 14635,
-            "name": "Pepita",
-            "quantity": 1500,
-            "defaultPrice": 10000,
-            "iconId": 50718,
-            "img": "https://api.dofusdb.fr/img/items/50718.png"
+            "defaultPrice": 1000,
+            "iconId": 15290,
+            "img": "https://api.dofusdb.fr/img/items/15290.png"
           }
         ]
       },
       {
-        "id": 13649,
-        "name": "Rodillo de pastelero de Aermyn",
-        "name_fr": "Rouleau à Pâtisserie d'Aermyne",
-        "level": 194,
-        "type": "Bastón",
-        "iconId": 4113,
-        "img": "https://api.dofusdb.fr/img/items/4113.png",
-        "defaultSalePrice": 1236000,
+        "id": 33571,
+        "name": "Anillo de los Scalptaras",
+        "name_fr": "Bague des Scalptaras",
+        "level": 82,
+        "type": "Anillo",
+        "iconId": 9414,
+        "img": "https://api.dofusdb.fr/img/items/9414.png",
+        "defaultSalePrice": 150000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 11922,
-            "name": "Manubrio de wolverijón",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 47679,
-            "img": "https://api.dofusdb.fr/img/items/47679.png"
-          },
-          {
-            "id": 11934,
-            "name": "Oreja de golosorubik",
-            "quantity": 61,
-            "defaultPrice": 10000,
-            "iconId": 106634,
-            "img": "https://api.dofusdb.fr/img/items/106634.png"
-          },
-          {
-            "id": 14927,
-            "name": "Símbolo de los obscuranti",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 15860,
-            "img": "https://api.dofusdb.fr/img/items/15860.png"
-          },
-          {
-            "id": 11943,
-            "name": "Cola de Golosotrón Real",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 65761,
-            "img": "https://api.dofusdb.fr/img/items/65761.png"
-          },
-          {
-            "id": 11931,
-            "name": "Garra de Tejossus",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47683,
-            "img": "https://api.dofusdb.fr/img/items/47683.png"
-          },
-          {
-            "id": 14928,
-            "name": "Cuerno de Sombra",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47833,
-            "img": "https://api.dofusdb.fr/img/items/47833.png"
-          },
-          {
-            "id": 12728,
-            "name": "Ardonita",
+            "id": 32571,
+            "name": "Joya de los Scalptaras",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 40710,
-            "img": "https://api.dofusdb.fr/img/items/40710.png"
+            "defaultPrice": 1000,
+            "iconId": 24520,
+            "img": "https://api.dofusdb.fr/img/items/24520.png"
           },
           {
-            "id": 29444,
-            "name": "Guijarro reluciente",
-            "quantity": 4,
-            "defaultPrice": 10000,
-            "iconId": 152001,
-            "img": "https://api.dofusdb.fr/img/items/152001.png"
+            "id": 8402,
+            "name": "Piedra de Trankitronko",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 51465,
+            "img": "https://api.dofusdb.fr/img/items/51465.png"
+          },
+          {
+            "id": 8085,
+            "name": "Pelos de koalak forestal",
+            "quantity": 14,
+            "defaultPrice": 1000,
+            "iconId": 54004,
+            "img": "https://api.dofusdb.fr/img/items/54004.png"
+          },
+          {
+            "id": 8050,
+            "name": "Piel de koalak inmaduro",
+            "quantity": 12,
+            "defaultPrice": 1000,
+            "iconId": 59003,
+            "img": "https://api.dofusdb.fr/img/items/59003.png"
+          },
+          {
+            "id": 7904,
+            "name": "Flor de kalipto",
+            "quantity": 5,
+            "defaultPrice": 1000,
+            "iconId": 35001,
+            "img": "https://api.dofusdb.fr/img/items/35001.png"
+          },
+          {
+            "id": 749,
+            "name": "Bakelitita",
+            "quantity": 1,
+            "defaultPrice": 1000,
+            "iconId": 40487,
+            "img": "https://api.dofusdb.fr/img/items/40487.png"
           }
         ]
       }

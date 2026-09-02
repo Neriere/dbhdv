@@ -339,7 +339,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
           <div className="flex items-start sm:items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0 shadow-inner mt-0.5 sm:mt-0">
               <img
-                src={getItemIconUrl(hunt.resource.id)}
+                src={hunt.resource.iconId ? `https://api.dofusdb.fr/img/items/${hunt.resource.iconId}.png` : getItemIconUrl(hunt.resource.id)}
                 alt={hunt.resource.name}
                 className="w-9 h-9 object-contain"
                 referrerPolicy="no-referrer"

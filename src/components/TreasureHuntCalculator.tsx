@@ -647,8 +647,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                   >
                     <div className="w-13 h-13 rounded-xl bg-slate-950 border border-slate-800 p-1.5 flex items-center justify-center shrink-0 shadow-inner relative group-hover/header:border-amber-500/50 transition-colors">
                       <img
-                        src={getItemIconUrl({ iconId: hunt.resource.iconId || hunt.id, id: hunt.id })}
-                        alt={hunt.monsterName}
+                        src={hunt.resource.iconId ? `https://api.dofusdb.fr/img/items/${hunt.resource.iconId}.png` : getItemIconUrl(hunt.resource.id)}
+                        alt={hunt.resource.name}
                         className="w-10 h-10 object-contain group-hover/header:scale-105 transition-transform"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = "none";
