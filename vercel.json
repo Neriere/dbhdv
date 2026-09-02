@@ -2,7 +2,7 @@
   "version": 2,
   "outputDirectory": "dist",
   "functions": {
-    "api/index.ts": {
+    "api/**/*.ts": {
       "maxDuration": 60,
       "memory": 1024,
       "includeFiles": "src/**"
@@ -10,11 +10,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.ts"
-    },
-    {
-      "source": "/((?!assets/|favicon|robots\\.txt|.*\\..*).*)$",
+      "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
       "destination": "/index.html"
     }
   ]
