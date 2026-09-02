@@ -1770,4 +1770,8 @@ app.get("/api/dofocus/item/:itemId", async (req, res) => {
   }
 });
 
-export default app;
+export { app };
+export default function handler(req: any, res: any) {
+  return app(req, res);
+}
+
