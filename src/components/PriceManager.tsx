@@ -27,6 +27,7 @@ import {
   Clock,
   X,
   Radio,
+  HardDriveDownload,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap } from '../types';
 import {
@@ -55,6 +56,7 @@ import { matchesSearchQuery } from '../utils/searchUtils';
 import { GlobalPriceHistoryModal } from './GlobalPriceHistoryModal';
 import { ItemPriceHistoryModal } from './ItemPriceHistoryModal';
 import { MarketSnifferModal } from './MarketSnifferModal';
+import { BackupModal } from './common/BackupModal';
 import { groupPriceProfilesByCategory } from '../utils/serverUtils';
 
 type PriceFilterCategory =
@@ -92,6 +94,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const [savedFeedbackItemId, setSavedFeedbackItemId] = useState<number | null>(null);
   const [isGlobalHistoryOpen, setIsGlobalHistoryOpen] = useState<boolean>(false);
   const [isSnifferModalOpen, setIsSnifferModalOpen] = useState<boolean>(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [itemForHistory, setItemForHistory] = useState<DofusItem | null>(null);
 
   // Reset page whenever search or category changes
@@ -479,6 +482,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsBackupModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-amber-300 border border-slate-700 font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md"
+              title="Descargar copia de seguridad o restaurar datos desde un archivo JSON"
+            >
+              <HardDriveDownload className="w-4 h-4 text-amber-400" />
+              Backup / Restaurar
+            </button>
             <button
               onClick={() => setIsSnifferModalOpen(true)}
               className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-500/5"
@@ -953,6 +965,18 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
             if (Number(price) > 0) newDrafts[Number(id)] = String(price);
           }
           setPriceDrafts(newDrafts);
+        }}
+      />
+
+      {/* Backup & Restore Modal */}
+      <BackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => {
+          setIsBackupModalOpen(false);
+          const updatedPrices = getStoredMarketPrices();
+          setMarketPrices(updatedPrices);
+          setPriceUpdatedAt(getStoredPriceUpdatedAt());
+          setPriceProfiles(getPriceProfiles());
         }}
       />
     </div>

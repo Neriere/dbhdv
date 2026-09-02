@@ -78,7 +78,7 @@ function openIdb(): Promise<IDBDatabase> {
   });
 }
 
-async function getIdbVal<T>(key: string): Promise<T | null> {
+export async function getIdbVal<T>(key: string): Promise<T | null> {
   try {
     const db = await openIdb();
     return new Promise((resolve) => {
@@ -93,7 +93,7 @@ async function getIdbVal<T>(key: string): Promise<T | null> {
   }
 }
 
-async function setIdbVal(key: string, value: unknown): Promise<void> {
+export async function setIdbVal(key: string, value: unknown): Promise<void> {
   try {
     const db = await openIdb();
     new Promise<void>((resolve) => {
@@ -106,6 +106,17 @@ async function setIdbVal(key: string, value: unknown): Promise<void> {
   } catch {
     // Ignore IDB write errors
   }
+}
+
+export function safeLocalStorageSet(key: string, value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn(`[Storage] localStorage quota reached or write failed for key "${key}". Persisting to IndexedDB:`, err);
+  }
+  // Always mirror in IndexedDB for resilience
+  void setIdbVal(`ls_backup_${key}`, value);
 }
 
 const DEFAULT_SYNC_STATUS: SyncStatus = {
@@ -1523,6 +1534,21 @@ export async function saveMarketPrice(
     priceUpdatedAt: response.priceUpdatedAt,
     activePriceProfileId: response.activePriceProfileId,
   });
+
+  emitDatabaseUpdated();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("dofus_prices_updated", {
+        detail: {
+          profileId: response.activePriceProfileId,
+          updatedPrices: { [itemId]: price },
+          count: 1,
+          timestamp: Date.now(),
+        },
+      })
+    );
+  }
+
   return pricesMemoryCache;
 }
 
@@ -1546,6 +1572,21 @@ export async function saveAllMarketPrices(
     priceUpdatedAt: response.priceUpdatedAt,
     activePriceProfileId: response.activePriceProfileId,
   });
+
+  emitDatabaseUpdated();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("dofus_prices_updated", {
+        detail: {
+          profileId: response.activePriceProfileId,
+          updatedPrices: newPricesMap,
+          count: Object.keys(newPricesMap).length,
+          timestamp: Date.now(),
+        },
+      })
+    );
+  }
+
   return pricesMemoryCache;
 }
 
@@ -2406,7 +2447,7 @@ export function getShoppingList(): ShoppingListItem[] {
 export function saveShoppingList(items: ShoppingListItem[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(items));
+    safeLocalStorageSet(SHOPPING_LIST_KEY, JSON.stringify(items));
     window.dispatchEvent(new CustomEvent("dofus_shopping_list_updated"));
   } catch {
     // Ignore storage write errors
@@ -2833,7 +2874,7 @@ export function getStoredBankInventory(): BankInventoryItem[] {
 export function saveBankInventory(items: BankInventoryItem[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(BANK_INVENTORY_STORAGE_KEY, JSON.stringify(items));
+    safeLocalStorageSet(BANK_INVENTORY_STORAGE_KEY, JSON.stringify(items));
     window.dispatchEvent(new CustomEvent("dofus_bank_inventory_updated"));
   } catch (err) {
     console.warn("Error guardando inventario de banco en localStorage:", err);
