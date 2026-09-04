@@ -380,8 +380,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     };
     const handleCoeffUpdate = () => {
       const currentProfile = getActivePriceProfile();
-      setSavedCoefficients(getAllSavedItemCoefficients(currentProfile?.slug));
+      const updatedCoeffs = getAllSavedItemCoefficients(currentProfile?.slug);
+      setSavedCoefficients(updatedCoeffs);
       setSavedTimestamps(getAllSavedItemCoefficientTimestamps(currentProfile?.slug));
+      if (selectedItem && updatedCoeffs[selectedItem.id]) {
+        setCoefficientPercent(updatedCoeffs[selectedItem.id]);
+      }
     };
 
     window.addEventListener('dofus_database_updated', handleDbUpdate);
@@ -2217,6 +2221,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
           const updatedTimestamps = getAllSavedItemCoefficientTimestamps(activeProfile?.slug);
           setSavedCoefficients(updatedCoeffs);
           setSavedTimestamps(updatedTimestamps);
+          if (selectedItem && updatedCoeffs[selectedItem.id]) {
+            setCoefficientPercent(updatedCoeffs[selectedItem.id]);
+          }
         }}
       />
     </div>

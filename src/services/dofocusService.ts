@@ -23,6 +23,9 @@ export const SERVER_NAME_TO_SLUG: Record<string, string> = {
   orukam: "orukam",
   oruka: "orukam",
   tylezia: "tylezia",
+  ombre: "ombre",
+  shadow: "ombre",
+  sombra: "ombre",
 };
 
 export const SERVER_SLUG_TO_DOFOCUS_NAME: Record<string, string> = {
@@ -34,22 +37,38 @@ export const SERVER_SLUG_TO_DOFOCUS_NAME: Record<string, string> = {
   rafal: "Rafal",
   salar: "Salar",
   "tal-kasha": "TalKasha",
+  talkasha: "TalKasha",
   hellmina: "HellMina",
   imagiro: "Imagiro",
   orukam: "Orukam",
   tylezia: "Tylezia",
+  ombre: "Ombre",
 };
 
 export function normalizeServerToSlug(serverNameOrSlug: string): string {
   if (!serverNameOrSlug) return "draconiros";
   const clean = serverNameOrSlug.trim().toLowerCase();
-  return SERVER_NAME_TO_SLUG[clean] || clean.replace(/[\s_]+/g, "-");
+  if (SERVER_NAME_TO_SLUG[clean]) return SERVER_NAME_TO_SLUG[clean];
+  if (clean.startsWith("draconiros")) return "draconiros";
+  if (clean.startsWith("dakal")) return "dakal";
+  if (clean.startsWith("mikhal")) return "mikhal";
+  if (clean.startsWith("brial")) return "brial";
+  if (clean.startsWith("rafal")) return "rafal";
+  if (clean.startsWith("kourial")) return "kourial";
+  if (clean.startsWith("salar")) return "salar";
+  if (clean.startsWith("tal")) return "tal-kasha";
+  if (clean.startsWith("hell")) return "hellmina";
+  if (clean.startsWith("imagiro")) return "imagiro";
+  if (clean.startsWith("oruk")) return "orukam";
+  if (clean.startsWith("tyle")) return "tylezia";
+  if (clean.startsWith("ombr") || clean.startsWith("sombr") || clean.startsWith("shadow")) return "ombre";
+  return clean.replace(/[\s_]+/g, "-");
 }
 
 export function normalizeServerToDoFocusName(serverNameOrSlug: string): string {
   if (!serverNameOrSlug) return "Draconiros";
   const slug = normalizeServerToSlug(serverNameOrSlug);
-  return SERVER_SLUG_TO_DOFOCUS_NAME[slug] || serverNameOrSlug;
+  return SERVER_SLUG_TO_DOFOCUS_NAME[slug] || "Draconiros";
 }
 
 export interface DofocusServer {
@@ -194,7 +213,7 @@ export async function syncDofocusCoefficients(
       void fetch("/api/local-db/coefficients/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries }),
+        body: JSON.stringify({ entries, serverSlug }),
       }).catch((e) => console.warn("Background SQLite sync failed:", e));
     }
   } catch (err) {

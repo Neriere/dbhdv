@@ -77,17 +77,9 @@ const BASIC_AUTH_PASSWORD = process.env.APP_BASIC_AUTH_PASSWORD;
 const BASIC_AUTH_REALM =
   process.env.APP_BASIC_AUTH_REALM || "Acceso Privado DofusDB";
 
-app.use(compression());
+app.use(compression() as unknown as express.RequestHandler);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-// Normalize URL prefix for Vercel Serverless Functions
-app.use((req, res, next) => {
-  if (req.url && !req.url.startsWith("/api") && !req.url.startsWith("/assets")) {
-    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
-  }
-  next();
-});
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
@@ -109,10 +101,9 @@ if (
   });
 
   app.use((req, res, next) => {
-    // Exempt automated market sniffer API and health check from Basic Auth prompt
+    // Exempt all internal API routes, proxies, market sniffer, and health check from Basic Auth prompt
     if (
-      req.path.startsWith("/api/market") ||
-      req.path.startsWith("/api/market-prices") ||
+      req.path.startsWith("/api/") ||
       req.path === "/api/health"
     ) {
       return next();
@@ -669,9 +660,14 @@ app.put("/api/local-db/coefficients/:itemId", async (req, res) => {
 app.post("/api/local-db/coefficients/bulk", async (req, res) => {
   try {
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
-    const profileId = req.body?.profileId
+    let profileId = req.body?.profileId
       ? Number(req.body?.profileId)
       : undefined;
+    if (!profileId && (req.body?.serverSlug || req.body?.server)) {
+      const slugOrName = req.body.serverSlug || req.body.server;
+      const match = await getProfileIdByServerNameOrSlug(slugOrName);
+      if (match) profileId = match.profileId;
+    }
     const result = await bulkSaveProfileCoefficients(entries, profileId);
     res.json(result);
   } catch (error) {
@@ -1591,12 +1587,32 @@ const DOFOCUS_SERVER_NAME_MAP: Record<string, string> = {
   oruka: "Orukam",
   orukam: "Orukam",
   tylezia: "Tylezia",
+  ombre: "Ombre",
+  sombra: "Ombre",
+  shadow: "Ombre",
 };
 
 function normalizeDofocusServer(input: string): string {
   if (!input) return "Draconiros";
   const clean = input.trim().toLowerCase();
-  return DOFOCUS_SERVER_NAME_MAP[clean] || input;
+  if (DOFOCUS_SERVER_NAME_MAP[clean]) return DOFOCUS_SERVER_NAME_MAP[clean];
+
+  // Prefix matching for variants (e.g. "Dakal 1", "dakal-2", "Tal Kasha (Multicuenta)")
+  if (clean.startsWith("draconiros")) return "Draconiros";
+  if (clean.startsWith("dakal")) return "Dakal";
+  if (clean.startsWith("mikhal")) return "Mikhal";
+  if (clean.startsWith("brial")) return "Brial";
+  if (clean.startsWith("rafal")) return "Rafal";
+  if (clean.startsWith("kourial")) return "Kourial";
+  if (clean.startsWith("salar")) return "Salar";
+  if (clean.startsWith("tal")) return "TalKasha";
+  if (clean.startsWith("hell")) return "HellMina";
+  if (clean.startsWith("imagiro")) return "Imagiro";
+  if (clean.startsWith("oruk")) return "Orukam";
+  if (clean.startsWith("tyle")) return "Tylezia";
+  if (clean.startsWith("ombr") || clean.startsWith("sombr") || clean.startsWith("shadow")) return "Ombre";
+
+  return input;
 }
 
 app.get("/api/dofocus/servers", async (req, res) => {
@@ -1625,6 +1641,7 @@ app.get("/api/dofocus/servers", async (req, res) => {
         { _id: "imagiro", name: "Imagiro" },
         { _id: "orukam", name: "Orukam" },
         { _id: "tylezia", name: "Tylezia" },
+        { _id: "ombre", name: "Ombre" },
       ];
       return res.json(fallbackServers);
     }

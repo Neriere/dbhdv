@@ -51,6 +51,22 @@ interface DofocusSyncModalProps {
 
 type TimeFilterOption = 1 | 3 | 5 | 7 | 30 | null;
 
+const DOFUS_DOFOCUS_SERVERS = [
+  "Draconiros",
+  "Dakal",
+  "Mikhal",
+  "Kourial",
+  "Brial",
+  "Rafal",
+  "Salar",
+  "TalKasha",
+  "HellMina",
+  "Imagiro",
+  "Orukam",
+  "Tylezia",
+  "Ombre",
+];
+
 export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
   isOpen,
   onClose,
@@ -117,10 +133,15 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
     }
   }, [isOpen, propActiveProfile]);
 
-  // Re-calculate local stats whenever selectedServerSlug changes
+  const targetProfileSlug = useMemo(
+    () => currentActiveProfile?.slug || selectedServerSlug,
+    [currentActiveProfile?.slug, selectedServerSlug]
+  );
+
+  // Re-calculate local stats whenever targetProfileSlug changes
   useEffect(() => {
     if (!isOpen) return;
-    const saved = getAllSavedItemCoefficients(selectedServerSlug);
+    const saved = getAllSavedItemCoefficients(targetProfileSlug);
     const keys = Object.keys(saved);
     const custom = keys.filter((k) => saved[Number(k)] !== 100).length;
     setLocalStats({
@@ -128,14 +149,14 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
       defaultCount: keys.length - custom,
       customCount: custom,
     });
-  }, [isOpen, selectedServerSlug]);
+  }, [isOpen, targetProfileSlug]);
 
   // Fetch coefficients preview whenever selected server changes
   useEffect(() => {
     if (!isOpen || !selectedServer) return;
 
     setServerStats((prev) => ({ ...prev, loaded: false }));
-    fetchDofocusServerCoefficients(selectedServer)
+    fetchDofocusServerCoefficients(selectedServer, forceRefresh)
       .then((res) => {
         const list = res.coefficients || [];
         setServerCoefficients(list);
@@ -144,24 +165,26 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
           loaded: true,
         });
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Preview error:", err);
         setServerCoefficients([]);
         setServerStats({ totalAvailable: 3234, loaded: false });
+        setErrorMsg(err.message || "Error al conectar con DoFocus");
       });
-  }, [isOpen, selectedServer]);
+  }, [isOpen, selectedServer, forceRefresh]);
 
   // Compute how many items match the current filters
   const matchingItemsCount = useMemo(() => {
     if (!serverCoefficients || serverCoefficients.length === 0) {
-      return serverStats.totalAvailable;
+      return serverStats.loaded ? 0 : serverStats.totalAvailable;
     }
 
     const now = Date.now();
     const cutoffTs =
       timeFilterDays && timeFilterDays > 0 ? now - timeFilterDays * 24 * 60 * 60 * 1000 : 0;
 
-    const saved = getAllSavedItemCoefficients(selectedServerSlug);
-    const savedTs = getAllSavedItemCoefficientTimestamps(selectedServerSlug);
+    const saved = getAllSavedItemCoefficients(targetProfileSlug);
+    const savedTs = getAllSavedItemCoefficientTimestamps(targetProfileSlug);
 
     let count = 0;
     for (const item of serverCoefficients) {
@@ -190,8 +213,9 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
     timeFilterDays,
     syncMode,
     protectLocalEdits,
+    serverStats.loaded,
     serverStats.totalAvailable,
-    selectedServerSlug,
+    targetProfileSlug,
   ]);
 
   const handleStartSync = async () => {
@@ -207,14 +231,14 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
         maxAgeDays: timeFilterDays,
         protectNewerLocalEdits: protectLocalEdits,
         forceRefresh,
-        serverSlug: selectedServerSlug,
+        serverSlug: targetProfileSlug,
       });
 
       setSyncProgress(100);
       setSyncResult(res);
 
       // Refresh local stats
-      const saved = getAllSavedItemCoefficients(selectedServerSlug);
+      const saved = getAllSavedItemCoefficients(targetProfileSlug);
       const keys = Object.keys(saved);
       const custom = keys.filter((k) => saved[Number(k)] !== 100).length;
       setLocalStats({
@@ -274,24 +298,32 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
 
         {/* Server & Data Preview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Active Server Info (Locked to Current Profile) */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-1.5 flex flex-col justify-between">
+          {/* Active Server Info & DoFocus Source */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-2 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Server className="w-3.5 h-3.5 text-amber-400" />
-                <span>Servidor Activo</span>
+                <span>Servidor en DoFocus</span>
               </span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-wider ${categoryInfo.badgeClass}`}>
                 {categoryInfo.label}
               </span>
             </div>
-            <div className="flex items-baseline gap-2 pt-0.5">
-              <span className="text-lg font-black text-amber-300">
-                {currentActiveProfile?.name || selectedServer}
-              </span>
+            <div>
+              <select
+                value={selectedServer}
+                onChange={(e) => setSelectedServer(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-sm font-bold text-amber-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+              >
+                {DOFUS_DOFOCUS_SERVERS.map((srv) => (
+                  <option key={srv} value={srv} className="bg-slate-900 text-slate-200">
+                    {srv} {srv === normalizeServerToDoFocusName(currentActiveProfile?.name || "") ? "(Perfil Activo)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
             <p className="text-[11px] text-slate-400 leading-tight">
-              Los datos sincronizados se aplicarán y guardarán únicamente en tu perfil de <strong className="text-slate-200">{currentActiveProfile?.name || selectedServer}</strong>.
+              Los datos se aplicarán a tu perfil: <strong className="text-slate-200">{currentActiveProfile?.name || selectedServer}</strong>.
             </p>
           </div>
 

@@ -1246,7 +1246,14 @@ export function extractItemStats(item: DofusItem): ExtractedItemStat[] {
     }
 
     // Check if this effect is negative roll or malus (skip malus effects)
-    if (formatted.startsWith("-") || formatted.toLowerCase().includes("malus") || formatted.toLowerCase().includes("retira")) {
+    if (
+      formatted.startsWith("-") ||
+      formatted.toLowerCase().includes("malus") ||
+      (formatted.toLowerCase().includes("retira") &&
+        !formatted.toLowerCase().includes("retirada") &&
+        !formatted.toLowerCase().includes("retira pa") &&
+        !formatted.toLowerCase().includes("retira pm"))
+    ) {
       continue;
     }
 

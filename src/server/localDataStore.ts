@@ -62,7 +62,7 @@ export const UNITY_SERVER_PROFILES: Array<{
   { slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico" },
 ];
 
-import { createClient as createWebClient, Client } from "@libsql/client/web";
+import { createClient, Client } from "@libsql/client";
 
 function resolveDbUrl(): string {
   const customUrl =
@@ -73,7 +73,7 @@ function resolveDbUrl(): string {
   if (customUrl && customUrl.trim()) {
     return customUrl.trim();
   }
-  return "";
+  return "file:local.db";
 }
 
 function resolveDbAuthToken(): string | undefined {
@@ -89,20 +89,18 @@ function createResilientDbClient(): Client {
   const url = resolveDbUrl();
   const authToken = resolveDbAuthToken();
 
-  // If remote URL, use pure web client with standard fetch (zero native C++ dependencies)
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("libsql://")) {
-    try {
-      return createWebClient({ url, authToken });
-    } catch (err) {
-      console.warn("[Database] Failed to create web LibSQL client:", err);
-    }
+  try {
+    return createClient({ url, authToken });
+  } catch (err) {
+    console.warn("[Database] Failed to initialize LibSQL client, falling back to mock:", err);
   }
 
   // Safe fallback mock client for serverless environments when remote Turso is omitted
+  const emptyResult = { columns: [], columnTypes: [], rows: [], rowsAffected: 0, lastInsertRowid: undefined };
   return {
-    execute: async () => ({ columns: [], rows: [], rowsAffected: 0, lastInsertRowid: undefined }),
+    execute: async () => emptyResult,
     executeMultiple: async () => {},
-    batch: async () => [],
+    batch: async (stmts: any[]) => (stmts || []).map(() => emptyResult),
     transaction: async () => ({} as any),
     close: () => {},
     closed: false,
