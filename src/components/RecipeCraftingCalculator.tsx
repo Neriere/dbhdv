@@ -181,7 +181,10 @@ export const RecipeCraftingCalculator: React.FC<{
 
   useEffect(() => {
     let noticeTimeout: any = null;
+    let lastPriceEventTime = 0;
+
     const handlePriceUpdate = (e?: Event) => {
+      lastPriceEventTime = Date.now();
       clearRecipeTreeCache();
       setRecipeTreeVersion((v) => v + 1);
       const customEvent = e as CustomEvent<{ count?: number }>;
@@ -193,6 +196,7 @@ export const RecipeCraftingCalculator: React.FC<{
     };
 
     const handleDatabaseUpdate = () => {
+      if (Date.now() - lastPriceEventTime < 100) return;
       clearRecipeTreeCache();
       setRecipeTreeVersion((v) => v + 1);
     };

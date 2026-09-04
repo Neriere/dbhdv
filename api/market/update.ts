@@ -13,9 +13,10 @@ const serverMap: Record<string, number> = {
 };
 
 function processItemPayload(payload: any, now: number) {
-  const itemId = Number(payload?.item_id);
+  const itemId = Number(payload?.item_id ?? payload?.itemId ?? payload?.id);
   if (!itemId || Number.isNaN(itemId) || itemId <= 0) return null;
 
+  const directPrice = Number(payload?.price ?? payload?.precio ?? payload?.calculated_price);
   const precios = payload.precios || payload.prices;
   let resolvedType = (payload.type || "").toLowerCase();
   if (!resolvedType) {
@@ -28,7 +29,13 @@ function processItemPayload(payload: any, now: number) {
   let rawAvg = 0;
   let offersCount = 0;
 
-  if (resolvedType === "recurso") {
+  if (directPrice > 0 && (!precios || (Array.isArray(precios) && precios.length === 0))) {
+    finalPrice = Math.round(directPrice);
+    minPrice = finalPrice;
+    maxPrice = finalPrice;
+    rawAvg = finalPrice;
+    offersCount = 1;
+  } else if (resolvedType === "recurso") {
     const unitPrices: number[] = [];
     if (Array.isArray(precios)) {
       const p1 = Number(precios[0]) || 0;
@@ -91,7 +98,7 @@ function processItemPayload(payload: any, now: number) {
   }
 
   const serverSlug = (payload.server || "draconiros").toLowerCase().replace(/[\s\-_]/g, "");
-  const profileId = serverMap[serverSlug] || 1;
+  const profileId = Number(payload.profileId || payload.profile_id) || serverMap[serverSlug] || 1;
   const profileName = payload.server || "Draconiros";
 
   return {
@@ -181,16 +188,20 @@ export default async function handler(req: any, res: any) {
 
       if (requests.length > 0 && dbUrl) {
         try {
-          requests.push({ type: "close" });
           const endpoint = dbUrl.endsWith("/v2/pipeline") ? dbUrl : `${dbUrl}/v2/pipeline`;
-          await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${dbToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ requests }),
-          });
+          const CHUNK_SIZE = 50;
+          for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
+            const chunk = requests.slice(i, i + CHUNK_SIZE);
+            await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${dbToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ requests: [...chunk, { type: "close" }] }),
+            });
+          }
+          (globalThis as any).__lastMarketWriteTimestamp = now;
         } catch (dbErr) {
           console.warn("[Turso Batch Ingest Warning]:", dbErr);
         }
@@ -253,6 +264,7 @@ export default async function handler(req: any, res: any) {
             ],
           }),
         });
+        (globalThis as any).__lastMarketWriteTimestamp = now;
       } catch (dbErr) {
         console.warn("[Turso Cloud Ingest Warning]:", dbErr);
       }

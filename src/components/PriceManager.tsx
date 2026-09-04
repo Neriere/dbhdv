@@ -29,7 +29,7 @@ import {
   Radio,
   HardDriveDownload,
 } from 'lucide-react';
-import { DofusItem, MarketPriceMap } from '../types';
+import { DofusItem, MarketPriceMap, PriceUpdatedAtMap } from '../types';
 import {
   getActivePriceProfileId,
   getImportedItems,
@@ -167,12 +167,40 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         console.error('No se pudo inicializar la base local:', error);
       });
 
+    let lastPricesEventTime = 0;
+
+    const handlePricesUpdated = (event?: Event) => {
+      lastPricesEventTime = Date.now();
+      const customEvent = event as CustomEvent<{
+        updatedPrices?: MarketPriceMap;
+        priceUpdatedAt?: PriceUpdatedAtMap;
+      }>;
+      if (customEvent?.detail?.updatedPrices) {
+        setMarketPrices((prev) => ({ ...prev, ...customEvent.detail.updatedPrices }));
+        setPriceDrafts((prev) => {
+          const next = { ...prev };
+          for (const [id, p] of Object.entries(customEvent.detail.updatedPrices!)) {
+            next[Number(id)] = p > 0 ? String(p) : '';
+          }
+          return next;
+        });
+      }
+      if (customEvent?.detail?.priceUpdatedAt) {
+        setPriceUpdatedAt((prev) => ({ ...prev, ...customEvent.detail.priceUpdatedAt }));
+      }
+    };
+
     const handleDbUpdate = () => {
+      // If prices were just updated, do not reload all items and re-parse runes
+      if (Date.now() - lastPricesEventTime < 100) return;
       hydrateState();
     };
+
+    window.addEventListener('dofus_prices_updated', handlePricesUpdated);
     window.addEventListener('dofus_database_updated', handleDbUpdate);
 
     return () => {
+      window.removeEventListener('dofus_prices_updated', handlePricesUpdated);
       window.removeEventListener('dofus_database_updated', handleDbUpdate);
     };
   }, []);

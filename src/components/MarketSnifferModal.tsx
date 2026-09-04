@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Radio,
   X,
@@ -17,6 +17,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { PriceProfile } from '../types';
+import { triggerLivePriceSync } from '../services/dofusDbService';
 
 interface MarketSnifferModalProps {
   isOpen: boolean;
@@ -53,6 +54,12 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
   const [copiedBat, setCopiedBat] = useState(false);
   const [activeTab, setActiveTab] = useState<'instructions' | 'bat' | 'script'>('instructions');
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      void triggerLivePriceSync(true);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

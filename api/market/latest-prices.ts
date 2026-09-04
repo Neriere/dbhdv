@@ -12,6 +12,9 @@ const SERVER_MAP: Record<string, number> = {
   tylezia: 11,
 };
 
+// In-memory short cache for identical poll requests within 1.5s to prevent hammering Turso
+const recentPollCache = new Map<string, { time: number; response: any }>();
+
 export default async function handler(req: any, res: any) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -33,10 +36,20 @@ export default async function handler(req: any, res: any) {
       targetProfileId = SERVER_MAP[clean] || 1;
     }
 
+    const now = Date.now();
+    const cacheKey = `${targetProfileId}:${sinceParam}`;
+    const cached = recentPollCache.get(cacheKey);
+
+    if (cached && (now - cached.time) < 1500) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cache-Control", "public, max-age=1, s-maxage=2, stale-while-revalidate=4");
+      return res.status(200).json(cached.response);
+    }
+
     const prices: Record<number, number> = {};
     const priceUpdatedAt: Record<number, number> = {};
     let totalUpdated = 0;
-    const serverTime = Date.now();
+    const serverTime = now;
 
     const dbUrl = (
       process.env.TURSO_DATABASE_URL ||
@@ -57,6 +70,18 @@ export default async function handler(req: any, res: any) {
       const endpoint = dbUrl.endsWith("/v2/pipeline")
         ? dbUrl
         : `${dbUrl}/v2/pipeline`;
+
+      const querySql = sinceParam > 0
+        ? "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC LIMIT 1000"
+        : "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? ORDER BY updated_at DESC LIMIT 2000";
+
+      const queryArgs = sinceParam > 0
+        ? [
+            { type: "integer", value: String(targetProfileId) },
+            { type: "integer", value: String(sinceParam) },
+          ]
+        : [{ type: "integer", value: String(targetProfileId) }];
+
       const tursoRes = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -68,11 +93,8 @@ export default async function handler(req: any, res: any) {
             {
               type: "execute",
               stmt: {
-                sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC",
-                args: [
-                  { type: "integer", value: String(targetProfileId) },
-                  { type: "integer", value: String(sinceParam) },
-                ],
+                sql: querySql,
+                args: queryArgs,
               },
             },
             { type: "close" },
@@ -101,16 +123,24 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    return res.status(200).json({
+    const payload = {
       success: true,
       profile_id: targetProfileId,
       prices,
       priceUpdatedAt,
       serverTime,
       totalUpdated,
-    });
+    };
+
+    // Store in short cache (clean old keys if map exceeds 50 entries)
+    if (recentPollCache.size > 50) {
+      recentPollCache.clear();
+    }
+    recentPollCache.set(cacheKey, { time: now, response: payload });
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=1, s-maxage=2, stale-while-revalidate=4");
+    return res.status(200).json(payload);
   } catch (error: any) {
     console.error("[Market Latest Prices API Error]:", error);
     res.setHeader("Access-Control-Allow-Origin", "*");

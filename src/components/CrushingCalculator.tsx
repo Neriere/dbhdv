@@ -372,7 +372,38 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       .then(() => hydrate())
       .catch((e) => console.error('Error inicializando base en CrushingCalculator:', e));
 
-    const handleDbUpdate = () => hydrate();
+    let lastPriceEventTime = 0;
+
+    const handlePricesUpdate = (e: any) => {
+      lastPriceEventTime = Date.now();
+      const customEvent = e as CustomEvent<{
+        updatedPrices?: MarketPriceMap;
+        priceUpdatedAt?: Record<number, number>;
+      }>;
+      if (customEvent?.detail?.updatedPrices) {
+        setMarketPrices((prev) => ({ ...prev, ...customEvent.detail.updatedPrices }));
+        setRunePriceDrafts((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const [idStr, p] of Object.entries(customEvent.detail.updatedPrices!)) {
+            const id = Number(idStr);
+            if (next[id] !== undefined && next[id] !== String(p)) {
+              next[id] = String(p);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
+      if (customEvent?.detail?.priceUpdatedAt) {
+        setPriceUpdatedAt((prev) => ({ ...prev, ...customEvent.detail.priceUpdatedAt }));
+      }
+    };
+
+    const handleDbUpdate = () => {
+      if (Date.now() - lastPriceEventTime < 100) return;
+      hydrate();
+    };
     const handleProfileChange = (e: any) => {
       const newProfile = e.detail?.profile || getActivePriceProfile();
       setActiveProfile(newProfile);
@@ -388,10 +419,12 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       }
     };
 
+    window.addEventListener('dofus_prices_updated', handlePricesUpdate);
     window.addEventListener('dofus_database_updated', handleDbUpdate);
     window.addEventListener('dofus_profile_changed', handleProfileChange);
     window.addEventListener('dofus_coefficients_updated', handleCoeffUpdate);
     return () => {
+      window.removeEventListener('dofus_prices_updated', handlePricesUpdate);
       window.removeEventListener('dofus_database_updated', handleDbUpdate);
       window.removeEventListener('dofus_profile_changed', handleProfileChange);
       window.removeEventListener('dofus_coefficients_updated', handleCoeffUpdate);
