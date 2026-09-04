@@ -1,6 +1,7 @@
 {
   "version": 2,
   "outputDirectory": "dist",
+  "buildCommand": "vite build",
   "rewrites": [
     {
       "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
