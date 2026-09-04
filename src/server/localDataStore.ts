@@ -76,6 +76,9 @@ function resolveDbUrl(): string {
   if (customUrl && customUrl.trim()) {
     return customUrl.trim();
   }
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return "file:/tmp/local.db";
+  }
   return "file:local.db";
 }
 
