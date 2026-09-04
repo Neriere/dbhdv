@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShoppingCart,
+  Copy,
 } from "lucide-react";
 import { MarketPriceMap } from "../types";
 import { DOFUS_JOBS, isOmittedItem, isCrushableJob } from "../data/dofusJobs";
@@ -48,6 +49,8 @@ import {
 } from "../services/dofusDbService";
 import { calculateItemCrushing } from "../data/dofusRuneWeights";
 import { matchesSearchQuery } from "../utils/searchUtils";
+import { copyItemNameToClipboard } from "../utils/clipboardUtils";
+import { PriceFreshnessBadge } from "./common/PriceFreshnessBadge";
 
 import { useMarketPrices } from "../hooks/useMarketPrices";
 
@@ -124,7 +127,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
   ]);
 
-  const { marketPrices: basePrices, activeProfileId, updatePrice } = useMarketPrices();
+  const { marketPrices: basePrices, priceUpdatedAt, activeProfileId, updatePrice } = useMarketPrices();
   const marketPrices = useMemo(
     () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
     [basePrices]
@@ -572,10 +575,18 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                             />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-white text-sm group-hover:text-amber-400 transition-colors leading-snug">
                                 {itemName}
                               </span>
+                              <button
+                                type="button"
+                                onClick={() => copyItemNameToClipboard(itemName)}
+                                className="p-1 rounded hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
+                                title="Copiar nombre para buscar en Dofus (Ctrl+V)"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
                               <span className="text-[11px] font-mono font-bold text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 shrink-0">
                                 Niv. {item.level}
                               </span>
@@ -642,14 +653,15 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           />
                           {isSaved && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
                         </div>
-                        <div className="text-xs mt-1">
+                        <div className="flex items-center justify-end gap-1.5 mt-1">
                           {entry.salePrice > 0 ? (
-                            <span className={entry.saleNetProfit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                            <span className={entry.saleNetProfit >= 0 ? "text-emerald-400 font-bold text-xs" : "text-rose-400 font-bold text-xs"}>
                               {entry.saleNetProfit >= 0 ? "+" : ""}{entry.saleNetProfit.toLocaleString()} K
                             </span>
                           ) : (
                             <span className="text-slate-600 font-mono text-xs">Sin precio HDV</span>
                           )}
+                          <PriceFreshnessBadge updatedAt={priceUpdatedAt[item.id]} compact />
                         </div>
                       </td>
 

@@ -9,6 +9,7 @@ import {
   History,
   Clock,
   BarChart2,
+  Copy,
 } from "lucide-react";
 import { PresetCraftableItem } from "../../data/presetCraftableItems";
 import {
@@ -25,6 +26,9 @@ import {
   getStoredSalesVolumeMap,
   saveItemSalesVolume,
 } from "../../services/salesVolumeService";
+import { useLivePriceFlash } from "../../hooks/useLivePriceFlash";
+import { copyItemNameToClipboard } from "../../utils/clipboardUtils";
+import { PriceFreshnessBadge } from "../common/PriceFreshnessBadge";
 
 interface RecipeSummaryCardProps {
   item: PresetCraftableItem;
@@ -57,6 +61,7 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
 
   const activeSalesVolume = salesMap[item.id];
   const activeSalesAnalysis = analyzeSalesVolume(item.id, activeSalesVolume);
+  const { flashClass: priceFlashClass } = useLivePriceFlash(item.id);
 
   const effectiveSalePrice = salePrice > 0 ? salePrice : 0;
   const activeSaleTax = effectiveSalePrice * 0.03;
@@ -98,6 +103,14 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
               <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
                 {getItemName(item)}
               </h1>
+              <button
+                type="button"
+                onClick={() => copyItemNameToClipboard(getItemName(item))}
+                className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-700/60 transition-colors cursor-pointer"
+                title="Copiar nombre para buscar en el mercadillo de Dofus (Ctrl+V)"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-bold font-mono">
                 Niv. {item.level}
               </span>
@@ -179,7 +192,7 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
                 <History className="w-3.5 h-3.5" />
               </button>
             )}
-            <div className="relative">
+            <div className={`relative rounded-xl ${priceFlashClass}`}>
               <input
                 type="number"
                 value={salePriceDraft}
@@ -199,13 +212,8 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
               </span>
             </div>
           </div>
-          <div className="flex items-center justify-end gap-1 text-[10px] text-slate-500 font-medium pt-0.5">
-            <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
-            <span>
-              {priceUpdatedAt[item.id]
-                ? formatRelativeTime(priceUpdatedAt[item.id])
-                : "Sin fecha de precio"}
-            </span>
+          <div className="flex items-center justify-end gap-1.5 pt-0.5">
+            <PriceFreshnessBadge updatedAt={priceUpdatedAt[item.id]} />
           </div>
         </div>
       </div>

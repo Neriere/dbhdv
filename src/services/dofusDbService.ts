@@ -274,6 +274,8 @@ let cachedCraftableSnapshot: CraftableItem[] | null = null;
 let cachedCrushableSnapshot: CraftableItem[] | null = null;
 let ingredientToRecipesIndex: Map<number, Set<number>> = new Map();
 let recipeTreeMapCache: Map<string, RecipeTreeNode> = new Map();
+let craftCostMemo: Map<number, number> = new Map();
+let lowestDetectedPriceMemo: Map<number, number> = new Map();
 
 let dbUpdateRafId: any = null;
 function emitDatabaseUpdated(): void {
@@ -579,6 +581,8 @@ function getMarketBroadcastChannel(): BroadcastChannel | null {
 export function clearRecipeTreeCache(): void {
   recipeTreeMapCache.clear();
   cachedCraftableSnapshot = null;
+  craftCostMemo.clear();
+  lowestDetectedPriceMemo.clear();
 }
 
 export function connectLivePriceStream(): void {
@@ -1500,6 +1504,18 @@ export function getLowestDetectedPrice(
   recipes: Record<number, DofusRecipe> = getStoredRecipes(),
   visited: Set<number> = new Set()
 ): number {
+  const isDefaultContext =
+    visited.size === 0 &&
+    (marketPrices === pricesMemoryCache || !marketPrices) &&
+    (recipes === recipesMemoryCache || !recipes);
+
+  if (isDefaultContext) {
+    const cached = lowestDetectedPriceMemo.get(itemId);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+
   const directBuyPrice = marketPrices[itemId] || 0;
   if (visited.has(itemId)) {
     return directBuyPrice;
@@ -1507,6 +1523,7 @@ export function getLowestDetectedPrice(
 
   const recipe = recipes[itemId];
   if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+    if (isDefaultContext) lowestDetectedPriceMemo.set(itemId, directBuyPrice);
     return directBuyPrice;
   }
 
@@ -1518,13 +1535,18 @@ export function getLowestDetectedPrice(
     new Set(visited),
   );
 
+  let finalLowest = directBuyPrice;
   if (directBuyPrice > 0 && subCraftCost > 0) {
-    return Math.min(directBuyPrice, subCraftCost);
+    finalLowest = Math.min(directBuyPrice, subCraftCost);
+  } else if (subCraftCost > 0) {
+    finalLowest = subCraftCost;
   }
-  if (subCraftCost > 0) {
-    return subCraftCost;
+
+  if (isDefaultContext) {
+    lowestDetectedPriceMemo.set(itemId, finalLowest);
   }
-  return directBuyPrice;
+
+  return finalLowest;
 }
 
 export function getImportedItems(): DofusItem[] {
@@ -2742,8 +2764,14 @@ export async function setLocalItemPrice(itemId: number, price: number): Promise<
 }
 
 export function calculateItemCraftCost(itemId: number): number {
+  const cached = craftCostMemo.get(itemId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const recipe = recipesMemoryCache[itemId];
   if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
+    craftCostMemo.set(itemId, 0);
     return 0;
   }
 
@@ -2755,6 +2783,7 @@ export function calculateItemCraftCost(itemId: number): number {
     total += ingPrice * qty;
   }
 
+  craftCostMemo.set(itemId, total);
   return total;
 }
 

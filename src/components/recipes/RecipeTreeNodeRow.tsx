@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   History,
+  Copy,
 } from "lucide-react";
 import { DofusItem, MarketPriceMap, RecipeTreeNode } from "../../types";
 import {
@@ -22,6 +23,9 @@ import {
   formatRelativeTime,
   addOrUpdateBankItem,
 } from "../../services/dofusDbService";
+import { useLivePriceFlash } from "../../hooks/useLivePriceFlash";
+import { copyItemNameToClipboard } from "../../utils/clipboardUtils";
+import { PriceFreshnessBadge } from "../common/PriceFreshnessBadge";
 import {
   isBycResource,
   analyzeBycResourceCost,
@@ -59,6 +63,7 @@ export const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[sub.itemId] || sub.marketPrice || 0;
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
+  const { flashClass: subFlashClass } = useLivePriceFlash(sub.itemId);
 
   useEffect(() => {
     if (forceExpandTrigger > 0) {
@@ -115,7 +120,7 @@ export const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
 
   return (
     <div
-      className={`rounded-2xl p-3.5 space-y-2.5 shadow-lg transition-all border ${theme.bg} ${theme.border}`}
+      className={`rounded-2xl p-3.5 space-y-2.5 shadow-lg transition-all border ${theme.bg} ${theme.border} ${subFlashClass}`}
     >
       {parentName && (
         <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
@@ -135,9 +140,19 @@ export const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
           />
 
           <div className="min-w-0">
-            <span className="font-bold text-white text-xs block truncate">
-              {subName}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-white text-xs block truncate">
+                {subName}
+              </span>
+              <button
+                type="button"
+                onClick={() => copyItemNameToClipboard(subName)}
+                className="p-1 rounded hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
+                title="Copiar nombre para buscar en Dofus (Ctrl+V)"
+              >
+                <Copy className="w-2.5 h-2.5" />
+              </button>
+            </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               {hasSubSubCraft ? (
                 <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${theme.badgeBg}`}>
@@ -161,6 +176,7 @@ export const SubIngredientRow: React.FC<SubIngredientRowProps> = ({
       <div className="flex items-center justify-between gap-2 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1.5">
         <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
           <span>Precio unitario:</span>
+          <PriceFreshnessBadge updatedAt={priceUpdatedAt[sub.itemId]} compact />
           {onOpenHistory && (
             <button
               type="button"
@@ -291,6 +307,7 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const currentPrice = marketPrices[node.itemId] || node.marketPrice || 0;
   const [draftPrice, setDraftPrice] = useState<string | null>(null);
+  const { flashClass: mainFlashClass } = useLivePriceFlash(node.itemId);
 
   useEffect(() => {
     if (forceExpandTrigger > 0) {
@@ -361,7 +378,7 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
 
   return (
     <div
-      className={`rounded-2xl p-4 space-y-3 transition-all border shadow-lg ${
+      className={`rounded-2xl p-4 space-y-3 transition-all border shadow-lg ${mainFlashClass} ${
         isSubcraftCheaper
           ? "bg-slate-950/90 border-emerald-500/40 hover:border-emerald-500/60"
           : "bg-slate-950/90 border-slate-800 hover:border-slate-700"
@@ -379,11 +396,20 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
               />
             </div>
 
-
             <div className="min-w-0">
-              <span className="font-black text-white text-sm block truncate leading-tight">
-                {itemName}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-white text-sm block truncate leading-tight">
+                  {itemName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyItemNameToClipboard(itemName)}
+                  className="p-1 rounded bg-slate-800/60 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-700/50 transition-colors cursor-pointer shrink-0"
+                  title="Copiar nombre para buscar en Dofus (Ctrl+V)"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
+              </div>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 {hasSubCraft ? (
                   <span className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
@@ -443,12 +469,7 @@ export const HorizontalIngredientCard: React.FC<HorizontalIngredientCardProps> =
             className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-right text-amber-300 font-mono font-black text-base focus:outline-none focus:border-amber-400 transition-colors"
           />
           <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 font-medium">
-            <span className="flex items-center gap-1">
-              <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
-              {priceUpdatedAt[node.itemId]
-                ? formatRelativeTime(priceUpdatedAt[node.itemId])
-                : "Sin fecha de precio"}
-            </span>
+            <PriceFreshnessBadge updatedAt={priceUpdatedAt[node.itemId]} />
           </div>
         </div>
       </div>
