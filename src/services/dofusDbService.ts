@@ -435,6 +435,9 @@ function updateMemoryCache(payload: {
 
   if (changedStructure) {
     invalidateDerivedCaches();
+  } else if (payload.prices) {
+    recipeTreeMapCache.clear();
+    cachedCraftableSnapshot = null;
   }
 
   isDbInitialized = true;
@@ -516,28 +519,53 @@ let lastPriceSyncTimestamp = 0;
 let isPollingPrices = false;
 let visibilityListenerRegistered = false;
 
-export function startLivePriceAutoSync(intervalMs: number = 8000): void {
-  if (typeof window === "undefined") return;
+export async function executeLivePricePoll(forceCatchup = false): Promise<number> {
+  if (isPollingPrices) return 0;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return 0;
 
-  const poll = async () => {
-    if (isPollingPrices) return;
-    if (typeof document !== "undefined" && document.hidden) return;
-    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  if (forceCatchup) {
+    lastPriceSyncTimestamp = 0;
+  }
 
-    isPollingPrices = true;
-    try {
-      const pid = activePriceProfileIdMemoryCache || 1;
-      const since = lastPriceSyncTimestamp || (Date.now() - 120000);
-      const res = await requestJson<{
-        success: boolean;
-        profile_id: number;
-        prices: MarketPriceMap;
-        priceUpdatedAt: PriceUpdatedAtMap;
-        serverTime: number;
-        totalUpdated: number;
-      }>(`/api/market/latest-prices?profileId=${pid}&since=${since}`);
+  isPollingPrices = true;
+  try {
+    const pid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
 
-      if (res && res.success && res.totalUpdated > 0 && res.profile_id === activePriceProfileIdMemoryCache) {
+    // Determine baseline timestamp for incremental updates:
+    // If lastPriceSyncTimestamp is 0 (first run or forced catch-up),
+    // find the max timestamp in priceUpdatedAtMemoryCache so we fetch all prices updated since then!
+    let since = lastPriceSyncTimestamp;
+    if (!since) {
+      let maxTs = 0;
+      for (const id in priceUpdatedAtMemoryCache) {
+        const t = priceUpdatedAtMemoryCache[id];
+        if (typeof t === "number" && t > maxTs) {
+          maxTs = t;
+        }
+      }
+      since = maxTs;
+    }
+
+    const res = await requestJson<{
+      success: boolean;
+      profile_id: number;
+      prices: MarketPriceMap;
+      priceUpdatedAt: PriceUpdatedAtMap;
+      serverTime: number;
+      totalUpdated: number;
+    }>(`/api/market/latest-prices?profileId=${pid}&since=${since}`);
+
+    if (res && res.success) {
+      if (res.profile_id && !activePriceProfileIdMemoryCache) {
+        activePriceProfileIdMemoryCache = res.profile_id;
+      }
+
+      if (
+        res.totalUpdated > 0 &&
+        (res.profile_id === pid ||
+          res.profile_id === activePriceProfileIdMemoryCache ||
+          !activePriceProfileIdMemoryCache)
+      ) {
         // Merge into in-memory caches
         pricesMemoryCache = {
           ...pricesMemoryCache,
@@ -549,6 +577,24 @@ export function startLivePriceAutoSync(intervalMs: number = 8000): void {
         };
 
         lastPriceSyncTimestamp = res.serverTime || Date.now();
+
+        // Invalidate recipe tree cache so trees and sub-crafts re-evaluate with the new prices
+        recipeTreeMapCache.clear();
+        cachedCraftableSnapshot = null;
+
+        // Persist to IndexedDB so future reloads immediately have the newest prices
+        if (typeof window !== "undefined") {
+          void setIdbVal(CACHE_KEY, {
+            items: itemsMemoryCache,
+            recipes: recipesMemoryCache,
+            prices: pricesMemoryCache,
+            priceUpdatedAt: priceUpdatedAtMemoryCache,
+            syncStatus: syncStatusMemoryCache,
+            syncSettings: syncSettingsMemoryCache,
+            priceProfiles: priceProfilesMemoryCache,
+            activePriceProfileId: activePriceProfileIdMemoryCache,
+          });
+        }
 
         // 1. Dispatch specific price updated event with details
         window.dispatchEvent(
@@ -564,14 +610,30 @@ export function startLivePriceAutoSync(intervalMs: number = 8000): void {
 
         // 2. Dispatch database updated event so all calculators re-render with fresh prices
         emitDatabaseUpdated();
-      } else if (res && res.serverTime) {
+
+        return res.totalUpdated;
+      } else if (res.serverTime) {
         lastPriceSyncTimestamp = Math.max(lastPriceSyncTimestamp, res.serverTime - 1000);
       }
-    } catch {
-      // Ignored for quiet background polling
-    } finally {
-      isPollingPrices = false;
     }
+    return 0;
+  } catch (err) {
+    console.warn("[Live Price Sync] Error polling prices:", err);
+    return 0;
+  } finally {
+    isPollingPrices = false;
+  }
+}
+
+export const triggerLivePriceSync = (forceCatchup: boolean = false): Promise<number> =>
+  executeLivePricePoll(forceCatchup);
+
+export function startLivePriceAutoSync(intervalMs: number = 8000): void {
+  if (typeof window === "undefined") return;
+
+  const poll = () => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    void executeLivePricePoll();
   };
 
   // Register Visibility and Focus listeners once
@@ -581,22 +643,22 @@ export function startLivePriceAutoSync(intervalMs: number = 8000): void {
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         // Tab became visible again: execute immediate catch-up sync
-        void poll();
+        void executeLivePricePoll();
       }
     });
 
     window.addEventListener("focus", () => {
-      void poll();
+      void executeLivePricePoll();
     });
 
     window.addEventListener("online", () => {
-      void poll();
+      void executeLivePricePoll();
     });
   }
 
   if (!livePriceSyncInterval) {
-    // Initial poll after 2s, then recurring interval
-    setTimeout(poll, 2000);
+    // Initial poll after 500ms, then recurring interval
+    setTimeout(poll, 500);
     livePriceSyncInterval = setInterval(poll, intervalMs);
   }
 }

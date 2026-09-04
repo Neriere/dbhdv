@@ -33,6 +33,7 @@ import {
   getItemFallbackIconUrl,
   resolveMissingItemNamesInBatch,
   formatRelativeTime,
+  triggerLivePriceSync,
 } from "../services/dofusDbService";
 import { matchesSearchQuery } from "../utils/searchUtils";
 import { useMarketPrices } from "../hooks/useMarketPrices";
@@ -173,6 +174,55 @@ export const RecipeCraftingCalculator: React.FC<{
     }
   }, [activePresetItem?.id, marketPrices]);
 
+  const [recipeTreeVersion, setRecipeTreeVersion] = useState<number>(0);
+  const [isSyncingLive, setIsSyncingLive] = useState<boolean>(false);
+  const [lastSyncNotice, setLastSyncNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let noticeTimeout: any = null;
+    const handlePriceUpdate = (e?: Event) => {
+      setRecipeTreeVersion((v) => v + 1);
+      const customEvent = e as CustomEvent<{ count?: number }>;
+      if (customEvent?.detail?.count && customEvent.detail.count > 0) {
+        setLastSyncNotice(`¡${customEvent.detail.count} precio(s) actualizados!`);
+        clearTimeout(noticeTimeout);
+        noticeTimeout = setTimeout(() => setLastSyncNotice(null), 4000);
+      }
+    };
+
+    const handleDatabaseUpdate = () => {
+      setRecipeTreeVersion((v) => v + 1);
+    };
+
+    window.addEventListener("dofus_prices_updated", handlePriceUpdate);
+    window.addEventListener("dofus_database_updated", handleDatabaseUpdate);
+
+    return () => {
+      clearTimeout(noticeTimeout);
+      window.removeEventListener("dofus_prices_updated", handlePriceUpdate);
+      window.removeEventListener("dofus_database_updated", handleDatabaseUpdate);
+    };
+  }, []);
+
+  const handleManualSync = async () => {
+    if (isSyncingLive) return;
+    setIsSyncingLive(true);
+    try {
+      const updatedCount = await triggerLivePriceSync(true);
+      if (updatedCount > 0) {
+        setLastSyncNotice(`¡${updatedCount} precios actualizados del mercadillo!`);
+      } else {
+        setLastSyncNotice("Precios al día con el servidor");
+      }
+      setTimeout(() => setLastSyncNotice(null), 3500);
+    } catch {
+      setLastSyncNotice("Error de conexión");
+      setTimeout(() => setLastSyncNotice(null), 3000);
+    } finally {
+      setIsSyncingLive(false);
+    }
+  };
+
   useEffect(() => {
     let isCancelled = false;
     if (activePresetItem) {
@@ -196,7 +246,7 @@ export const RecipeCraftingCalculator: React.FC<{
     return () => {
       isCancelled = true;
     };
-  }, [activePresetItem?.id]);
+  }, [activePresetItem?.id, recipeTreeVersion]);
 
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
     const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];
@@ -390,15 +440,35 @@ export const RecipeCraftingCalculator: React.FC<{
   if (isDetailView && activePresetItem) {
     return (
       <div className="space-y-4 w-full">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-lg">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
           <button
             type="button"
             onClick={() => setIsDetailView(false)}
-            className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md group cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md group cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span>Volver al Catálogo</span>
           </button>
+
+          <div className="flex items-center gap-2.5">
+            {lastSyncNotice && (
+              <span className="text-xs font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {lastSyncNotice}
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isSyncingLive}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-slate-200 hover:text-amber-300 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+              title="Comprobar y sincronizar precios más recientes enviados por el sniffer o mercadillo"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncingLive ? "animate-spin" : ""}`} />
+              <span>{isSyncingLive ? "Sincronizando..." : "Sincronizar Mercadillo"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Hero Item Banner Card */}
