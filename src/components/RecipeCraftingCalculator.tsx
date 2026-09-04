@@ -34,6 +34,7 @@ import {
   resolveMissingItemNamesInBatch,
   formatRelativeTime,
   triggerLivePriceSync,
+  clearRecipeTreeCache,
 } from "../services/dofusDbService";
 import { matchesSearchQuery } from "../utils/searchUtils";
 import { useMarketPrices } from "../hooks/useMarketPrices";
@@ -181,6 +182,7 @@ export const RecipeCraftingCalculator: React.FC<{
   useEffect(() => {
     let noticeTimeout: any = null;
     const handlePriceUpdate = (e?: Event) => {
+      clearRecipeTreeCache();
       setRecipeTreeVersion((v) => v + 1);
       const customEvent = e as CustomEvent<{ count?: number }>;
       if (customEvent?.detail?.count && customEvent.detail.count > 0) {
@@ -191,6 +193,7 @@ export const RecipeCraftingCalculator: React.FC<{
     };
 
     const handleDatabaseUpdate = () => {
+      clearRecipeTreeCache();
       setRecipeTreeVersion((v) => v + 1);
     };
 
@@ -208,6 +211,7 @@ export const RecipeCraftingCalculator: React.FC<{
     if (isSyncingLive) return;
     setIsSyncingLive(true);
     try {
+      clearRecipeTreeCache();
       const updatedCount = await triggerLivePriceSync(true);
       if (updatedCount > 0) {
         setLastSyncNotice(`¡${updatedCount} precios actualizados del mercadillo!`);
@@ -227,7 +231,8 @@ export const RecipeCraftingCalculator: React.FC<{
     let isCancelled = false;
     if (activePresetItem) {
       setLoadingTree(true);
-      buildRecipeTree(activePresetItem.id, 1, 0, 5)
+      clearRecipeTreeCache();
+      buildRecipeTree(activePresetItem.id, 1, 0, 5, new Set(), marketPrices)
         .then((tree) => {
           if (!isCancelled) {
             setRecipeTree(tree);
@@ -246,7 +251,7 @@ export const RecipeCraftingCalculator: React.FC<{
     return () => {
       isCancelled = true;
     };
-  }, [activePresetItem?.id, recipeTreeVersion]);
+  }, [activePresetItem?.id, recipeTreeVersion, marketPrices]);
 
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
     const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];

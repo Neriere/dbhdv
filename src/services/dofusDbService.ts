@@ -509,6 +509,18 @@ async function executeBootstrapFetch(): Promise<BootstrapResponse> {
 
   if (typeof window !== "undefined") {
     void setIdbVal(CACHE_KEY, bootstrap);
+    window.dispatchEvent(
+      new CustomEvent("dofus_prices_updated", {
+        detail: {
+          profileId: bootstrap.activePriceProfileId,
+          updatedPrices: bootstrap.prices,
+          priceUpdatedAt: bootstrap.priceUpdatedAt,
+          count: Object.keys(bootstrap.prices || {}).length,
+          timestamp: Date.now(),
+        },
+      })
+    );
+    emitDatabaseUpdated();
   }
 
   return bootstrap;
@@ -518,6 +530,86 @@ let livePriceSyncInterval: any = null;
 let lastPriceSyncTimestamp = 0;
 let isPollingPrices = false;
 let visibilityListenerRegistered = false;
+let liveStreamEventSource: EventSource | null = null;
+
+export function clearRecipeTreeCache(): void {
+  recipeTreeMapCache.clear();
+  cachedCraftableSnapshot = null;
+}
+
+export function connectLivePriceStream(): void {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+  if (liveStreamEventSource && liveStreamEventSource.readyState !== EventSource.CLOSED) {
+    return;
+  }
+
+  try {
+    const es = new EventSource("/api/market/live-stream");
+    liveStreamEventSource = es;
+
+    es.onmessage = (event) => {
+      try {
+        if (!event.data) return;
+        const data = JSON.parse(event.data);
+        if (data.type === "price_update" && data.itemId && typeof data.price === "number") {
+          const pid = Number(data.profileId);
+          const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+          if (pid === activePid) {
+            pricesMemoryCache[data.itemId] = data.price;
+            priceUpdatedAtMemoryCache[data.itemId] = data.updatedAt || Date.now();
+            clearRecipeTreeCache();
+
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("dofus_prices_updated", {
+                  detail: {
+                    profileId: pid,
+                    updatedPrices: { [data.itemId]: data.price },
+                    priceUpdatedAt: { [data.itemId]: data.updatedAt || Date.now() },
+                    count: 1,
+                    timestamp: data.updatedAt || Date.now(),
+                  },
+                })
+              );
+              emitDatabaseUpdated();
+            }
+          }
+        } else if (data.type === "batch_updated" && data.prices) {
+          const pid = Number(data.profileId);
+          const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+          if (pid === activePid) {
+            Object.assign(pricesMemoryCache, data.prices);
+            Object.assign(priceUpdatedAtMemoryCache, data.priceUpdatedAt || {});
+            clearRecipeTreeCache();
+
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("dofus_prices_updated", {
+                  detail: {
+                    profileId: pid,
+                    updatedPrices: data.prices,
+                    priceUpdatedAt: data.priceUpdatedAt || {},
+                    count: data.count,
+                    timestamp: data.timestamp || Date.now(),
+                  },
+                })
+              );
+              emitDatabaseUpdated();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Live Price Stream] Parse error:", err);
+      }
+    };
+
+    es.onerror = () => {
+      // EventSource reconnects automatically
+    };
+  } catch (err) {
+    console.warn("[Live Price Stream] Connection failed:", err);
+  }
+}
 
 export async function executeLivePricePoll(forceCatchup = false): Promise<number> {
   if (isPollingPrices) return 0;
@@ -532,18 +624,16 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
     const pid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
 
     // Determine baseline timestamp for incremental updates:
-    // If lastPriceSyncTimestamp is 0 (first run or forced catch-up),
-    // find the max timestamp in priceUpdatedAtMemoryCache so we fetch all prices updated since then!
-    let since = lastPriceSyncTimestamp;
-    if (!since) {
-      let maxTs = 0;
-      for (const id in priceUpdatedAtMemoryCache) {
-        const t = priceUpdatedAtMemoryCache[id];
-        if (typeof t === "number" && t > maxTs) {
-          maxTs = t;
-        }
-      }
-      since = maxTs;
+    // If lastPriceSyncTimestamp > 0, check updates since then with 3s overlap.
+    // If first run (0), look back 30 minutes to catch recent sniffer activity before page load.
+    // If forceCatchup, query 0 to sync all prices for this profile.
+    let since = 0;
+    if (forceCatchup) {
+      since = 0;
+    } else if (lastPriceSyncTimestamp > 0) {
+      since = Math.max(0, lastPriceSyncTimestamp - 3000);
+    } else {
+      since = Math.max(0, Date.now() - 30 * 60 * 1000);
     }
 
     const res = await requestJson<{
@@ -579,8 +669,7 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
         lastPriceSyncTimestamp = res.serverTime || Date.now();
 
         // Invalidate recipe tree cache so trees and sub-crafts re-evaluate with the new prices
-        recipeTreeMapCache.clear();
-        cachedCraftableSnapshot = null;
+        clearRecipeTreeCache();
 
         // Persist to IndexedDB so future reloads immediately have the newest prices
         if (typeof window !== "undefined") {
@@ -602,6 +691,7 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
             detail: {
               profileId: res.profile_id,
               updatedPrices: res.prices,
+              priceUpdatedAt: res.priceUpdatedAt,
               count: res.totalUpdated,
               timestamp: lastPriceSyncTimestamp,
             },
@@ -628,8 +718,11 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
 export const triggerLivePriceSync = (forceCatchup: boolean = false): Promise<number> =>
   executeLivePricePoll(forceCatchup);
 
-export function startLivePriceAutoSync(intervalMs: number = 8000): void {
+export function startLivePriceAutoSync(intervalMs: number = 4000): void {
   if (typeof window === "undefined") return;
+
+  // Always initialize SSE stream for real-time <10ms push updates
+  connectLivePriceStream();
 
   const poll = () => {
     if (typeof document !== "undefined" && document.hidden) return;
@@ -642,23 +735,26 @@ export function startLivePriceAutoSync(intervalMs: number = 8000): void {
 
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
-        // Tab became visible again: execute immediate catch-up sync
+        // Tab became visible again: execute immediate catch-up sync & re-check SSE
+        connectLivePriceStream();
         void executeLivePricePoll();
       }
     });
 
     window.addEventListener("focus", () => {
+      connectLivePriceStream();
       void executeLivePricePoll();
     });
 
     window.addEventListener("online", () => {
+      connectLivePriceStream();
       void executeLivePricePoll();
     });
   }
 
   if (!livePriceSyncInterval) {
-    // Initial poll after 500ms, then recurring interval
-    setTimeout(poll, 500);
+    // Initial poll after 300ms, then recurring interval fallback
+    setTimeout(poll, 300);
     livePriceSyncInterval = setInterval(poll, intervalMs);
   }
 }
@@ -667,6 +763,10 @@ export function stopLivePriceAutoSync(): void {
   if (livePriceSyncInterval) {
     clearInterval(livePriceSyncInterval);
     livePriceSyncInterval = null;
+  }
+  if (liveStreamEventSource) {
+    liveStreamEventSource.close();
+    liveStreamEventSource = null;
   }
 }
 

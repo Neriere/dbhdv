@@ -47,7 +47,10 @@ export function useMarketPrices(): UseMarketPricesReturn {
 
   useEffect(() => {
     const handlePricesUpdated = (event?: Event) => {
-      const customEvent = event as CustomEvent<{ updatedPrices?: MarketPriceMap }>;
+      const customEvent = event as CustomEvent<{
+        updatedPrices?: MarketPriceMap;
+        priceUpdatedAt?: PriceUpdatedAtMap;
+      }>;
       if (customEvent?.detail?.updatedPrices) {
         setMarketPrices((prev) => ({
           ...prev,
@@ -56,7 +59,15 @@ export function useMarketPrices(): UseMarketPricesReturn {
       } else {
         setMarketPrices({ ...getStoredMarketPrices() });
       }
-      setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
+
+      if (customEvent?.detail?.priceUpdatedAt) {
+        setPriceUpdatedAt((prev) => ({
+          ...prev,
+          ...customEvent.detail.priceUpdatedAt,
+        }));
+      } else {
+        setPriceUpdatedAt({ ...getStoredPriceUpdatedAt() });
+      }
     };
 
     const handleDatabaseUpdated = () => {

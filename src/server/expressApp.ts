@@ -1,7 +1,6 @@
 import express from "express";
 import compression from "compression";
 import path from "path";
-import basicAuth from "express-basic-auth";
 import {
   changeActivePriceProfile,
   deleteAllStoredPrices,
@@ -47,6 +46,7 @@ import {
   getItemsDictionary,
   getLatestMarketPricesDelta,
   getProfileIdByServerNameOrSlug,
+  marketEvents,
 } from "./localDataStore";
 
 
@@ -72,10 +72,6 @@ initDB()
 
 const PORT = Number(process.env.PORT || process.env.APP_PORT || 3000);
 const HOST = process.env.APP_HOST || "0.0.0.0";
-const BASIC_AUTH_USER = process.env.APP_BASIC_AUTH_USER;
-const BASIC_AUTH_PASSWORD = process.env.APP_BASIC_AUTH_PASSWORD;
-const BASIC_AUTH_REALM =
-  process.env.APP_BASIC_AUTH_REALM || "Acceso Privado DofusDB";
 
 app.use(compression() as unknown as express.RequestHandler);
 app.use(express.json({ limit: "50mb" }));
@@ -84,33 +80,6 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
 });
-
-
-if (
-  BASIC_AUTH_USER &&
-  BASIC_AUTH_PASSWORD &&
-  BASIC_AUTH_USER.trim() !== "" &&
-  BASIC_AUTH_PASSWORD.trim() !== "" &&
-  BASIC_AUTH_USER !== "missing-env-var" &&
-  BASIC_AUTH_PASSWORD !== "missing-env-var"
-) {
-  const authMiddleware = basicAuth({
-    users: { [BASIC_AUTH_USER]: BASIC_AUTH_PASSWORD },
-    challenge: true,
-    realm: BASIC_AUTH_REALM,
-  });
-
-  app.use((req, res, next) => {
-    // Exempt all internal API routes, proxies, market sniffer, and health check from Basic Auth prompt
-    if (
-      req.path.startsWith("/api/") ||
-      req.path === "/api/health"
-    ) {
-      return next();
-    }
-    return authMiddleware(req, res, next);
-  });
-}
 
 app.get("/api/local-db/bootstrap", async (req, res) => {
   try {
@@ -818,6 +787,65 @@ app.get("/api/market/latest-prices", async (req, res) => {
       error: error.message || "Error al obtener precios recientes",
     });
   }
+});
+
+const liveSseClients = new Set<express.Response>();
+
+marketEvents.on("price_update", (data) => {
+  const payload = JSON.stringify({
+    type: "price_update",
+    ...data,
+  });
+  for (const client of Array.from(liveSseClients)) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      liveSseClients.delete(client);
+    }
+  }
+});
+
+marketEvents.on("batch_updated", (data) => {
+  const payload = JSON.stringify({
+    type: "batch_updated",
+    ...data,
+  });
+  for (const client of Array.from(liveSseClients)) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      liveSseClients.delete(client);
+    }
+  }
+});
+
+app.get("/api/market/live-stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders?.();
+
+  // Send initial connection confirmation
+  res.write(
+    `data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`
+  );
+
+  liveSseClients.add(res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": heartbeat\n\n");
+    } catch {
+      clearInterval(heartbeat);
+      liveSseClients.delete(res);
+    }
+  }, 20000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    liveSseClients.delete(res);
+  });
 });
 
 app.get("/api/market/sniffer-script", (req, res) => {

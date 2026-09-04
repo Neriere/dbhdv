@@ -1,6 +1,9 @@
 import fs from "fs";
-
 import path from "path";
+import { EventEmitter } from "events";
+
+export const marketEvents = new EventEmitter();
+marketEvents.setMaxListeners(100);
 import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
 import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
@@ -2542,6 +2545,14 @@ export async function processAndIngestMarketPrice(
   if (finalPrice > 0) {
     await upsertPrice(profileId, itemId, finalPrice, payload.source || 'sniffer');
     invalidateServerBootstrapCache();
+    marketEvents.emit("price_update", {
+      profileId,
+      itemId,
+      price: finalPrice,
+      updatedAt: now,
+      name: resolvedName,
+      source: payload.source || "sniffer",
+    });
   }
 
   return {
@@ -2793,6 +2804,24 @@ export async function processAndIngestMarketPricesBatch(
 
   invalidateServerBootstrapCache();
 
+  if (results.length > 0) {
+    const batchPrices: MarketPriceMap = {};
+    const batchUpdatedAt: PriceUpdatedAtMap = {};
+    for (const r of results) {
+      if (r.calculated_price > 0) {
+        batchPrices[r.item_id] = r.calculated_price;
+        batchUpdatedAt[r.item_id] = r.updated_at;
+      }
+    }
+    marketEvents.emit("batch_updated", {
+      profileId: results[0]?.profile_id || 1,
+      prices: batchPrices,
+      priceUpdatedAt: batchUpdatedAt,
+      count: Object.keys(batchPrices).length,
+      timestamp: Date.now(),
+    });
+  }
+
   return {
     success: true,
     total_processed: results.length,
@@ -2814,7 +2843,7 @@ export async function getLatestMarketPricesDelta(
 
   try {
     const result = await database.execute({
-      sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at > ? ORDER BY updated_at ASC",
+      sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC",
       args: [profileId, safeSince],
     });
 
