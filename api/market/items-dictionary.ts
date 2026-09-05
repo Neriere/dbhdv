@@ -24,6 +24,10 @@ export default function handler(req: any, res: any) {
   }
 
   try {
+    const isDownload = req.url?.includes("download") || req.query?.download;
+    if (isDownload) {
+      res.setHeader("Content-Disposition", "attachment; filename=items_db.json");
+    }
     const dict = getDecompressedDictionary();
     return res.status(200).json(dict);
   } catch (error: any) {

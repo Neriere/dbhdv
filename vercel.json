@@ -1,12 +1,21 @@
 {
-  "framework": "vite",
+  "outputDirectory": "dist",
+  "buildCommand": "vite build",
   "rewrites": [
     {
       "source": "/api/ping",
       "destination": "/api/health"
     },
     {
-      "source": "/(.*)",
+      "source": "/api/market/download-items-db",
+      "destination": "/api/market/items-dictionary"
+    },
+    {
+      "source": "/api/market/batch-update",
+      "destination": "/api/market/update"
+    },
+    {
+      "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
       "destination": "/index.html"
     }
   ]
