@@ -1,6 +1,6 @@
-import { buildItemsDictionary } from "../../src/data/itemsDictionaryData";
+import { getDecompressedDictionary } from "./items-dictionary";
 
-export default async function handler(req: any, res: any) {
+export default function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
@@ -13,10 +13,10 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const dict = buildItemsDictionary();
+    const dict = getDecompressedDictionary();
     return res.status(200).send(JSON.stringify(dict, null, 2));
   } catch (error: any) {
     console.error("[API market/download-items-db Error]:", error);
-    return res.status(200).json({});
+    return res.status(500).json({ error: "Error al generar items_db.json" });
   }
 }

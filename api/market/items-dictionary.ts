@@ -4,6 +4,15 @@ const COMPRESSED_DICT = "H4sIAAAAAAAAA5y9S5PkNrIu+Fdo2vS9Zt3Hgm/y7LKyXlJWSjVZ2dW
 
 let cachedDict: Record<string, string> | null = null;
 
+export function getDecompressedDictionary(): Record<string, string> {
+  if (!cachedDict) {
+    const buffer = Buffer.from(COMPRESSED_DICT, "base64");
+    const decompressed = zlib.gunzipSync(buffer);
+    cachedDict = JSON.parse(decompressed.toString("utf-8"));
+  }
+  return cachedDict;
+}
+
 export default function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -15,12 +24,8 @@ export default function handler(req: any, res: any) {
   }
 
   try {
-    if (!cachedDict) {
-      const buffer = Buffer.from(COMPRESSED_DICT, "base64");
-      const decompressed = zlib.gunzipSync(buffer);
-      cachedDict = JSON.parse(decompressed.toString("utf-8"));
-    }
-    return res.status(200).json(cachedDict);
+    const dict = getDecompressedDictionary();
+    return res.status(200).json(dict);
   } catch (error: any) {
     return res.status(500).json({ error: "Error al descomprimir diccionario", details: error?.message });
   }

@@ -7,10 +7,6 @@
       "destination": "/api/health"
     },
     {
-      "source": "/api/market/download-items-db",
-      "destination": "/api/market/items-dictionary"
-    },
-    {
       "source": "/api/market/batch-update",
       "destination": "/api/market/update"
     },
