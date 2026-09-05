@@ -1,13 +1,12 @@
 {
-  "outputDirectory": "dist",
-  "buildCommand": "vite build",
+  "framework": "vite",
   "rewrites": [
     {
       "source": "/api/ping",
       "destination": "/api/health"
     },
     {
-      "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
