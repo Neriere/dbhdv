@@ -611,7 +611,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
       } else if (mode === 'max') {
         newValues[st.rune.id] = st.statMax;
       } else {
-        newValues[st.rune.id] = Math.ceil((st.statMin + st.statMax) / 2);
+        newValues[st.rune.id] = Math.floor((st.statMin + st.statMax) / 2);
       }
     }
     setCustomStatValues(newValues);

@@ -154,12 +154,12 @@ export const CrushingRunesTable: React.FC<CrushingRunesTableProps> = ({
                           onClick={() =>
                             onStatChange(
                               yieldItem.rune.id,
-                              String(Math.ceil((yieldItem.statMin + yieldItem.statMax) / 2))
+                              String(Math.floor((yieldItem.statMin + yieldItem.statMax) / 2))
                             )
                           }
                           className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition-all ${
                             yieldItem.statSelectedVal ===
-                            Math.ceil((yieldItem.statMin + yieldItem.statMax) / 2)
+                            Math.floor((yieldItem.statMin + yieldItem.statMax) / 2)
                               ? 'bg-amber-500 text-slate-950 font-black'
                               : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
                           }`}
