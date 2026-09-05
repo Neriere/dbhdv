@@ -7,10 +7,6 @@
       "destination": "/api/health"
     },
     {
-      "source": "/api/market/batch-update",
-      "destination": "/api/market/update"
-    },
-    {
       "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
       "destination": "/index.html"
     }
