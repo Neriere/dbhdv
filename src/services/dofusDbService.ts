@@ -34,6 +34,8 @@ import {
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
+import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_BY_ID } from "../data/dofusAllRunesDict";
+import { SUPPLEMENTARY_ITEMS_DICT } from "../data/supplementaryItemsDict";
 import bycGeneratedDb from "../data/bycGeneratedDbData";
 
 
@@ -1223,6 +1225,19 @@ export const KNOWN_SPECIAL_INGREDIENTS: Record<number, Partial<DofusItem>> = {
         }
       }
     }
+    // Todas las 105 Runas oficiales de Dofus (Base, Bu/Pa, Su/Ra, Daños, Resis, Dofus 3)
+    for (const rune of ALL_DOFUS_RUNES) {
+      if (!res[rune.id]) {
+        res[rune.id] = {
+          id: rune.id,
+          name: { es: rune.name.es, fr: rune.name.fr, en: rune.name.en },
+          iconId: rune.iconId,
+          level: rune.level,
+          typeId: 78,
+          type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+        };
+      }
+    }
     return res;
   })(),
 };
@@ -1238,6 +1253,19 @@ export function getItemName(item: unknown): string {
     name?: string | { es?: string; fr?: string; en?: string };
   };
 
+  if (typedItem.id && ALL_DOFUS_RUNES_BY_ID[typedItem.id]) {
+    const rune = ALL_DOFUS_RUNES_BY_ID[typedItem.id];
+    if (
+      !typedItem.name ||
+      (typeof typedItem.name === "object" &&
+        (!typedItem.name.es || typedItem.name.es.startsWith("Objeto #") || typedItem.name.es.startsWith("Ingrediente #"))) ||
+      (typeof typedItem.name === "string" &&
+        (typedItem.name.startsWith("Objeto #") || typedItem.name.startsWith("Ingrediente #")))
+    ) {
+      return rune.name.es || `Objeto #${typedItem.id}`;
+    }
+  }
+
   if (typedItem.id && KNOWN_SPECIAL_INGREDIENTS[typedItem.id]) {
     const known = KNOWN_SPECIAL_INGREDIENTS[typedItem.id];
     if (
@@ -1251,6 +1279,18 @@ export function getItemName(item: unknown): string {
         (typeof known.name === "object" ? known.name?.es : (known.name as string)) ||
         `Objeto #${typedItem.id}`
       );
+    }
+  }
+
+  if (typedItem.id && SUPPLEMENTARY_ITEMS_DICT[String(typedItem.id)]) {
+    if (
+      !typedItem.name ||
+      (typeof typedItem.name === "object" &&
+        (!typedItem.name.es || typedItem.name.es.startsWith("Objeto #") || typedItem.name.es.startsWith("Ingrediente #"))) ||
+      (typeof typedItem.name === "string" &&
+        (typedItem.name.startsWith("Objeto #") || typedItem.name.startsWith("Ingrediente #")))
+    ) {
+      return SUPPLEMENTARY_ITEMS_DICT[String(typedItem.id)];
     }
   }
 

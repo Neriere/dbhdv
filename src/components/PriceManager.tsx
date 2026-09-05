@@ -50,6 +50,7 @@ import {
 } from '../services/dofusDbService';
 import { DOFUS_DB_TYPE_TO_JOB_MAP, DOFUS_DU_TYPE_TO_JOB_MAP } from '../data/jobCategoryDatabase';
 import { DOFUS_BASE_RUNES, BASE_RUNES_BY_ID } from '../data/dofusRuneWeights';
+import { ALL_DOFUS_RUNES } from '../data/dofusAllRunesDict';
 import { isOmittedItem, isDofusItem } from '../data/dofusJobs';
 import { RuneIcon } from './RuneIcon';
 import { matchesSearchQuery } from '../utils/searchUtils';
@@ -115,14 +116,14 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   useEffect(() => {
     const hydrateState = () => {
       const storedPrices = getStoredMarketPrices();
-      const baseRuneItems: DofusItem[] = DOFUS_BASE_RUNES.map((r) => ({
+      const baseRuneItems: DofusItem[] = ALL_DOFUS_RUNES.map((r) => ({
         id: r.id,
-        name: { es: r.name, fr: r.name, en: r.name },
-        level: 1,
+        name: { es: r.name.es, fr: r.name.fr, en: r.name.en },
+        level: r.level || 1,
         typeId: 78,
         type: { id: 78, name: { es: 'Runa', fr: 'Rune', en: 'Rune' } },
-        iconId: r.iconId,
-        description: { es: `${r.description} (Peso: ${r.unitWeight})` },
+        iconId: r.iconId || 78000,
+        description: { es: `Runa oficial de forjamagia y triturado.` },
       }));
 
       const imported = getImportedItems().filter((i) => !isOmittedItem(i));
@@ -370,7 +371,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       return typeId === 23 || isDofusItem(item);
     }
     if (cat === 'runes') {
-      return typeId === 78 || typeId === 18 || DOFUS_BASE_RUNES.some((r) => r.id === item.id);
+      return typeId === 78 || typeId === 18 || ALL_DOFUS_RUNES.some((r) => r.id === item.id);
     }
     if (cat === 'has_price') return (Number(marketPrices[item.id]) || 0) > 0;
     if (cat === 'without_price') return !marketPrices[item.id] || Number(marketPrices[item.id]) === 0;
@@ -453,7 +454,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       without_price: 0,
     };
 
-    const runeIdsSet = new Set(DOFUS_BASE_RUNES.map((r) => r.id));
+    const runeIdsSet = new Set(ALL_DOFUS_RUNES.map((r) => r.id));
     const equipTypeIdsSet = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 19, 82, 112, 151, 217, 271]);
     const campesinoTypes = new Set([34, 33, 37, 58, 60, 68, 46, 28, 128, 129]);
     const lenadorTypes = new Set([38, 95, 96, 98, 183, 185, 242, 12, 170]);

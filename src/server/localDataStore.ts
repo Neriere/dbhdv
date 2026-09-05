@@ -7,6 +7,8 @@ marketEvents.setMaxListeners(100);
 import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
 import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
+import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_DICT, ALL_DOFUS_RUNES_BY_ID } from "../data/dofusAllRunesDict";
+import { SUPPLEMENTARY_ITEMS_DICT } from "../data/supplementaryItemsDict";
 import { PRESET_CRAFTABLE_ITEMS } from "../data/presetCraftableItems";
 import { getDofusDbSeedData } from "../data/dofusDbSeedData";
 import { buildItemsDictionary } from "../data/itemsDictionaryData";
@@ -665,6 +667,25 @@ export async function ensureRunesInDatabase(): Promise<void> {
       });
       if (craftable.recipeData) {
         allRuneRecipes.push(craftable.recipeData);
+      }
+    }
+
+    // Asegurar que las 105 Runas de Dofus existan completas con sus nombres y categorías
+    for (const rune of ALL_DOFUS_RUNES) {
+      if (!allRuneItems.some((i) => i.id === rune.id)) {
+        allRuneItems.push({
+          id: rune.id,
+          level: rune.level || 1,
+          typeId: 78,
+          iconId: rune.iconId || 78000,
+          name: {
+            es: rune.name.es,
+            fr: rune.name.fr,
+            en: rune.name.en,
+          },
+          type: { id: 78, superCategoryId: 0, name: { es: "Runa", fr: "Rune", en: "Rune" } },
+          hasRecipe: false,
+        });
       }
     }
 
@@ -2530,16 +2551,22 @@ export async function processAndIngestMarketPrice(
   // 3. Resolución o inserción del nombre del objeto si no viene o falta en la base local
   let resolvedName = (payload.item_name || '').trim();
   if (!resolvedName || resolvedName.startsWith('Item #') || resolvedName.startsWith('Objeto #')) {
-    try {
-      const itemRecord = await getOrFetchItemById(itemId);
-      if (itemRecord?.name?.es) {
-        resolvedName = itemRecord.name.es;
+    if (ALL_DOFUS_RUNES_DICT[String(itemId)]) {
+      resolvedName = ALL_DOFUS_RUNES_DICT[String(itemId)];
+    } else if (SUPPLEMENTARY_ITEMS_DICT[String(itemId)]) {
+      resolvedName = SUPPLEMENTARY_ITEMS_DICT[String(itemId)];
+    } else {
+      try {
+        const itemRecord = await getOrFetchItemById(itemId);
+        if (itemRecord?.name?.es) {
+          resolvedName = itemRecord.name.es;
+        }
+      } catch {
+        // Ignored fallback
       }
-    } catch {
-      // Ignored fallback
-    }
-    if (!resolvedName) {
-      resolvedName = `Objeto #${itemId}`;
+      if (!resolvedName) {
+        resolvedName = `Objeto #${itemId}`;
+      }
     }
   }
 
@@ -2692,15 +2719,21 @@ export async function processAndIngestMarketPricesBatch(
 
     let resolvedName = (payload.item_name || '').trim();
     if (!resolvedName || resolvedName.startsWith('Item #') || resolvedName.startsWith('Objeto #')) {
-      const staticItem = getStaticItemById(itemId);
-      if (staticItem?.name?.es) {
-        resolvedName = staticItem.name.es;
-      } else if (SERVER_KNOWN_ITEMS[itemId]?.name?.es) {
-        resolvedName = SERVER_KNOWN_ITEMS[itemId].name.es;
-      } else if (cachedItemsDictionary && cachedItemsDictionary[String(itemId)]) {
-        resolvedName = cachedItemsDictionary[String(itemId)];
+      if (ALL_DOFUS_RUNES_DICT[String(itemId)]) {
+        resolvedName = ALL_DOFUS_RUNES_DICT[String(itemId)];
+      } else if (SUPPLEMENTARY_ITEMS_DICT[String(itemId)]) {
+        resolvedName = SUPPLEMENTARY_ITEMS_DICT[String(itemId)];
       } else {
-        resolvedName = `Objeto #${itemId}`;
+        const staticItem = getStaticItemById(itemId);
+        if (staticItem?.name?.es) {
+          resolvedName = staticItem.name.es;
+        } else if (SERVER_KNOWN_ITEMS[itemId]?.name?.es) {
+          resolvedName = SERVER_KNOWN_ITEMS[itemId].name.es;
+        } else if (cachedItemsDictionary && cachedItemsDictionary[String(itemId)]) {
+          resolvedName = cachedItemsDictionary[String(itemId)];
+        } else {
+          resolvedName = `Objeto #${itemId}`;
+        }
       }
     }
 

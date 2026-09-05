@@ -190,7 +190,34 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals(
 LOCAL_DB_FILE = os.path.join(SCRIPT_DIR, "items_db.json")
 # =======================================================
 
-ITEMS_DB = {}
+# Diccionario nativo integrado con las 105 Runas oficiales de Dofus (resolución 0ms sin esperas)
+DEFAULT_RUNES_DB = {
+    "1519": "Runa Fu", "1521": "Runa Sa", "1522": "Runa Inte", "1523": "Runa Vi", "1524": "Runa Agi", "1525": "Runa Sue",
+    "1545": "Runa Bu Fu", "1546": "Runa Bu Sa", "1547": "Runa Bu Inte", "1548": "Runa Bu Vi", "1549": "Runa Bu Agi", "1550": "Runa Bu Sue",
+    "1551": "Runa Su Fu", "1552": "Runa Su Sa", "1553": "Runa Su Inte", "1554": "Runa Su Vi", "1555": "Runa Su Agi", "1556": "Runa Su Sue",
+    "1557": "Runa Ga PA", "1558": "Runa Ga PM", "7433": "Runa Cri", "7434": "Runa Cu", "7435": "Runa Da", "7436": "Runa Pot",
+    "7437": "Runa Da Reen", "7438": "Runa Al", "7442": "Runa Invo", "7443": "Runa Pod", "7444": "Runa Bu Pod", "7445": "Runa Su Pod",
+    "7446": "Runa Da Tram", "7447": "Runa Por Tram", "7448": "Runa Ini", "7449": "Runa Bu Ini", "7450": "Runa Su Ini",
+    "7451": "Runa Prospe", "7452": "Runa Re Fuego", "7453": "Runa Re Aire", "7454": "Runa Re Agua", "7455": "Runa Re Tierra",
+    "7456": "Runa Re Neutral", "7457": "Runa Re Fuego Por", "7458": "Runa Re Aire Por", "7459": "Runa Re Tierra Por",
+    "7460": "Runa Re Neutral Por", "7508": "Runa de firma", "7560": "Runa Re Agua Por", "10057": "Runa de caza",
+    "10613": "Runa Bu Da Tram", "10615": "Runa Bu Por Tram", "10616": "Runa Su Por Tram", "10618": "Runa Bu Pot",
+    "10619": "Runa Su Pot", "10662": "Runa Bu Prospe", "11637": "Runa Hui", "11638": "Runa Bu Hui", "11639": "Runa Pla",
+    "11640": "Runa Bu Pla", "11641": "Runa Re PA", "11642": "Runa Bu Re PA", "11643": "Runa Re PM", "11644": "Runa Bu Re PM",
+    "11645": "Runa Ret PA", "11646": "Runa Bu Ret PA", "11647": "Runa Ret PM", "11648": "Runa Bu Ret PM", "11649": "Runa Da Emp",
+    "11650": "Runa Bu Da Emp", "11651": "Runa Re Emp", "11652": "Runa Bu Re Emp", "11653": "Runa Da Cri", "11654": "Runa Bu Da Cri",
+    "11655": "Runa Re Cri", "11656": "Runa Bu Re Cri", "11657": "Runa Da Tierra", "11658": "Runa Bu Da Tierra",
+    "11659": "Runa Da Fuego", "11660": "Runa Bu Da Fuego", "11661": "Runa Da Agua", "11662": "Runa Bu Da Agua",
+    "11663": "Runa Da Aire", "11664": "Runa Bu Da Aire", "11665": "Runa Da Neutral", "11666": "Runa Bu Da Neutral",
+    "18719": "Runa Da Por CC", "18720": "Runa Da Por Di", "18721": "Runa Da Por Ar", "18722": "Runa Da Por He",
+    "18723": "Runa Re Por CC", "18724": "Runa Re Por Di", "19337": "Runa Bu Cu", "19338": "Runa Bu Re Aire",
+    "19339": "Runa Bu Re Agua", "19340": "Runa Bu Re Fuego", "19341": "Runa Bu Re Neutral", "19342": "Runa Bu Re Tierra",
+    "29683": "Runa Su Re Emp", "29684": "Runa Su Da Emp", "30695": "Runa Su Re Tierra", "30696": "Runa Su Re Neutral",
+    "30697": "Runa Su Re Fuego", "30698": "Runa Su Re Agua", "30699": "Runa Su Re Cri", "30700": "Runa Su Re Aire",
+    "30942": "Runa Bu Da Reen"
+}
+
+ITEMS_DB = dict(DEFAULT_RUNES_DB)
 packet_queue = queue.Queue(maxsize=2000)
 http_session = requests.Session()
 _db_dirty = False
@@ -210,15 +237,22 @@ def save_local_db():
 
 def load_or_download_items_db():
     global ITEMS_DB, _db_dirty
-    if os.path.exists(LOCAL_DB_FILE) and os.path.getsize(LOCAL_DB_FILE) > 500:
+    need_download = not os.path.exists(LOCAL_DB_FILE) or os.path.getsize(LOCAL_DB_FILE) < 500
+    if not need_download:
         try:
             with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
-                ITEMS_DB = json.load(f)
-            if len(ITEMS_DB) > 50:
+                loaded = json.load(f)
+            ITEMS_DB.update(loaded)
+            # Asegurar siempre que todas las 105 runas oficiales estén en memoria
+            ITEMS_DB.update(DEFAULT_RUNES_DB)
+            # Si faltan runas avanzadas o ingredientes suplementarios, actualizar
+            if "1550" not in loaded or "1545" not in loaded or "1551" not in loaded or "30696" not in loaded or "1337" not in loaded or "8724" not in loaded:
+                need_download = True
+            elif len(ITEMS_DB) > 50:
                 print(f"[DB Local] OK Cargados {len(ITEMS_DB):,} nombres de objetos desde items_db.json")
                 return
         except Exception:
-            pass
+            need_download = True
 
     print(f"[DB Local] Descargando base de nombres de objetos...")
     downloaded = False
@@ -231,9 +265,10 @@ def load_or_download_items_db():
                     if data.strip().startswith("{"):
                         parsed = json.loads(data)
                         if isinstance(parsed, dict) and len(parsed) > 50:
-                            ITEMS_DB = parsed
+                            ITEMS_DB.update(parsed)
+                            ITEMS_DB.update(DEFAULT_RUNES_DB)
                             with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
-                                f.write(data)
+                                json.dump(ITEMS_DB, f, ensure_ascii=False)
                             print(f"[DB Local] OK Base de datos guardada ({len(ITEMS_DB):,} objetos listos en memoria).")
                             downloaded = True
                             break
@@ -241,7 +276,7 @@ def load_or_download_items_db():
             continue
 
     if not downloaded:
-        print("[DB Local] Aviso: Servidor en modo diferido. Los nombres se resolveran en vivo automaticamente al inspeccionar objetos.")
+        print("[DB Local] Aviso: Servidor en modo diferido. Se usarán las runas y base en memoria.")
 
 def get_item_name(item_id):
     global _db_dirty
@@ -251,11 +286,14 @@ def get_item_name(item_id):
     str_id = str(item_id)
     if str_id in ITEMS_DB:
         return ITEMS_DB[str_id]
+    if str_id in DEFAULT_RUNES_DB:
+        ITEMS_DB[str_id] = DEFAULT_RUNES_DB[str_id]
+        return DEFAULT_RUNES_DB[str_id]
 
     # Auto-resolución en vivo desde DofusDB oficial
     try:
         req = urllib.request.Request(
-            f"https://api.dofusdb.fr/items/{item_id}",
+            f"https://api.dofusdb.fr/items/{item_id}?lang=es",
             headers={"User-Agent": "DofusSniffer/2.0"}
         )
         with urllib.request.urlopen(req, timeout=2.0) as resp:
