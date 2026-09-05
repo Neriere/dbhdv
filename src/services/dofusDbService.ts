@@ -34,8 +34,9 @@ import {
   PresetCraftableItem,
 } from "../data/presetCraftableItems";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
-import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_BY_ID } from "../data/dofusAllRunesDict";
+import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_BY_ID, ALL_DOFUS_RUNES_DICT } from "../data/dofusAllRunesDict";
 import { SUPPLEMENTARY_ITEMS_DICT } from "../data/supplementaryItemsDict";
+import { STATIC_ITEMS_DICT } from "../data/staticItemsDict";
 import bycGeneratedDb from "../data/bycGeneratedDbData";
 
 
@@ -1282,15 +1283,22 @@ export function getItemName(item: unknown): string {
     }
   }
 
-  if (typedItem.id && SUPPLEMENTARY_ITEMS_DICT[String(typedItem.id)]) {
-    if (
-      !typedItem.name ||
-      (typeof typedItem.name === "object" &&
-        (!typedItem.name.es || typedItem.name.es.startsWith("Objeto #") || typedItem.name.es.startsWith("Ingrediente #"))) ||
-      (typeof typedItem.name === "string" &&
-        (typedItem.name.startsWith("Objeto #") || typedItem.name.startsWith("Ingrediente #")))
-    ) {
-      return SUPPLEMENTARY_ITEMS_DICT[String(typedItem.id)];
+  if (typedItem.id) {
+    const sId = String(typedItem.id);
+    const staticName =
+      STATIC_ITEMS_DICT[sId] ||
+      ALL_DOFUS_RUNES_DICT[sId] ||
+      SUPPLEMENTARY_ITEMS_DICT[sId];
+    if (staticName) {
+      if (
+        !typedItem.name ||
+        (typeof typedItem.name === "object" &&
+          (!typedItem.name.es || typedItem.name.es.startsWith("Objeto #") || typedItem.name.es.startsWith("Ingrediente #"))) ||
+        (typeof typedItem.name === "string" &&
+          (typedItem.name.startsWith("Objeto #") || typedItem.name.startsWith("Ingrediente #")))
+      ) {
+        return staticName;
+      }
     }
   }
 
@@ -1299,16 +1307,28 @@ export function getItemName(item: unknown): string {
   }
 
   if (typedItem.name && typeof typedItem.name === "object") {
-    return (
+    const candidate =
       typedItem.name.es ||
       typedItem.name.fr ||
-      typedItem.name.en ||
-      `Objeto #${typedItem.id || ""}`
-    );
+      typedItem.name.en;
+    if (candidate && !candidate.startsWith("Objeto #") && !candidate.startsWith("Item #")) {
+      return candidate;
+    }
   }
 
-  if (typeof typedItem.title === "string") {
+  if (typeof typedItem.title === "string" && typedItem.title) {
     return typedItem.title;
+  }
+
+  if (typedItem.id) {
+    const sId = String(typedItem.id);
+    const staticName =
+      STATIC_ITEMS_DICT[sId] ||
+      ALL_DOFUS_RUNES_DICT[sId] ||
+      SUPPLEMENTARY_ITEMS_DICT[sId];
+    if (staticName) {
+      return staticName;
+    }
   }
 
   return `Objeto #${typedItem.id || ""}`;
@@ -1639,6 +1659,11 @@ const presetItemMap = new Map<number, PresetCraftableItem>(
 );
 
 export function getCraftableItemsSnapshot(): CraftableItem[] {
+  const importedItems = getImportedItems();
+  if (importedItems.length === 0) {
+    return ALL_PRESET_ITEMS;
+  }
+
   if (
     cachedCraftableSnapshot &&
     cachedCraftableSnapshot.length > ALL_PRESET_ITEMS.length
@@ -1646,7 +1671,6 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     return cachedCraftableSnapshot;
   }
 
-  const importedItems = getImportedItems();
   const storedRecipes = getStoredRecipes();
   const importedMap = new Map<number, DofusItem>();
   importedItems.forEach((item) => importedMap.set(item.id, item));
@@ -1694,16 +1718,24 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
       continue;
     }
 
+    const sId = String(resultId);
+    const knownName =
+      STATIC_ITEMS_DICT[sId] ||
+      ALL_DOFUS_RUNES_DICT[sId] ||
+      SUPPLEMENTARY_ITEMS_DICT[sId] ||
+      "";
+    const resolvedName = knownName || `Objeto #${resultId}`;
+
     resultList.push({
       id: resultId,
       level: 1,
       name: {
-        es: `Objeto #${resultId}`,
-        fr: `Objet #${resultId}`,
-        en: `Item #${resultId}`,
+        es: resolvedName,
+        fr: resolvedName,
+        en: resolvedName,
       },
       typeId: 0,
-      iconId: 0,
+      iconId: resultId,
       jobId: job.jobId,
       jobNameEs: job.jobNameEs,
       defaultMarketSalePrice: 0,
