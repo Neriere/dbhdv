@@ -384,7 +384,14 @@ def async_worker():
                 if res.status_code == 200:
                     data = res.json()
                     c_price = data.get("calculated_price", 0)
-                    print(f"[{now_str}]  [{item['type'].upper()}] {item['item_name']} (#{item['item_id']}) -> {c_price:,} k (Guardado)")
+                    is_anti_troll = data.get("anti_troll_triggered", False)
+                    outliers = data.get("filtered_outliers", 0)
+                    extra = ""
+                    if is_anti_troll:
+                        extra = " (Protegido contra precio atipico)"
+                    elif outliers > 0:
+                        extra = f" (Filtro {outliers} cebo/outlier)"
+                    print(f"[{now_str}]  [{item['type'].upper()}] {item['item_name']} (#{item['item_id']}) -> {c_price:,} k (Guardado{extra})")
                 else:
                     print(f"[{now_str}]  Error {res.status_code}: {res.text}")
             else:
