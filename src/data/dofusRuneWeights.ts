@@ -1,0 +1,2205 @@
+// Official Dofus Characteristic Runic Weights & Base Runes Database
+// Based on Dofus Brisage Mechanics & Kamaskope Standard:
+// Formula: LinePower_i = (3 * (StatVal_i / StatPerRune_i) * UnitWeight_i * (Level / 200) + 1)
+// Normal Runes = (LinePower_i * (Coeff / 100)) / UnitWeight_i
+// Focus Runes = ((LinePower_K + SUM_other(LinePower_j / 2)) * (Coeff / 100)) / UnitWeight_K
+
+import { DofusEffect, DofusItem } from "../types.js";
+
+export interface BaseRuneDefinition {
+  id: number; // Authentic Item ID for the rune in Dofus
+  name: string; // Spanish name
+  nameFr: string;
+  nameEn: string;
+  shortCode: string;
+  symbol: string;
+  color: string;
+  characteristicId: number; // Primary characteristic ID in DofusDB
+  effectIds: number[]; // DofusDB effect IDs matching this rune
+  unitWeight: number; // Poids / Peso rúnico
+  statPerRune: number; // How much stat 1 base rune represents (e.g. Vi=5, Ini=10, Pods=10, others=1)
+  category: "primaria" | "secundaria" | "dano" | "resistencia" | "especial";
+  iconId: number; // Authentic DofusDB icon ID
+  defaultPrice: number; // Default price in Kamas
+  description: string;
+  textMatches?: string[]; // Keywords for fallback regex matching
+}
+
+export const DOFUS_BASE_RUNES: BaseRuneDefinition[] = [
+  // ==========================================
+  // 1. CARACTERÍSTICAS ESPECIALES / EXÓTICAS
+  // ==========================================
+  {
+    id: 1557,
+    name: "Runa Ga PA",
+    nameFr: "Rune Ga PA",
+    nameEn: "AP Rune",
+    shortCode: "PA",
+    symbol: "PA",
+    color: "#f59e0b",
+    characteristicId: 1,
+    effectIds: [111],
+    unitWeight: 100,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78055,
+    defaultPrice: 50000,
+    description: "+1 PA",
+    textMatches: ["pa", "punto de acción", "puntos de acción", "point d'action", "action point"],
+  },
+  {
+    id: 1558,
+    name: "Runa Ga PM",
+    nameFr: "Rune Ga PM",
+    nameEn: "MP Rune",
+    shortCode: "PM",
+    symbol: "PM",
+    color: "#10b981",
+    characteristicId: 23,
+    effectIds: [128],
+    unitWeight: 90,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78056,
+    defaultPrice: 35000,
+    description: "+1 PM",
+    textMatches: ["pm", "punto de movimiento", "puntos de movimiento", "point de mouvement", "movement point"],
+  },
+  {
+    id: 7438,
+    name: "Runa Al",
+    nameFr: "Rune Po",
+    nameEn: "Range Rune",
+    shortCode: "AL",
+    symbol: "AL",
+    color: "#38bdf8",
+    characteristicId: 19,
+    effectIds: [117],
+    unitWeight: 51,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78018,
+    defaultPrice: 6600,
+    description: "+1 Alcance",
+    textMatches: ["alcance", "portée", "portee", "range", "al", "po"],
+  },
+  {
+    id: 7442,
+    name: "Runa Invo",
+    nameFr: "Rune Invo",
+    nameEn: "Summon Rune",
+    shortCode: "INVO",
+    symbol: "INV",
+    color: "#a855f7",
+    characteristicId: 26,
+    effectIds: [182],
+    unitWeight: 30,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78019,
+    defaultPrice: 12000,
+    description: "+1 Invocación",
+    textMatches: ["invocación", "invocacion", "invocaciones", "invocation", "invocations", "summon"],
+  },
+  {
+    id: 7433,
+    name: "Runa Cri",
+    nameFr: "Rune Cri",
+    nameEn: "Crit Rune",
+    shortCode: "CRI",
+    symbol: "CRI",
+    color: "#ec4899",
+    characteristicId: 18,
+    effectIds: [115],
+    unitWeight: 10,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78014,
+    defaultPrice: 2500,
+    description: "+1% Golpe Crítico",
+    textMatches: ["golpe crítico", "golpe critico", "golpes críticos", "golpes criticos", "coup critique", "critical hit", "% crítico", "% critico", "% cri", "crítico", "critique"],
+  },
+  {
+    id: 10057,
+    name: "Runa de caza",
+    nameFr: "Rune de Chasse",
+    nameEn: "Hunting Rune",
+    shortCode: "CAZA",
+    symbol: "CAZA",
+    color: "#84cc16",
+    characteristicId: 109,
+    effectIds: [795, 129],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "especial",
+    iconId: 78023,
+    defaultPrice: 1500,
+    description: "Arma de Caza",
+    textMatches: ["arma de caza", "arme de chasse", "hunting weapon", "caza", "chasse"],
+  },
+
+  // ==========================================
+  // 2. CARACTERÍSTICAS PRIMARIAS
+  // ==========================================
+  {
+    id: 1519,
+    name: "Runa Fu",
+    nameFr: "Rune Fo",
+    nameEn: "Str Rune",
+    shortCode: "FU",
+    symbol: "FU",
+    color: "#b45309",
+    characteristicId: 10,
+    effectIds: [118],
+    unitWeight: 1,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78043,
+    defaultPrice: 75,
+    description: "+1 Fuerza",
+    textMatches: ["fuerza", "force", "strength", "fo", "fu"],
+  },
+  {
+    id: 1522,
+    name: "Runa Inte",
+    nameFr: "Rune Ine",
+    nameEn: "Int Rune",
+    shortCode: "INTE",
+    symbol: "INTE",
+    color: "#ef4444",
+    characteristicId: 15,
+    effectIds: [126],
+    unitWeight: 1,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78037,
+    defaultPrice: 44,
+    description: "+1 Inteligencia",
+    textMatches: ["inteligencia", "intelligence", "inte", "ine"],
+  },
+  {
+    id: 1525,
+    name: "Runa Sue",
+    nameFr: "Rune Cha",
+    nameEn: "Cha Rune",
+    shortCode: "SUE",
+    symbol: "SUE",
+    color: "#0ea5e9",
+    characteristicId: 13,
+    effectIds: [123],
+    unitWeight: 1,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78040,
+    defaultPrice: 61,
+    description: "+1 Suerte",
+    textMatches: ["suerte", "chance", "cha", "sue"],
+  },
+  {
+    id: 1524,
+    name: "Runa Agi",
+    nameFr: "Rune Age",
+    nameEn: "Agi Rune",
+    shortCode: "AGI",
+    symbol: "AGI",
+    color: "#14b8a6",
+    characteristicId: 14,
+    effectIds: [119],
+    unitWeight: 1,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78046,
+    defaultPrice: 75,
+    description: "+1 Agilidad",
+    textMatches: ["agilidad", "agilité", "agility", "agi", "age"],
+  },
+  {
+    id: 1523,
+    name: "Runa Vi",
+    nameFr: "Rune Vi",
+    nameEn: "Vit Rune",
+    shortCode: "VI",
+    symbol: "VI",
+    color: "#e11d48",
+    characteristicId: 11,
+    effectIds: [125],
+    unitWeight: 1, // 1 Runa Vi (+5 Vi) has weight 1.0 (0.2 per point)
+    statPerRune: 5, // 1 Runa Vi = 5 Vitalidad
+    category: "primaria",
+    iconId: 78052,
+    defaultPrice: 168,
+    description: "+5 Vitalidad",
+    textMatches: ["vitalidad", "vitalité", "vitality", "vida", "vi"],
+  },
+  {
+    id: 1521,
+    name: "Runa Sa",
+    nameFr: "Rune Sa",
+    nameEn: "Wis Rune",
+    shortCode: "SA",
+    symbol: "SA",
+    color: "#8b5cf6",
+    characteristicId: 12,
+    effectIds: [124],
+    unitWeight: 3,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78049,
+    defaultPrice: 310,
+    description: "+1 Sabiduría",
+    textMatches: ["sabiduría", "sabiduria", "sagesse", "wisdom", "sa", "sab"],
+  },
+  {
+    id: 7436,
+    name: "Runa Pot",
+    nameFr: "Rune Pui",
+    nameEn: "Power Rune",
+    shortCode: "POT",
+    symbol: "POT",
+    color: "#f97316",
+    characteristicId: 25,
+    effectIds: [138],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "primaria",
+    iconId: 78016,
+    defaultPrice: 300,
+    description: "+1 Potencia",
+    textMatches: ["potencia", "puissance", "power", "% de daños", "% de danos", "% dommages", "pui", "pot"],
+  },
+
+  // ==========================================
+  // 3. DAÑOS Y CURAS
+  // ==========================================
+  {
+    id: 7435,
+    name: "Runa Da",
+    nameFr: "Rune Do",
+    nameEn: "Dmg Rune",
+    shortCode: "DA",
+    symbol: "DA",
+    color: "#fb923c",
+    characteristicId: 16,
+    effectIds: [112],
+    unitWeight: 20,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78015,
+    defaultPrice: 3500,
+    description: "+1 Daños Generales",
+    textMatches: ["daños generales", "danos generales", "dommages généraux", "damage", "daños", "danos", "do"],
+  },
+  {
+    id: 7434,
+    name: "Runa Cu",
+    nameFr: "Rune So",
+    nameEn: "Heal Rune",
+    shortCode: "CU",
+    symbol: "CU",
+    color: "#f43f5e",
+    characteristicId: 49,
+    effectIds: [178],
+    unitWeight: 10,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78013,
+    defaultPrice: 398,
+    description: "+1 Curación",
+    textMatches: ["curación", "curacion", "curaciones", "curas", "cura", "soins", "soin", "heals", "healing", "so", "cu"],
+  },
+  {
+    id: 11653,
+    name: "Runa Da Cri",
+    nameFr: "Rune Do Cri",
+    nameEn: "Crit Dmg Rune",
+    shortCode: "DACRI",
+    symbol: "DCRI",
+    color: "#db2777",
+    characteristicId: 86,
+    effectIds: [418],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78073,
+    defaultPrice: 1200,
+    description: "+1 Daños Críticos",
+    textMatches: ["daños críticos", "daños de golpes críticos", "daños criticos", "daño crítico", "danos criticos", "dommages critiques", "do cri", "critical damage"],
+  },
+  {
+    id: 11659,
+    name: "Runa Da Fuego",
+    nameFr: "Rune Do Feu",
+    nameEn: "Fire Dmg Rune",
+    shortCode: "DAFUE",
+    symbol: "DFUE",
+    color: "#dc2626",
+    characteristicId: 89,
+    effectIds: [424],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78063,
+    defaultPrice: 1177,
+    description: "+1 Daños Fuego",
+    textMatches: ["daños de fuego", "daños fuego", "daño de fuego", "daño fuego", "danos fuego", "danos de fuego", "dommages feu", "do feu", "fire damage"],
+  },
+  {
+    id: 11657,
+    name: "Runa Da Tierra",
+    nameFr: "Rune Do Terre",
+    nameEn: "Earth Dmg Rune",
+    shortCode: "DATIE",
+    symbol: "DTIE",
+    color: "#92400e",
+    characteristicId: 88,
+    effectIds: [422],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78065,
+    defaultPrice: 900,
+    description: "+1 Daños Tierra",
+    textMatches: ["daños de tierra", "daños tierra", "daño de tierra", "daño tierra", "danos tierra", "danos de tierra", "dommages terre", "do terre", "earth damage"],
+  },
+  {
+    id: 11661,
+    name: "Runa Da Agua",
+    nameFr: "Rune Do Eau",
+    nameEn: "Water Dmg Rune",
+    shortCode: "DAAGU",
+    symbol: "DAGU",
+    color: "#0284c7",
+    characteristicId: 90,
+    effectIds: [426],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78061,
+    defaultPrice: 1270,
+    description: "+1 Daños Agua",
+    textMatches: ["daños de agua", "daños agua", "daño de agua", "daño agua", "danos agua", "danos de agua", "dommages eau", "do eau", "water damage"],
+  },
+  {
+    id: 11663,
+    name: "Runa Da Aire",
+    nameFr: "Rune Do Air",
+    nameEn: "Air Dmg Rune",
+    shortCode: "DAAIR",
+    symbol: "DAIR",
+    color: "#0d9488",
+    characteristicId: 91,
+    effectIds: [428],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78067,
+    defaultPrice: 900,
+    description: "+1 Daños Aire",
+    textMatches: ["daños de aire", "daños aire", "daño de aire", "daño aire", "danos aire", "danos de aire", "dommages air", "do air", "air damage"],
+  },
+  {
+    id: 11665,
+    name: "Runa Da Neutral",
+    nameFr: "Rune Do Neutre",
+    nameEn: "Neutral Dmg Rune",
+    shortCode: "DANEU",
+    symbol: "DNEU",
+    color: "#64748b",
+    characteristicId: 92,
+    effectIds: [430],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78069,
+    defaultPrice: 800,
+    description: "+1 Daños Neutral",
+    textMatches: ["daños de neutral", "daños neutral", "daños de neutro", "daños neutro", "daño neutro", "danos neutral", "danos neutro", "dommages neutre", "do neutre", "neutral damage"],
+  },
+  {
+    id: 11649,
+    name: "Runa Da Emp",
+    nameFr: "Rune Do Pou",
+    nameEn: "Push Dmg Rune",
+    shortCode: "DAEMP",
+    symbol: "DEMP",
+    color: "#854d0e",
+    characteristicId: 84,
+    effectIds: [414],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78081,
+    defaultPrice: 1100,
+    description: "+1 Daños Empuje",
+    textMatches: ["daños de empuje", "daños empuje", "daño empuje", "danos empuje", "danos de empuje", "dommages poussée", "do pou", "push damage", "pushback damage"],
+  },
+  {
+    id: 7447,
+    name: "Runa Por Tram",
+    nameFr: "Rune Per Pi",
+    nameEn: "Trp Per Rune",
+    shortCode: "PORTRAM",
+    symbol: "%TRP",
+    color: "#10b981",
+    characteristicId: 69,
+    effectIds: [226],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78024,
+    defaultPrice: 130,
+    description: "+1% Potencia Trampas",
+    textMatches: [
+      "potencia de trampas",
+      "potencia trampas",
+      "potencia (trampas)",
+      "% daños de trampas",
+      "% daños por trampas",
+      "% de daños por trampas",
+      "% de daños de trampas",
+      "% de danos por trampas",
+      "% de danos de trampas",
+      "% dommages aux pièges",
+      "% dommages pièges",
+      "puissance pièges",
+      "puissance (pièges)",
+      "trap power",
+      "per pi",
+      "pui piège",
+      "pui piege",
+      "por tram",
+      "tram por",
+    ],
+  },
+  {
+    id: 7446,
+    name: "Runa Da Tram",
+    nameFr: "Rune Do Pi",
+    nameEn: "Trp Dam Rune",
+    shortCode: "DATRAM",
+    symbol: "DTRP",
+    color: "#3b82f6",
+    characteristicId: 70,
+    effectIds: [225],
+    unitWeight: 5,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78268,
+    defaultPrice: 720,
+    description: "+1 Daños Trampas",
+    textMatches: [
+      "daños de trampas",
+      "daños por trampas",
+      "daños a las trampas",
+      "daño de trampas",
+      "daño por trampas",
+      "danos trampas",
+      "danos por trampas",
+      "danos de trampas",
+      "dommages aux pièges",
+      "dommages pièges",
+      "do pi",
+      "trap damage",
+      "da tram",
+      "trampas",
+      "trampa",
+      "piège",
+      "piege",
+    ],
+  },
+  {
+    id: 7437,
+    name: "Runa Da Reen",
+    nameFr: "Rune Do Ren",
+    nameEn: "Dam Ref Rune",
+    shortCode: "DAREEN",
+    symbol: "RENV",
+    color: "#c084fc",
+    characteristicId: 50,
+    effectIds: [220],
+    unitWeight: 10,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78017,
+    defaultPrice: 2200,
+    description: "+1 Reenvío Daño",
+    textMatches: [
+      "reenvío de daños",
+      "reenvio de daños",
+      "reenvío de daño",
+      "reenvio de daño",
+      "reenvío daño",
+      "reenvio daño",
+      "reenvío de danos",
+      "reenvio de danos",
+      "reenvío",
+      "reenvio",
+      "renvoi de dommages",
+      "dommages renvoyés",
+      "dommages renvoyes",
+      "do ren",
+      "reflected damage",
+      "damage reflect",
+      "reflect",
+      "renvoi",
+    ],
+  },
+  {
+    id: 18720,
+    name: "Runa Da Por Di",
+    nameFr: "Rune Do Per Di",
+    nameEn: "Ranged Dmg Rune",
+    shortCode: "DAPORDI",
+    symbol: "%DIS",
+    color: "#06b6d4",
+    characteristicId: 120,
+    effectIds: [2804],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78091,
+    defaultPrice: 4500,
+    description: "+1% Daños Distancia",
+    textMatches: ["daños distancia", "danos distancia", "% daños distancia", "% dommages distance", "ranged damage", "do per di", "da por di"],
+  },
+  {
+    id: 18719,
+    name: "Runa Da Por CC",
+    nameFr: "Rune Do Per Me",
+    nameEn: "Melee Dmg Rune",
+    shortCode: "DAPORCC",
+    symbol: "%CAC",
+    color: "#e11d48",
+    characteristicId: 125,
+    effectIds: [2800],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78092,
+    defaultPrice: 4500,
+    description: "+1% Daños CaC",
+    textMatches: ["daños cuerpo a cuerpo", "daños cac", "danos cac", "% daños cac", "% dommages mêlée", "melee damage", "do per me", "da por cc"],
+  },
+  {
+    id: 18722,
+    name: "Runa Da Por He",
+    nameFr: "Rune Do Per So",
+    nameEn: "Spell Dmg Rune",
+    shortCode: "DAPORHE",
+    symbol: "%HEC",
+    color: "#9333ea",
+    characteristicId: 123,
+    effectIds: [2812],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78094,
+    defaultPrice: 5000,
+    description: "+1% Daños Hechizos",
+    textMatches: ["daños de hechizos", "daños con hechizos", "danos hechizos", "% daños hechizo", "% dommages sorts", "spell damage", "do per so", "da por he"],
+  },
+  {
+    id: 18721,
+    name: "Runa Da Por Ar",
+    nameFr: "Rune Do Per Ar",
+    nameEn: "Weapon Dmg Rune",
+    shortCode: "DAPORAR",
+    symbol: "%ARM",
+    color: "#d97706",
+    characteristicId: 122,
+    effectIds: [2808],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "dano",
+    iconId: 78093,
+    defaultPrice: 3500,
+    description: "+1% Daños Arma",
+    textMatches: ["daños de armas", "daños con armas", "danos armas", "% daños arma", "% dommages armes", "weapon damage", "do per ar", "da por ar"],
+  },
+
+  // ==========================================
+  // 4. RESISTENCIAS PORCENTUALES (%)
+  // ==========================================
+  {
+    id: 7457,
+    name: "Runa Re Fuego Por",
+    nameFr: "Rune Re Per Feu",
+    nameEn: "% Fire Res Rune",
+    shortCode: "REFUEPOR",
+    symbol: "%FUE",
+    color: "#ef4444",
+    characteristicId: 34,
+    effectIds: [213],
+    unitWeight: 6,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78029,
+    defaultPrice: 2200,
+    description: "+1% Resistencia Fuego",
+    textMatches: ["resistencia fuego %", "% resistencia fuego", "% res. fuego", "% résistance feu", "% fire res", "re fuego por"],
+  },
+  {
+    id: 7459,
+    name: "Runa Re Tierra Por",
+    nameFr: "Rune Re Per Terre",
+    nameEn: "% Earth Res Rune",
+    shortCode: "RETIEPOR",
+    symbol: "%TIE",
+    color: "#b45309",
+    characteristicId: 33,
+    effectIds: [210],
+    unitWeight: 6,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78035,
+    defaultPrice: 2200,
+    description: "+1% Resistencia Tierra",
+    textMatches: ["resistencia tierra %", "% resistencia tierra", "% res. tierra", "% résistance terre", "% earth res", "re tierra por"],
+  },
+  {
+    id: 7560,
+    name: "Runa Re Agua Por",
+    nameFr: "Rune Re Per Eau",
+    nameEn: "% Water Res Rune",
+    shortCode: "REAGUPOR",
+    symbol: "%AGU",
+    color: "#0284c7",
+    characteristicId: 35,
+    effectIds: [211],
+    unitWeight: 6,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78031,
+    defaultPrice: 2200,
+    description: "+1% Resistencia Agua",
+    textMatches: ["resistencia agua %", "% resistencia agua", "% res. agua", "% résistance eau", "% water res", "re agua por"],
+  },
+  {
+    id: 7458,
+    name: "Runa Re Aire Por",
+    nameFr: "Rune Re Per Air",
+    nameEn: "% Air Res Rune",
+    shortCode: "REAIRPOR",
+    symbol: "%AIR",
+    color: "#14b8a6",
+    characteristicId: 36,
+    effectIds: [212],
+    unitWeight: 6,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78033,
+    defaultPrice: 2200,
+    description: "+1% Resistencia Aire",
+    textMatches: ["resistencia aire %", "% resistencia aire", "% res. aire", "% résistance air", "% air res", "re aire por"],
+  },
+  {
+    id: 7460,
+    name: "Runa Re Neutral Por",
+    nameFr: "Rune Re Per Neutre",
+    nameEn: "% Neutral Res Rune",
+    shortCode: "RENEUPOR",
+    symbol: "%NEU",
+    color: "#71717a",
+    characteristicId: 37,
+    effectIds: [214],
+    unitWeight: 6,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78058,
+    defaultPrice: 2200,
+    description: "+1% Resistencia Neutral",
+    textMatches: ["resistencia neutral %", "% resistencia neutro", "% res. neutro", "% resistencia neutral", "% résistance neutre", "% neutral res", "re neutral por"],
+  },
+
+  // ==========================================
+  // 5. RESISTENCIAS FIJAS Y ESPECIALES
+  // ==========================================
+  {
+    id: 7452,
+    name: "Runa Re Fuego",
+    nameFr: "Rune Re Feu",
+    nameEn: "Fire Res Rune",
+    shortCode: "REFUE",
+    symbol: "RFUE",
+    color: "#f87171",
+    characteristicId: 55,
+    effectIds: [243],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78028,
+    defaultPrice: 350,
+    description: "+1 Resistencia Fuego",
+    textMatches: ["resistencia fija fuego", "resistencia fuego", "résistance feu", "fire res", "re feu", "re fuego"],
+  },
+  {
+    id: 7455,
+    name: "Runa Re Tierra",
+    nameFr: "Rune Re Terre",
+    nameEn: "Earth Res Rune",
+    shortCode: "RETIE",
+    symbol: "RTIE",
+    color: "#d97706",
+    characteristicId: 54,
+    effectIds: [240],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78034,
+    defaultPrice: 350,
+    description: "+1 Resistencia Tierra",
+    textMatches: ["resistencia fija tierra", "resistencia tierra", "résistance terre", "earth res", "re terre", "re tierra"],
+  },
+  {
+    id: 7454,
+    name: "Runa Re Agua",
+    nameFr: "Rune Re Eau",
+    nameEn: "Water Res Rune",
+    shortCode: "REAGU",
+    symbol: "RAGU",
+    color: "#38bdf8",
+    characteristicId: 56,
+    effectIds: [241],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78030,
+    defaultPrice: 350,
+    description: "+1 Resistencia Agua",
+    textMatches: ["resistencia fija agua", "resistencia agua", "résistance eau", "water res", "re eau", "re agua"],
+  },
+  {
+    id: 7453,
+    name: "Runa Re Aire",
+    nameFr: "Rune Re Air",
+    nameEn: "Air Res Rune",
+    shortCode: "REAIR",
+    symbol: "RAIR",
+    color: "#2dd4bf",
+    characteristicId: 57,
+    effectIds: [242],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78032,
+    defaultPrice: 350,
+    description: "+1 Resistencia Aire",
+    textMatches: ["resistencia fija aire", "resistencia aire", "résistance air", "air res", "re air", "re aire"],
+  },
+  {
+    id: 7456,
+    name: "Runa Re Neutral",
+    nameFr: "Rune Re Neutre",
+    nameEn: "Neutral Res Rune",
+    shortCode: "RENEU",
+    symbol: "RNEU",
+    color: "#a1a1aa",
+    characteristicId: 58,
+    effectIds: [244],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78057,
+    defaultPrice: 350,
+    description: "+1 Resistencia Neutral",
+    textMatches: ["resistencia fija neutral", "resistencia neutro", "resistencia neutral", "résistance neutre", "neutral res", "re neutre", "re neutral"],
+  },
+  {
+    id: 11655,
+    name: "Runa Re Cri",
+    nameFr: "Rune Re Cri",
+    nameEn: "Crit Res Rune",
+    shortCode: "RECRI",
+    symbol: "RCRI",
+    color: "#f472b6",
+    characteristicId: 87,
+    effectIds: [420],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78071,
+    defaultPrice: 450,
+    description: "+1 Resistencia Críticos",
+    textMatches: ["resistencia a críticos", "resistencia de golpe crítico", "resistencia criticos", "résistance critiques", "re cri", "res cri", "crit resistance"],
+  },
+  {
+    id: 11651,
+    name: "Runa Re Emp",
+    nameFr: "Rune Re Pou",
+    nameEn: "Push Res Rune",
+    shortCode: "REEMP",
+    symbol: "REMP",
+    color: "#ca8a04",
+    characteristicId: 85,
+    effectIds: [416],
+    unitWeight: 2,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78079,
+    defaultPrice: 450,
+    description: "+1 Resistencia Empuje",
+    textMatches: ["resistencia a empuje", "resistencia de empuje", "resistencia empuje", "résistance poussée", "re pou", "res emp", "pushback res", "push resistance"],
+  },
+  {
+    id: 18724,
+    name: "Runa Re Por Di",
+    nameFr: "Rune Re Per Di",
+    nameEn: "Ranged Res Rune",
+    shortCode: "REPORDI",
+    symbol: "%RDIS",
+    color: "#22d3ee",
+    characteristicId: 121,
+    effectIds: [2807],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78096,
+    defaultPrice: 3500,
+    description: "+1% Resistencia Distancia",
+    textMatches: ["resistencia distancia", "% resistencia distancia", "% résistance distance", "re per di", "re por di"],
+  },
+  {
+    id: 18723,
+    name: "Runa Re Por CC",
+    nameFr: "Rune Re Per Me",
+    nameEn: "Melee Res Rune",
+    shortCode: "REPORCC",
+    symbol: "%RCAC",
+    color: "#fb7185",
+    characteristicId: 124,
+    effectIds: [2803],
+    unitWeight: 15,
+    statPerRune: 1,
+    category: "resistencia",
+    iconId: 78095,
+    defaultPrice: 3500,
+    description: "+1% Resistencia CaC",
+    textMatches: ["resistencia cuerpo a cuerpo", "resistencia cac", "% resistencia cac", "% resistencia cuerpo a cuerpo", "% résistance mêlée", "re per me", "re por cc"],
+  },
+
+  // ==========================================
+  // 6. SECUNDARIAS / UTILIDAD
+  // ==========================================
+  {
+    id: 7448,
+    name: "Runa Ini",
+    nameFr: "Rune Ini",
+    nameEn: "Ini Rune",
+    shortCode: "INI",
+    symbol: "INI",
+    color: "#fbbf24",
+    characteristicId: 44,
+    effectIds: [174],
+    unitWeight: 1, // 1 Runa Ini (+10 Ini) has weight 1.0 (0.1 per point)
+    statPerRune: 10, // 1 Runa Ini = 10 Iniciativa
+    category: "secundaria",
+    iconId: 78025,
+    defaultPrice: 150,
+    description: "+10 Iniciativa",
+    textMatches: ["iniciativa", "initiative", "ini"],
+  },
+  {
+    id: 7451,
+    name: "Runa Prospe",
+    nameFr: "Rune Prospe",
+    nameEn: "PP Rune",
+    shortCode: "PROSPE",
+    symbol: "PP",
+    color: "#f59e0b",
+    characteristicId: 48,
+    effectIds: [176],
+    unitWeight: 3,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78036,
+    defaultPrice: 450,
+    description: "+1 Prospección",
+    textMatches: ["prospección", "prospeccion", "prospection", "pp", "prosp", "prospe"],
+  },
+  {
+    id: 7443,
+    name: "Runa Pod",
+    nameFr: "Rune Pod",
+    nameEn: "Pod Rune",
+    shortCode: "POD",
+    symbol: "POD",
+    color: "#a3e635",
+    characteristicId: 40,
+    effectIds: [158],
+    unitWeight: 2.5, // 1 Runa Pod (+10 Pods) = 2.5 weight (0.25 per point)
+    statPerRune: 10, // 1 Runa Pod = 10 Pods
+    category: "secundaria",
+    iconId: 78020,
+    defaultPrice: 120,
+    description: "+10 Pods",
+    textMatches: ["pods", "pod"],
+  },
+  {
+    id: 11637,
+    name: "Runa Hui",
+    nameFr: "Rune Fui",
+    nameEn: "Dodge Rune",
+    shortCode: "HUI",
+    symbol: "HUI",
+    color: "#67e8f9",
+    characteristicId: 78,
+    effectIds: [752],
+    unitWeight: 4,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78076,
+    defaultPrice: 580,
+    description: "+1 Huida",
+    textMatches: ["huida", "fuite", "dodge", "fui", "hui"],
+  },
+  {
+    id: 11639,
+    name: "Runa Pla",
+    nameFr: "Rune Tac",
+    nameEn: "Lock Rune",
+    shortCode: "PLA",
+    symbol: "PLA",
+    color: "#fb923c",
+    characteristicId: 79,
+    effectIds: [753],
+    unitWeight: 4,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78077,
+    defaultPrice: 750,
+    description: "+1 Placaje",
+    textMatches: ["placaje", "tacle", "lock", "tac", "pla"],
+  },
+  {
+    id: 11645,
+    name: "Runa Ret PA",
+    nameFr: "Rune Ret PA",
+    nameEn: "AP Red Rune",
+    shortCode: "RETPA",
+    symbol: "RTPA",
+    color: "#fbbf24",
+    characteristicId: 82,
+    effectIds: [410],
+    unitWeight: 7,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78087,
+    defaultPrice: 1500,
+    description: "+1 Retiro PA",
+    textMatches: ["retiro pa", "retiro de pa", "retrait pa", "ap reduction", "ap red"],
+  },
+  {
+    id: 11647,
+    name: "Runa Ret PM",
+    nameFr: "Rune Ret PM",
+    nameEn: "MP Red Rune",
+    shortCode: "RETPM",
+    symbol: "RTPM",
+    color: "#34d399",
+    characteristicId: 83,
+    effectIds: [412],
+    unitWeight: 7,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78089,
+    defaultPrice: 1500,
+    description: "+1 Retiro PM",
+    textMatches: ["retiro pm", "retiro de pm", "retrait pm", "mp reduction", "mp red"],
+  },
+  {
+    id: 11641,
+    name: "Runa Re PA",
+    nameFr: "Rune Ré Pa",
+    nameEn: "AP Res Rune",
+    shortCode: "ESQPA",
+    symbol: "EQPA",
+    color: "#fde047",
+    characteristicId: 27,
+    effectIds: [160],
+    unitWeight: 7,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78083,
+    defaultPrice: 1500,
+    description: "+1 Esquiva PA",
+    textMatches: ["esquiva pa", "esquiva de pa", "esquive pa", "ap loss res", "re pa", "ré pa"],
+  },
+  {
+    id: 11643,
+    name: "Runa Re PM",
+    nameFr: "Rune Ré Pme",
+    nameEn: "MP Res Rune",
+    shortCode: "ESQPM",
+    symbol: "EQPM",
+    color: "#6ee7b7",
+    characteristicId: 28,
+    effectIds: [161],
+    unitWeight: 7,
+    statPerRune: 1,
+    category: "secundaria",
+    iconId: 78085,
+    defaultPrice: 1500,
+    description: "+1 Esquiva PM",
+    textMatches: ["esquiva pm", "esquiva de pm", "esquive pm", "mp loss res", "re pm", "ré pm"],
+  },
+];
+
+// Quick index maps
+export const BASE_RUNES_BY_ID: Record<number, BaseRuneDefinition> =
+  Object.fromEntries(DOFUS_BASE_RUNES.map((r) => [r.id, r]));
+
+export const BASE_RUNES_BY_CHARACTERISTIC: Record<number, BaseRuneDefinition> =
+  Object.fromEntries(DOFUS_BASE_RUNES.map((r) => [r.characteristicId, r]));
+
+export const BASE_RUNES_DEFAULT_PRICES: Record<number, number> =
+  Object.fromEntries(DOFUS_BASE_RUNES.map((r) => [r.id, r.defaultPrice]));
+
+// Secondary lookup maps for legacy characteristic IDs
+const EXTRA_CHAR_MAP: Record<number, number> = {
+  47: 7437, // Reenvío de Daños (legacy char id 47)
+  68: 7446, // Daños Trampas (legacy char id 68) -> Runa Da Tram (7446)
+  69: 7447, // % Potencia Trampas -> Runa Por Tram (7447)
+  70: 7446, // Daños Trampas -> Runa Da Tram (7446)
+  109: 10057, // Arma de caza (char id 109)
+};
+
+// Set of effect IDs that represent weapon attack damage / on-hit lines (daño o penalizaciones con el que pega el arma, NO estadísticas que dan runas)
+export const WEAPON_ATTACK_EFFECT_IDS = new Set([
+  91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 108, 121, 127, 131, 132, 133, 134, 135, 136, 137, 141, 142, 143, 144, 145
+]);
+
+/**
+ * Match a DofusEffect or raw effect definition to its corresponding BaseRuneDefinition
+ */
+export function findRuneForEffect(
+  effect: any,
+): BaseRuneDefinition | null {
+  if (!effect) return null;
+
+  const effId = Number(
+    effect.effectId ??
+      effect.effect_id ??
+      effect.id ??
+      0,
+  );
+  const charId = Number(
+    effect.characteristic ??
+      effect.characteristicId ??
+      effect.characteristic_id ??
+      0,
+  );
+
+  const rawText = (
+    typeof effect === "string"
+      ? effect
+      : effect.formatted ||
+        effect.description?.es ||
+        effect.description?.fr ||
+        effect.description?.en ||
+        effect.text ||
+        ""
+  ).toLowerCase().trim();
+
+  // Fast-track hunting weapon line before weapon attack damage filters
+  const isHunting =
+    effId === 795 ||
+    effId === 129 ||
+    charId === 795 ||
+    charId === 109 ||
+    rawText.includes("arma de caza") ||
+    rawText.includes("arme de chasse") ||
+    rawText.includes("hunting weapon") ||
+    rawText === "caza" ||
+    rawText === "chasse";
+
+  if (isHunting) {
+    return BASE_RUNES_BY_ID[10057] || null;
+  }
+
+  // 1. Filter out weapon attack damage (category 2, category 3, weapon attack effect IDs, or invalid characteristics)
+  if (
+    effect.category === 2 ||
+    effect.category === 3 ||
+    effect.characteristic === -1 ||
+    (effect.category !== undefined && effect.category !== 0 && effect.category !== 1) ||
+    WEAPON_ATTACK_EFFECT_IDS.has(effId)
+  ) {
+    return null; // Weapon hit lines (daño de ataque del arma / efectos de golpe) never yield runes
+  }
+
+  const fromVal = Number(effect.from ?? effect.diceNum ?? 0);
+  const toVal = Number(effect.to ?? effect.diceSide ?? 0);
+  if (fromVal < 0 || toVal < 0) {
+    return null; // Negative stats / malus never yield runes
+  }
+
+  // 2. Direct characteristic ID match (most accurate field from DofusDB)
+  if (charId > 0) {
+    if (BASE_RUNES_BY_CHARACTERISTIC[charId]) {
+      return BASE_RUNES_BY_CHARACTERISTIC[charId];
+    }
+    if (EXTRA_CHAR_MAP[charId] && BASE_RUNES_BY_ID[EXTRA_CHAR_MAP[charId]]) {
+      return BASE_RUNES_BY_ID[EXTRA_CHAR_MAP[charId]];
+    }
+  }
+
+  // 3. Direct effect ID match (clean 1-to-1 matching without cross-contamination)
+  if (effId > 0 && !WEAPON_ATTACK_EFFECT_IDS.has(effId)) {
+    const found = DOFUS_BASE_RUNES.find((r) => r.effectIds.includes(effId));
+    if (found) return found;
+  }
+
+  // 4. Keyword / formatted text matching fallback
+  if (rawText.length > 0) {
+    if (
+      rawText.startsWith("-") ||
+      rawText.includes("malus") ||
+      rawText.includes("retira") ||
+      rawText.includes("(daños") ||
+      rawText.includes("(daño)")
+    ) {
+      return null;
+    }
+
+    // Check for percentage resistance and percentage damages first
+    if (rawText.includes("%") || rawText.includes("pourcent")) {
+      if (rawText.includes("fuego") || rawText.includes("feu")) return BASE_RUNES_BY_ID[7457];
+      if (rawText.includes("tierra") || rawText.includes("terre")) return BASE_RUNES_BY_ID[7459];
+      if (rawText.includes("agua") || rawText.includes("eau")) return BASE_RUNES_BY_ID[7560];
+      if (rawText.includes("aire") || rawText.includes("air")) return BASE_RUNES_BY_ID[7458];
+      if (rawText.includes("neutr")) return BASE_RUNES_BY_ID[7460];
+      if (rawText.includes("crit") || rawText.includes("crít")) return BASE_RUNES_BY_ID[7433];
+      if (rawText.includes("dist")) return rawText.includes("res") ? BASE_RUNES_BY_ID[18724] : BASE_RUNES_BY_ID[18720];
+      if (rawText.includes("mêlée") || rawText.includes("melee") || rawText.includes("cuerpo a cuerpo") || rawText.includes("cac")) {
+        return rawText.includes("res") ? BASE_RUNES_BY_ID[18723] : BASE_RUNES_BY_ID[18719];
+      }
+      if (rawText.includes("sort") || rawText.includes("hechiz")) return BASE_RUNES_BY_ID[18722];
+      if (rawText.includes("arme") || rawText.includes("arma")) return BASE_RUNES_BY_ID[18721];
+    }
+
+    // Check specific text patterns
+    for (const rune of DOFUS_BASE_RUNES) {
+      if (rune.textMatches) {
+        for (const tm of rune.textMatches) {
+          if (rawText.includes(tm)) {
+            return rune;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+export interface ExtractedItemStat {
+  rune: BaseRuneDefinition;
+  effect: DofusEffect;
+  statMin: number;
+  statMax: number;
+  statAvg: number;
+  formattedText: string;
+}
+
+/**
+ * Robustly extract all crushable stats (with min and max values) from any DofusItem
+ */
+export function extractItemStats(item: DofusItem): ExtractedItemStat[] {
+  if (!item) return [];
+
+  // Prefer item.effects (contains authoritative characteristic and roll values).
+  // If item.effects is empty, fallback to item.possibleEffects.
+  const rawEffectsList: any[] = [];
+  if (Array.isArray(item.effects) && item.effects.length > 0) {
+    rawEffectsList.push(...item.effects);
+  } else if (Array.isArray(item.possibleEffects) && item.possibleEffects.length > 0) {
+    rawEffectsList.push(...item.possibleEffects);
+  }
+
+  const results: ExtractedItemStat[] = [];
+  const processedRuneIds = new Set<number>();
+
+  for (const rawEff of rawEffectsList) {
+    if (!rawEff) continue;
+
+    const formatted = String(rawEff.formatted || rawEff.description?.es || rawEff.description || "").trim();
+    const effId = Number(rawEff.effectId ?? rawEff.effect_id ?? rawEff.id ?? 0);
+    const charId = Number(rawEff.characteristic ?? rawEff.characteristicId ?? 0);
+
+    const isHuntingEffect =
+      effId === 795 ||
+      effId === 129 ||
+      charId === 795 ||
+      formatted.toLowerCase().includes("caza") ||
+      formatted.toLowerCase().includes("chasse") ||
+      formatted.toLowerCase().includes("hunting");
+
+    // Filter out weapon attack damage (category 2, weapon attack effect IDs, or characteristic -1/0) unless it's Hunting Weapon
+    if (
+      !isHuntingEffect &&
+      (rawEff.category === 2 ||
+        rawEff.characteristic === -1 ||
+        (rawEff.category !== undefined && rawEff.category !== 0 && rawEff.category !== 1) ||
+        WEAPON_ATTACK_EFFECT_IDS.has(effId))
+    ) {
+      continue;
+    }
+
+    // Check if this effect is negative roll or malus (skip malus effects)
+    if (
+      formatted.startsWith("-") ||
+      formatted.toLowerCase().includes("malus") ||
+      (formatted.toLowerCase().includes("retira") &&
+        !formatted.toLowerCase().includes("retirada") &&
+        !formatted.toLowerCase().includes("retira pa") &&
+        !formatted.toLowerCase().includes("retira pm"))
+    ) {
+      continue;
+    }
+
+    const rune = findRuneForEffect(rawEff);
+    if (!rune) continue;
+
+    // Deduplicate multiple occurrences of the same stat / rune
+    if (processedRuneIds.has(rune.id)) continue;
+
+    // Extract Min and Max roll
+    let from = Number(rawEff.from ?? rawEff.diceNum ?? rawEff.min ?? rawEff.value ?? 0);
+    let to = Number(rawEff.to ?? rawEff.diceSide ?? rawEff.max ?? 0);
+
+    // If it's Hunting Rune (Arma de caza), default to 1 point if rolls are 0
+    if (rune.id === 10057 && from === 0 && to === 0) {
+      from = 1;
+      to = 1;
+    }
+
+    // If 'to' is 0 but 'from' > 0 (fixed stat roll in DofusDB like Gelanillo +1 PA)
+    if (to === 0 && from > 0) {
+      to = from;
+    }
+    // If 'from' is 0 but 'to' > 0
+    if (from === 0 && to > 0) {
+      from = to;
+    }
+
+    // If numbers are still 0, attempt regex extraction from formatted string
+    if (from === 0 && to === 0 && formatted.length > 0) {
+      const matchRange = formatted.match(/(\d+)\s*(?:a|to|-)\s*(\d+)/i);
+      if (matchRange) {
+        from = Number(matchRange[1]);
+        to = Number(matchRange[2]);
+      } else {
+        const matchSingle = formatted.match(/(\d+)/);
+        if (matchSingle) {
+          from = Number(matchSingle[1]);
+          to = Number(matchSingle[1]);
+        }
+      }
+    }
+
+    const statMin = Math.min(from, to);
+    const statMax = Math.max(from, to);
+
+    // Only positive stats (> 0) yield runes
+    if (statMax <= 0) continue;
+
+    processedRuneIds.add(rune.id);
+
+    // Middle roll standard: round down (.5 -> floor) while ensuring >= statMin
+    const statAvg = statMin === statMax ? statMin : Math.max(statMin, Math.floor((statMin + statMax) / 2));
+    let label = formatted;
+    if (!label || label.trim().length === 0) {
+      if (rune.id === 10057) {
+        label = "Arma de caza";
+      } else if (statMin === statMax) {
+        label = `+${statMin} ${rune.name.replace('Runa ', '')}`;
+      } else {
+        label = `+${statMin} a ${statMax} ${rune.name.replace('Runa ', '')}`;
+      }
+    }
+
+    results.push({
+      rune,
+      effect: rawEff as DofusEffect,
+      statMin,
+      statMax,
+      statAvg,
+      formattedText: label,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Get rune icon URL safely
+ */
+export function getRuneIconUrl(rune: BaseRuneDefinition | number): string {
+  const runeId = typeof rune === "number" ? rune : rune.id;
+  const def = typeof rune === "object" ? rune : BASE_RUNES_BY_ID[runeId];
+  if (def) {
+    return `https://api.dofusdb.fr/img/items/${def.iconId}.png`;
+  }
+  return `https://api.dofusdb.fr/img/items/1519.png`;
+}
+
+export type JetMode = "avg" | "min" | "max" | "custom";
+
+export interface StatRuneYield {
+  rune: BaseRuneDefinition;
+  effect: DofusEffect;
+  statMin: number;
+  statMax: number;
+  statSelectedVal: number; // The active roll used for calculation
+  unitWeight: number;
+  statTotalPower: number;
+  
+  // Normal Crushing yield for this stat
+  normalRunesPerItem: number; // Decimal (2 decimals, e.g. 77.85)
+  normalBatchRunes: number;
+  normalKamasValue: number;
+
+  // Focus Crushing yield if THIS stat is focused
+  isFocusable: boolean; // false for Runa de Caza (10057)
+  focusRunesPerItem: number; // Decimal (2 decimals, e.g. 137.34)
+  focusBatchRunes: number;
+  focusKamasValue: number; // Total Kamas from batch if this stat is focused
+  focusNetProfit: number; // Kamas value of this focus - total craft cost
+  focusGainVsNormal: number; // Kamas difference (+/- compared to Total Normal Crushing)
+  isBestFocus: boolean;
+
+  // Active state
+  isFocused: boolean;
+  activeRunes: number;
+  activeKamasValue: number;
+  unitPrice: number;
+}
+
+export interface TopFocusOption {
+  rank: 1 | 2 | 3;
+  isNormal?: boolean;
+  title?: string;
+  rune: BaseRuneDefinition | null;
+  runesGenerated: number;
+  totalKamasValue: number;
+  netProfit: number;
+  roiPercent: number;
+  gainComparedToNormal: number;
+}
+
+export interface CrushingResult {
+  item: DofusItem;
+  itemLevel: number;
+  coefficientPercent: number;
+  jetMode: JetMode;
+  totalItemPower: number;
+  statYields: StatRuneYield[];
+  
+  // Normal Crushing Total (Sum of ALL runes generated without focus)
+  normalTotalKamasValue: number;
+  normalTotalRunesCount: number;
+  normalNetProfit: number;
+  normalRoiPercent: number;
+
+  // Active Total (reflecting whether a focus is selected or not)
+  totalKamasValue: number;
+  totalRunesCount: number;
+  craftCost: number;
+  netProfit: number;
+  roiPercent: number;
+  breakEvenCoefficient: number;
+  focusedRuneId: number | null;
+
+  // Best focus/crushing recommendation (Top 1)
+  bestFocusOption: TopFocusOption | null;
+
+  // Top 3 best crushing strategies (including Sin Foco and specific focuses)
+  top3FocusOptions: TopFocusOption[];
+}
+
+/**
+ * Calculate the Dofus Brisage (Machacado / Crushing) rune yield and profit
+ * EXACT KAMASKOPE FORMULA:
+ *
+ * For each characteristic i:
+ *   BaseLinePower_i = (3 * (StatVal_i / StatPerRune_i) * UnitWeight_i * (Level / 200)) + 1
+ *
+ * Sin Focus (Normal):
+ *   Runas_i = (BaseLinePower_i * (Coeff / 100)) / UnitWeight_i
+ *   Kamas_i = Math.round(Runas_i * Price_i)
+ *   TotalNormalKamas = SUM(Kamas_i)
+ *
+ * Con Focus en stat K:
+ *   TotalFocusPower_K = BaseLinePower_K + SUM_other(BaseLinePower_j / 2)
+ *   RunasFocus_K = (TotalFocusPower_K * (Coeff / 100)) / UnitWeight_K
+ *   KamasFocus_K = Math.round(RunasFocus_K * Price_K)
+ *   (Other stats yield 0 runes)
+ */
+export function calculateItemCrushing(
+  item: DofusItem,
+  coefficientPercent: number = 100,
+  focusedRuneId: number | null = null,
+  customRunePrices: Record<number, number> = {},
+  singleItemCraftCost: number = 0,
+  jetMode: JetMode = "avg",
+  customStatValues: Record<number, number> = {},
+): CrushingResult {
+  const level = Math.max(1, Number(item.level || 1));
+  const coeffMultiplier = Math.max(0, coefficientPercent) / 100;
+  const totalCraftCost = Math.max(0, singleItemCraftCost);
+
+  const extractedStats = extractItemStats(item);
+
+  // Include any custom stats defined by user not in natural rolls (e.g. FM Runa de Caza on a weapon)
+  for (const [runeIdStr, val] of Object.entries(customStatValues)) {
+    const runeId = Number(runeIdStr);
+    const numVal = Number(val);
+    if (numVal > 0 && !extractedStats.some((s) => s.rune.id === runeId)) {
+      const runeDef = BASE_RUNES_BY_ID[runeId];
+      if (runeDef) {
+        extractedStats.push({
+          rune: runeDef,
+          effect: { effectId: runeDef.effectIds[0], characteristic: runeDef.characteristicId },
+          statMin: numVal,
+          statMax: numVal,
+          statAvg: numVal,
+          formattedText: runeDef.id === 10057 ? "Arma de caza (FM)" : `+${numVal} ${runeDef.name.replace("Runa ", "")}`,
+        });
+      }
+    }
+  }
+
+  // Compute selected stat value for each stat based on jetMode / custom values
+  const evaluatedStats = extractedStats.map((stat) => {
+    let selectedVal = stat.statAvg;
+    const customVal = customStatValues[stat.rune.id];
+    if (typeof customVal === "number" && !Number.isNaN(customVal)) {
+      selectedVal = Math.max(0, customVal);
+    } else if (jetMode === "min") {
+      selectedVal = stat.statMin;
+    } else if (jetMode === "max") {
+      selectedVal = stat.statMax;
+    } else {
+      selectedVal = stat.statAvg;
+    }
+
+    // Exact Kamaskope Base Line Power with constant +1
+    const baseLinePower =
+      3 *
+        (selectedVal / stat.rune.statPerRune) *
+        stat.rune.unitWeight *
+        (level / 200) +
+      1;
+
+    return {
+      ...stat,
+      statSelectedVal: selectedVal,
+      baseLinePower,
+    };
+  });
+
+  const totalItemPower = evaluatedStats.reduce((acc, e) => acc + e.baseLinePower, 0);
+
+  // 1. Calculate normal crushing yield for all stats (Sin Focus)
+  const normalStatYields = evaluatedStats.map((statItem) => {
+    const unitPrice =
+      customRunePrices[statItem.rune.id] ??
+      BASE_RUNES_DEFAULT_PRICES[statItem.rune.id] ??
+      statItem.rune.defaultPrice;
+
+    // Exact normal runes formula: (BaseLinePower * coeff) / unitWeight
+    const normalRunesRaw =
+      (statItem.baseLinePower * coeffMultiplier) /
+      Math.max(0.001, statItem.rune.unitWeight);
+    const normalRunesPerItem = Number(normalRunesRaw.toFixed(2));
+    const normalKamasValue = Math.round(normalRunesRaw * unitPrice);
+
+    return {
+      statItem,
+      unitPrice,
+      normalRunesPerItem,
+      normalBatchRunes: normalRunesPerItem,
+      normalKamasValue,
+    };
+  });
+
+  const normalTotalKamasValue = normalStatYields.reduce(
+    (acc, y) => acc + y.normalKamasValue,
+    0,
+  );
+  const normalTotalRunesCount = Number(
+    normalStatYields.reduce((acc, y) => acc + y.normalRunesPerItem, 0).toFixed(2),
+  );
+  const normalNetProfit = normalTotalKamasValue - totalCraftCost;
+  const normalRoiPercent =
+    totalCraftCost > 0
+      ? Number(((normalNetProfit / totalCraftCost) * 100).toFixed(1))
+      : 0;
+
+  // 2. Calculate focus yields for EACH stat individually (Con Focus)
+  // Note: Runa de Caza (ID 10057 / Arma de Caza) CANNOT be chosen as focus!
+  const focusCalculations = evaluatedStats
+    .filter((statItem) => statItem.rune.id !== 10057 && statItem.rune.unitWeight > 0)
+    .map((statItem) => {
+      const unitPrice =
+        customRunePrices[statItem.rune.id] ??
+        BASE_RUNES_DEFAULT_PRICES[statItem.rune.id] ??
+        statItem.rune.defaultPrice;
+
+      // Sum of half the BaseLinePower of all other lines (all item stats donate half power)
+      const otherHalfPower = evaluatedStats
+        .filter((s) => s.rune.id !== statItem.rune.id)
+        .reduce((sum, s) => sum + s.baseLinePower / 2, 0);
+
+      const totalFocusPower = statItem.baseLinePower + otherHalfPower;
+      const focusRunesRaw =
+        (totalFocusPower * coeffMultiplier) /
+        Math.max(0.001, statItem.rune.unitWeight);
+      const focusRunesPerItem = Number(focusRunesRaw.toFixed(2));
+      const focusKamasValue = Math.round(focusRunesRaw * unitPrice);
+      const focusGainVsNormal = focusKamasValue - normalTotalKamasValue;
+
+      const fProfit = focusKamasValue - totalCraftCost;
+      const fRoi =
+        totalCraftCost > 0
+          ? Number(((fProfit / totalCraftCost) * 100).toFixed(1))
+          : 0;
+
+      return {
+        rune: statItem.rune,
+        runeId: statItem.rune.id,
+        focusRunesPerItem,
+        focusBatchRunes: focusRunesPerItem,
+        focusKamasValue,
+        focusGainVsNormal,
+        netProfit: fProfit,
+        roiPercent: fRoi,
+      };
+    });
+
+  // Rank all crushing strategies: Normal (Sin Foco) + All valid Focus options
+  const normalStrategy: TopFocusOption = {
+    rank: 1,
+    isNormal: true,
+    title: "Sin Foco",
+    rune: null,
+    runesGenerated: normalTotalRunesCount,
+    totalKamasValue: normalTotalKamasValue,
+    netProfit: normalNetProfit,
+    roiPercent: normalRoiPercent,
+    gainComparedToNormal: 0,
+  };
+
+  const focusStrategies: TopFocusOption[] = focusCalculations.map((fc) => ({
+    rank: 1,
+    isNormal: false,
+    title: `Foco ${fc.rune.name.replace('Runa ', '')}`,
+    rune: fc.rune,
+    runesGenerated: fc.focusRunesPerItem,
+    totalKamasValue: fc.focusKamasValue,
+    netProfit: fc.netProfit,
+    roiPercent: fc.roiPercent,
+    gainComparedToNormal: fc.focusGainVsNormal,
+  }));
+
+  // Pool all strategies and sort by total Kamas descending (highest gain first)
+  const allCrushingStrategies = [normalStrategy, ...focusStrategies].sort(
+    (a, b) => b.totalKamasValue - a.totalKamasValue,
+  );
+
+  const top3FocusOptions: TopFocusOption[] = allCrushingStrategies
+    .slice(0, 3)
+    .map((strat, idx) => ({
+      ...strat,
+      rank: (idx + 1) as 1 | 2 | 3,
+    }));
+
+  const bestFocusOption: TopFocusOption | null =
+    top3FocusOptions.length > 0 ? top3FocusOptions[0] : normalStrategy;
+
+  const focusMap = new Map(focusCalculations.map((f) => [f.runeId, f]));
+
+  // 3. Assemble combined StatRuneYield array
+  const statYields: StatRuneYield[] = normalStatYields.map((ny) => {
+    const statItem = ny.statItem;
+    const isFocusable = statItem.rune.id !== 10057 && statItem.rune.unitWeight > 0;
+    const focusData = focusMap.get(statItem.rune.id) ?? {
+      rune: statItem.rune,
+      runeId: statItem.rune.id,
+      focusRunesPerItem: 0,
+      focusBatchRunes: 0,
+      focusKamasValue: 0,
+      focusGainVsNormal: 0,
+      netProfit: -totalCraftCost,
+      roiPercent: 0,
+    };
+
+    const isFocused = focusedRuneId !== null && focusedRuneId === statItem.rune.id;
+    const isBestFocus =
+      !bestFocusOption?.isNormal && bestFocusOption?.rune?.id === statItem.rune.id;
+
+    const activeRunes =
+      focusedRuneId === null
+        ? ny.normalRunesPerItem
+        : isFocused
+          ? focusData.focusRunesPerItem
+          : 0;
+    const activeKamasValue =
+      focusedRuneId === null
+        ? ny.normalKamasValue
+        : isFocused
+          ? focusData.focusKamasValue
+          : 0;
+
+    return {
+      rune: statItem.rune,
+      effect: statItem.effect,
+      statMin: statItem.statMin,
+      statMax: statItem.statMax,
+      statSelectedVal: Number(statItem.statSelectedVal.toFixed(1)),
+      unitWeight: statItem.rune.unitWeight,
+      statTotalPower: Number(statItem.baseLinePower.toFixed(2)),
+      isFocusable,
+      normalRunesPerItem: ny.normalRunesPerItem,
+      normalBatchRunes: ny.normalRunesPerItem,
+      normalKamasValue: ny.normalKamasValue,
+      focusRunesPerItem: focusData.focusRunesPerItem,
+      focusBatchRunes: focusData.focusRunesPerItem,
+      focusKamasValue: focusData.focusKamasValue,
+      focusNetProfit: focusData.netProfit,
+      focusGainVsNormal: focusData.focusGainVsNormal,
+      isBestFocus,
+      isFocused,
+      activeRunes,
+      activeKamasValue,
+      unitPrice: ny.unitPrice,
+    };
+  });
+
+  // 4. Compute active summary values
+  const totalKamasValue =
+    focusedRuneId === null
+      ? normalTotalKamasValue
+      : (focusMap.get(focusedRuneId)?.focusKamasValue ?? 0);
+  const totalRunesCount =
+    focusedRuneId === null
+      ? normalTotalRunesCount
+      : (focusMap.get(focusedRuneId)?.focusRunesPerItem ?? 0);
+  const netProfit = totalKamasValue - totalCraftCost;
+  const roiPercent =
+    totalCraftCost > 0 ? Number(((netProfit / totalCraftCost) * 100).toFixed(1)) : 0;
+
+  // Calculate Break-even coefficient (Rentabilidad mínima %)
+  let breakEvenCoefficient = 100;
+  if (totalKamasValue > 0 && coefficientPercent > 0) {
+    const valueAt100 = totalKamasValue / (coefficientPercent / 100);
+    if (valueAt100 > 0 && totalCraftCost > 0) {
+      breakEvenCoefficient = Math.max(
+        1,
+        Math.ceil((totalCraftCost / valueAt100) * 100),
+      );
+    }
+  }
+
+  return {
+    item,
+    itemLevel: level,
+    coefficientPercent,
+    jetMode,
+    totalItemPower: Number(totalItemPower.toFixed(2)),
+    statYields,
+    normalTotalKamasValue,
+    normalTotalRunesCount,
+    normalNetProfit,
+    normalRoiPercent,
+    totalKamasValue,
+    totalRunesCount,
+    craftCost: totalCraftCost,
+    netProfit,
+    roiPercent,
+    breakEvenCoefficient,
+    focusedRuneId,
+    bestFocusOption,
+    top3FocusOptions,
+  };
+}
+
+// LocalStorage helpers to remember found coefficients for items (partitioned per server)
+const BASE_COEFFICIENTS_STORAGE_KEY = "dofus_user_item_coefficients";
+const BASE_COEFFICIENTS_TIMESTAMPS_KEY = "dofus_user_item_coeff_timestamps";
+const BASE_COEFFICIENTS_MANUAL_EDITS_KEY = "dofus_user_item_coeff_manual_edits";
+
+const KNOWN_SERVER_SLUG_MAP: Record<string, string> = {
+  hellmina: "hellmina",
+  "hell-mina": "hellmina",
+  "hell mina": "hellmina",
+  talkasha: "tal-kasha",
+  "tal-kasha": "tal-kasha",
+  "tal kasha": "tal-kasha",
+  orukam: "orukam",
+  oruka: "orukam",
+  draconiros: "draconiros",
+  kourial: "kourial",
+  mikhal: "mikhal",
+  dakal: "dakal",
+  "dakal-1": "dakal",
+  brial: "brial",
+  rafal: "rafal",
+  salar: "salar",
+  imagiro: "imagiro",
+  tylezia: "tylezia",
+  ombre: "ombre",
+  shadow: "ombre",
+};
+
+export function resolveServerSlug(serverSlug?: string): string {
+  if (serverSlug && serverSlug.trim()) {
+    const raw = serverSlug.trim().toLowerCase();
+    if (KNOWN_SERVER_SLUG_MAP[raw]) return KNOWN_SERVER_SLUG_MAP[raw];
+    const normalized = raw.replace(/[\s_]+/g, "-");
+    if (KNOWN_SERVER_SLUG_MAP[normalized]) return KNOWN_SERVER_SLUG_MAP[normalized];
+    return normalized;
+  }
+  if (typeof window !== "undefined") {
+    const activeSlug = localStorage.getItem("selected_dofus_price_profile_slug");
+    if (activeSlug && activeSlug.trim()) {
+      const raw = activeSlug.trim().toLowerCase();
+      if (KNOWN_SERVER_SLUG_MAP[raw]) return KNOWN_SERVER_SLUG_MAP[raw];
+      const normalized = raw.replace(/[\s_]+/g, "-");
+      if (KNOWN_SERVER_SLUG_MAP[normalized]) return KNOWN_SERVER_SLUG_MAP[normalized];
+      return normalized;
+    }
+  }
+  return "draconiros";
+}
+
+function getCoefficientsStorageKey(serverSlug?: string): string {
+  const slug = resolveServerSlug(serverSlug);
+  return `${BASE_COEFFICIENTS_STORAGE_KEY}_${slug}`;
+}
+
+function getTimestampsStorageKey(serverSlug?: string): string {
+  const slug = resolveServerSlug(serverSlug);
+  return `${BASE_COEFFICIENTS_TIMESTAMPS_KEY}_${slug}`;
+}
+
+function getManualEditsStorageKey(serverSlug?: string): string {
+  const slug = resolveServerSlug(serverSlug);
+  return `${BASE_COEFFICIENTS_MANUAL_EDITS_KEY}_${slug}`;
+}
+
+export function getAllSavedItemManualEdits(serverSlug?: string): Record<number, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const serverKey = getManualEditsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_MANUAL_EDITS_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_MANUAL_EDITS_KEY);
+    }
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getItemManualEditTimestamp(itemId: number, serverSlug?: string): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const manualEdits = getAllSavedItemManualEdits(serverSlug);
+    return typeof manualEdits[itemId] === "number" ? manualEdits[itemId] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getSavedItemCoefficient(itemId: number, serverSlug?: string): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const serverKey = getCoefficientsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    // Backward compatibility fallback to base key if server key is empty
+    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getItemCoefficientTimestamp(itemId: number, serverSlug?: string): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const serverKey = getTimestampsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
+    }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed[itemId] === "number" ? parsed[itemId] : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface SaveItemCoefficientOptions {
+  timestamp?: number;
+  isManual?: boolean;
+}
+
+export function formatCoeffBadgeDate(ts: number | null | undefined): string {
+  if (!ts || isNaN(ts) || ts <= 0) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const dateStr = `${day}/${month}`;
+
+  const now = new Date();
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+  if (isToday) {
+    return `Hoy ${dateStr}`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) {
+    return `Ayer ${dateStr}`;
+  }
+
+  return dateStr;
+}
+
+export function saveItemCoefficient(
+  itemId: number,
+  coeff: number,
+  serverSlug?: string,
+  options?: SaveItemCoefficientOptions
+): void {
+  if (typeof window === "undefined" || !itemId) return;
+  try {
+    const resolvedSlug = resolveServerSlug(serverSlug);
+    const serverKey = getCoefficientsStorageKey(resolvedSlug);
+    const raw = localStorage.getItem(serverKey);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const validCoeff = Math.max(1, Math.min(10000, Number(coeff) || 100));
+    parsed[itemId] = validCoeff;
+    localStorage.setItem(serverKey, JSON.stringify(parsed));
+
+    const isManual = options?.isManual !== false;
+    const effectiveTs = options?.timestamp && options.timestamp > 0 ? options.timestamp : Date.now();
+
+    // General timestamps
+    const serverTsKey = getTimestampsStorageKey(resolvedSlug);
+    const rawTs = localStorage.getItem(serverTsKey);
+    const parsedTs = rawTs ? JSON.parse(rawTs) : {};
+    parsedTs[itemId] = effectiveTs;
+    localStorage.setItem(serverTsKey, JSON.stringify(parsedTs));
+
+    // Save or delete from manual edits
+    const manualKey = getManualEditsStorageKey(resolvedSlug);
+    const rawManual = localStorage.getItem(manualKey);
+    const parsedManual = rawManual ? JSON.parse(rawManual) : {};
+    if (isManual) {
+      parsedManual[itemId] = effectiveTs;
+    } else {
+      delete parsedManual[itemId];
+    }
+    localStorage.setItem(manualKey, JSON.stringify(parsedManual));
+
+    // Persist to backend database
+    void fetch(`/api/local-db/coefficients/${itemId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        coefficient: validCoeff,
+        updatedAt: effectiveTs,
+        isManual,
+        serverSlug: resolvedSlug,
+      }),
+    }).catch(() => {});
+    
+    // Dispatch custom event for real-time reactivity
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { itemId, coeff: validCoeff, server: resolvedSlug, isManual, timestamp: effectiveTs },
+      })
+    );
+  } catch {}
+}
+
+export function getAllSavedItemCoefficients(serverSlug?: string): Record<number, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const serverKey = getCoefficientsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    }
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getAllSavedItemCoefficientTimestamps(serverSlug?: string): Record<number, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const serverKey = getTimestampsStorageKey(serverSlug);
+    let raw = localStorage.getItem(serverKey);
+    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+      raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
+    }
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export interface BulkSaveOptions {
+  onlyIfDefault?: boolean;
+  maxAgeDays?: number | null; // e.g. 1, 3, 5, 7, 15, 30 or null for all
+  protectNewerLocalEdits?: boolean;
+  forceOverwriteManual?: boolean;
+  serverSlug?: string;
+}
+
+export function hasCoefficientSyncBackup(serverSlug?: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const slug = resolveServerSlug(serverSlug);
+    const raw = localStorage.getItem(`dofus_coeff_sync_backup_${slug}`);
+    return Boolean(raw);
+  } catch {
+    return false;
+  }
+}
+
+export function restoreLastCoefficientSyncBackup(serverSlug?: string): {
+  success: boolean;
+  restoredCount: number;
+  message: string;
+} {
+  if (typeof window === "undefined") {
+    return { success: false, restoredCount: 0, message: "Entorno no válido" };
+  }
+  try {
+    const slug = resolveServerSlug(serverSlug);
+    const backupKey = `dofus_coeff_sync_backup_${slug}`;
+    const raw = localStorage.getItem(backupKey);
+    if (!raw) {
+      return {
+        success: false,
+        restoredCount: 0,
+        message: "No se encontró copia previa de sincronización para este servidor",
+      };
+    }
+    const data = JSON.parse(raw);
+    const coeffs = data.coefficients || {};
+    const timestamps = data.timestamps || {};
+    const manual = data.manualEdits || {};
+
+    const serverKey = getCoefficientsStorageKey(slug);
+    const serverTsKey = getTimestampsStorageKey(slug);
+    const manualKey = getManualEditsStorageKey(slug);
+
+    localStorage.setItem(serverKey, JSON.stringify(coeffs));
+    localStorage.setItem(serverTsKey, JSON.stringify(timestamps));
+    localStorage.setItem(manualKey, JSON.stringify(manual));
+
+    // Also push restored state to SQLite backend
+    const backendEntries = Object.entries(coeffs).map(([idStr, coeff]) => {
+      const id = Number(idStr);
+      return {
+        itemId: id,
+        coefficient: Number(coeff),
+        updatedAt: timestamps[id] || Date.now(),
+        isManual: Boolean(manual[id]),
+      };
+    });
+    if (backendEntries.length > 0) {
+      void fetch("/api/local-db/coefficients/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: backendEntries, serverSlug: slug, isManual: false }),
+      }).catch(() => {});
+    }
+
+    // Dispatch custom event for real-time reactivity across all UI tabs
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { restored: true, server: slug },
+      })
+    );
+
+    const count = Object.keys(coeffs).length;
+    return {
+      success: true,
+      restoredCount: count,
+      message: `Se restauraron exitosamente ${count.toLocaleString()} coeficientes al estado previo a la sincronización`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      restoredCount: 0,
+      message: err.message || "Error al restaurar copia previa de coeficientes",
+    };
+  }
+}
+
+export function bulkSaveItemCoefficients(
+  entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number }>,
+  options: BulkSaveOptions = {},
+  serverSlugParam?: string
+): { updatedCount: number; totalCount: number; skippedCount: number; server: string } {
+  const resolvedSlug = resolveServerSlug(options.serverSlug || serverSlugParam);
+  if (typeof window === "undefined" || !Array.isArray(entries) || entries.length === 0) {
+    return { updatedCount: 0, totalCount: 0, skippedCount: 0, server: resolvedSlug };
+  }
+
+  try {
+    const serverKey = getCoefficientsStorageKey(resolvedSlug);
+    const raw = localStorage.getItem(serverKey);
+    const parsed: Record<number, number> = raw ? JSON.parse(raw) : {};
+
+    const serverTsKey = getTimestampsStorageKey(resolvedSlug);
+    const rawTs = localStorage.getItem(serverTsKey);
+    const parsedTs: Record<number, number> = rawTs ? JSON.parse(rawTs) : {};
+
+    const manualKey = getManualEditsStorageKey(resolvedSlug);
+    const rawManual = localStorage.getItem(manualKey);
+    const parsedManual: Record<number, number> = rawManual ? JSON.parse(rawManual) : {};
+
+    const now = Date.now();
+
+    // Create automatic snapshot backup before updating so the user can undo at any time!
+    try {
+      const backupKey = `dofus_coeff_sync_backup_${resolvedSlug}`;
+      localStorage.setItem(
+        backupKey,
+        JSON.stringify({
+          coefficients: { ...parsed },
+          timestamps: { ...parsedTs },
+          manualEdits: { ...parsedManual },
+          backupAt: now,
+          server: resolvedSlug,
+        })
+      );
+    } catch {}
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const cutoffTs =
+      options.maxAgeDays && options.maxAgeDays > 0
+        ? now - options.maxAgeDays * 24 * 60 * 60 * 1000
+        : 0;
+
+    const protectManual =
+      options.protectNewerLocalEdits !== false && !options.forceOverwriteManual;
+
+    for (const item of entries) {
+      if (!item.itemId) continue;
+
+      let dofocusTs = 0;
+      if (item.dateUpdated) {
+        const parsedDate =
+          typeof item.dateUpdated === "number"
+            ? item.dateUpdated
+            : new Date(item.dateUpdated).getTime();
+        if (!isNaN(parsedDate) && parsedDate > 0) {
+          dofocusTs = parsedDate;
+        }
+      }
+
+      // Filter by max age if explicitly requested
+      if (cutoffTs > 0 && dofocusTs < cutoffTs) {
+        skippedCount++;
+        continue;
+      }
+
+      const currentCoeff = parsed[item.itemId];
+      const isDefaultOrMissing = currentCoeff === undefined || currentCoeff === 100;
+
+      // Filter only if default or missing if requested
+      if (options.onlyIfDefault && !isDefaultOrMissing) {
+        skippedCount++;
+        continue;
+      }
+
+      const isManual = Boolean(parsedManual[item.itemId]);
+      const manualTs = parsedManual[item.itemId] ? Number(parsedManual[item.itemId]) : 0;
+      const localTs = parsedTs[item.itemId] ? Number(parsedTs[item.itemId]) : 0;
+
+      // Protect manual edits and newer local edits
+      if (protectManual) {
+        // 1. If user explicitly edited this item manually, PROTECT IT ALWAYS!
+        if (isManual || manualTs > 0) {
+          skippedCount++;
+          continue;
+        }
+
+        // 2. If user has a local timestamp (e.g. from an edit done before manualEdits key was separated)
+        // and local timestamp is newer or equal, or DoFocus has no timestamp -> protect it!
+        if (localTs > 0 && (dofocusTs === 0 || localTs >= dofocusTs)) {
+          // Retroactively mark as manual edit so it stays protected
+          parsedManual[item.itemId] = localTs;
+          skippedCount++;
+          continue;
+        }
+      }
+
+      const validCoeff = Math.max(1, Math.min(10000, Number(item.coefficient) || 100));
+      parsed[item.itemId] = validCoeff;
+      parsedTs[item.itemId] = dofocusTs > 0 ? dofocusTs : now;
+      updatedCount++;
+    }
+
+    localStorage.setItem(serverKey, JSON.stringify(parsed));
+    localStorage.setItem(serverTsKey, JSON.stringify(parsedTs));
+    localStorage.setItem(manualKey, JSON.stringify(parsedManual));
+
+    // Dispatch custom event for real-time reactivity across all UI tabs
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { bulk: true, updatedCount, skippedCount, server: resolvedSlug },
+      })
+    );
+
+    return { updatedCount, totalCount: entries.length, skippedCount, server: resolvedSlug };
+  } catch (err) {
+    console.error("Error bulk saving coefficients:", err);
+    return {
+      updatedCount: 0,
+      totalCount: entries.length,
+      skippedCount: entries.length,
+      server: options.serverSlug || "draconiros",
+    };
+  }
+}
+
+export function clearAllSavedItemCoefficients(serverSlug?: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const slug = resolveServerSlug(serverSlug);
+    localStorage.removeItem(getCoefficientsStorageKey(slug));
+    localStorage.removeItem(getTimestampsStorageKey(slug));
+    localStorage.removeItem(BASE_COEFFICIENTS_STORAGE_KEY);
+    localStorage.removeItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: { cleared: true, server: slug },
+      })
+    );
+  } catch {}
+}
+

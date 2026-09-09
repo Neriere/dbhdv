@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+build/
+
+# Coverage & Tests
+coverage/
+.pytest_cache/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs & Debug
+*.log
+sniffer.log
+
+# Environment variables & Secrets (all env files including .env.example)
+.env*
+
+# Local Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Scratch & Temporary Dev Files
+scratch/
+scripts/items_db.json
+
+# Internal Development History & Notes
+HISTORIAL_SNIFFER_CAMBIOS.md
+instructions.txt
+sniffer_history.txt
+
+# Cloud & Tooling artifacts
+.vercel/
+.gemini/

@@ -1,0 +1,6 @@
+{
+  "name": "DofusDB API & Crushing Explorer",
+  "description": "Calculadora de recetas, set Dofusbook, gestor de inventario 'Mi Banco' con crafteo inverso, optimizador de ROI, mapas de búsqueda del tesoro, comparador de mercadillo y simulador de machacado de runas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
