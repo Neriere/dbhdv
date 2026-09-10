@@ -44,14 +44,16 @@ import {
 } from '../services/dofusDbService';
 import {
   getStoredSalesVolumeMap,
-  saveItemSalesVolume
+  saveItemSalesVolume,
+  analyzeSalesVolume
 } from '../services/salesVolumeService';
 import { MarketPriceMap, SalesVolumeMap } from '../types';
+import { EditSalesVolumeModal } from './common/EditSalesVolumeModal';
 
 type MainTab = 'scrolls' | 'consumables';
 type StatFilter = 'Todas' | 'Fuerza' | 'Vitalidad' | 'Sabiduría' | 'Inteligencia' | 'Suerte' | 'Agilidad';
 type JobFilter = 'Todos' | 'Cazador' | 'Pescador' | 'Campesino' | 'Alquimista';
-type SortFieldScroll = 'profitDaily' | 'ratio' | 'sales24h' | 'price' | 'name' | 'sebuscalines';
+type SortFieldScroll = 'profitDaily' | 'ratio' | 'sales24h' | 'avgDailySales' | 'price' | 'name' | 'sebuscalines';
 
 export const ConsumablesCharacteristicView: React.FC = () => {
   const { isEnabled: isUserJobsEnabled, canCraft } = useUserJobs();
@@ -63,11 +65,10 @@ export const ConsumablesCharacteristicView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [limitFilter, setLimitFilter] = useState<string>('todos'); // 'todos' | '25' | '50' | '80' | '100'
   
-  // Edición rápida en línea (precios y ventas manuales)
+  // Edición rápida en línea (precios) y modal de volumen de ventas
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [tempPriceValue, setTempPriceValue] = useState<string>('');
-  const [editingSalesId, setEditingSalesId] = useState<number | null>(null);
-  const [tempSalesValue, setTempSalesValue] = useState<string>('');
+  const [scrollForSalesVolume, setScrollForSalesVolume] = useState<CharacteristicScrollItem | null>(null);
 
   // Ordenación de la tabla de pergaminos
   const [sortField, setSortField] = useState<SortFieldScroll>('profitDaily');
@@ -116,20 +117,6 @@ export const ConsumablesCharacteristicView: React.FC = () => {
     setEditingPriceId(null);
   };
 
-  // Guardar edición de volumen diario manual
-  const handleSaveSales = (itemId: number) => {
-    const num = parseInt(tempSalesValue.replace(/\D/g, ''), 10);
-    if (!isNaN(num) && num >= 0) {
-      saveItemSalesVolume(itemId, {
-        sales24h: num,
-        avgDailySales: num,
-        updatedAt: Date.now()
-      });
-      setSalesVolumes(getStoredSalesVolumeMap());
-    }
-    setEditingSalesId(null);
-  };
-
   // Referencia fija de la Turmalina (ID: 15271)
   const tourmalineItem = CHARACTERISTIC_SCROLLS.find(s => s.id === 15271);
   const tourmalinePrice = marketPrices[15271] || 25000; // precio fallback
@@ -140,9 +127,11 @@ export const ConsumablesCharacteristicView: React.FC = () => {
     return CHARACTERISTIC_SCROLLS.map(scroll => {
       const price = marketPrices[scroll.id] || 0;
       const vol = salesVolumes[scroll.id];
-      const sales24h = vol?.sales24h ?? 0;
-      const sales7d = vol?.sales7d ?? 0;
-      const avgDailySales = vol?.avgDailySales ?? (sales7d > 0 ? Math.round(sales7d / 7) : sales24h);
+      const analysis = analyzeSalesVolume(price, vol);
+      const sales24h = analysis.sales24h;
+      const sales7d = analysis.sales7d;
+      const sales30d = analysis.sales30d;
+      const avgDailySales = analysis.avgDailySales;
       
       // Kamas por Sebuscalín
       const ratio = scroll.sebuscalines > 0 && price > 0 ? Math.round(price / scroll.sebuscalines) : 0;
@@ -152,13 +141,13 @@ export const ConsumablesCharacteristicView: React.FC = () => {
         ? Math.round(((ratio - tourmalineRatio) / tourmalineRatio) * 100)
         : 0;
 
-      // Estimación de profit diario: (Ventas diarias estimadas * Precio)
-      // Si no hay ventas registradas aún, usamos un peso mínimo para no dejar a 0
-      const effectiveDailySales = avgDailySales > 0 ? avgDailySales : (sales24h > 0 ? sales24h : 1);
-      const profitDaily = price * effectiveDailySales;
+      // Estimación de profit diario: (Ventas diarias ponderadas * Precio)
+      // Si no hay ventas registradas o son 0, el profit diario es 0 (no se infla a 1)
+      const profitDaily = avgDailySales > 0 ? Math.round(price * avgDailySales) : 0;
 
       // Score de prioridad considerando K/Seb y velocidad
-      let priorityScore = ratio * (1 + Math.log10(Math.max(1, effectiveDailySales)));
+      const effectiveVelocity = avgDailySales > 0 ? avgDailySales : (sales24h > 0 ? sales24h : 0.1);
+      let priorityScore = ratio * (1 + Math.log10(Math.max(1, effectiveVelocity)));
       if (scroll.isSpecial) {
         priorityScore *= 1.15; // bono por alta liquidez
       }
@@ -168,6 +157,7 @@ export const ConsumablesCharacteristicView: React.FC = () => {
         price,
         sales24h,
         sales7d,
+        sales30d,
         avgDailySales,
         ratio,
         vsTourmalinePct,
@@ -197,6 +187,7 @@ export const ConsumablesCharacteristicView: React.FC = () => {
       if (sortField === 'profitDaily') diff = b.profitDaily - a.profitDaily;
       else if (sortField === 'ratio') diff = b.ratio - a.ratio;
       else if (sortField === 'sales24h') diff = b.sales24h - a.sales24h;
+      else if (sortField === 'avgDailySales') diff = b.avgDailySales - a.avgDailySales;
       else if (sortField === 'price') diff = b.price - a.price;
       else if (sortField === 'sebuscalines') diff = a.sebuscalines - b.sebuscalines;
       else if (sortField === 'name') diff = a.name.localeCompare(b.name);
@@ -213,8 +204,8 @@ export const ConsumablesCharacteristicView: React.FC = () => {
   }, [processedScrolls]);
 
   const topVolumeScroll = useMemo(() => {
-    const list = processedScrolls.filter(s => !s.isSpecial && s.sales24h > 0);
-    return list.sort((a, b) => b.sales24h - a.sales24h)[0];
+    const list = processedScrolls.filter(s => !s.isSpecial && (s.sales24h > 0 || s.avgDailySales > 0));
+    return list.sort((a, b) => (b.sales24h || b.avgDailySales) - (a.sales24h || a.avgDailySales))[0];
   }, [processedScrolls]);
 
   const avgMarketRatio = useMemo(() => {
@@ -574,14 +565,18 @@ export const ConsumablesCharacteristicView: React.FC = () => {
             </div>
           </div>
 
-          {/* Mayor Volumen 24h */}
+          {/* Mayor Salida / Rotación */}
           <div className="bg-slate-900/80 border border-slate-800/80 hover:border-sky-500/40 rounded-xl p-4 transition-all shadow-sm">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
               <span className="flex items-center gap-1.5 text-sky-400">
-                <Flame className="w-4 h-4" /> Mayor Rotación 24h
+                <Flame className="w-4 h-4" /> Mayor Salida / Rotación
               </span>
               <span className="font-mono text-sky-300">
-                {topVolumeScroll?.sales24h || 0} uds vendidas
+                {topVolumeScroll
+                  ? (topVolumeScroll.sales24h > 0
+                      ? `${topVolumeScroll.sales24h} en 24h`
+                      : `~${topVolumeScroll.avgDailySales.toFixed(1)}/día`)
+                  : '0 uds'}
               </span>
             </div>
             <div className="flex items-center gap-3 mt-2">
@@ -924,10 +919,15 @@ export const ConsumablesCharacteristicView: React.FC = () => {
                   <th className="py-3 px-3 text-center">vs Turmalina</th>
                   <th className="py-3 px-3 text-center">
                     <button
-                      onClick={() => { setSortField('sales24h'); setSortAsc(!sortAsc); }}
+                      onClick={() => {
+                        if (sortField === 'sales24h') setSortField('avgDailySales');
+                        else setSortField('sales24h');
+                        setSortAsc(!sortAsc);
+                      }}
                       className="flex items-center gap-1 mx-auto hover:text-slate-200"
+                      title="Haz clic para ordenar por ventas registradas (24h) o ritmo diario"
                     >
-                      Ventas 24h / 7d <ArrowUpDown className="w-3 h-3" />
+                      Ventas 24h / 7d / 30d <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
                   <th className="py-3 px-4 text-right">
@@ -1074,47 +1074,37 @@ export const ConsumablesCharacteristicView: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Ventas 24h / 7d (Editable) */}
-                      <td className="py-3 px-3 text-center font-mono">
-                        {editingSalesId === scroll.id ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <input
-                              type="number"
-                              value={tempSalesValue}
-                              onChange={e => setTempSalesValue(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') handleSaveSales(scroll.id);
-                                if (e.key === 'Escape') setEditingSalesId(null);
-                              }}
-                              className="w-16 px-1.5 py-1 text-center rounded bg-slate-950 border border-sky-500 text-xs font-mono font-bold text-slate-100"
-                              autoFocus
-                            />
-                            <button
-                              onClick={() => handleSaveSales(scroll.id)}
-                              className="p-1 rounded bg-emerald-500/20 text-emerald-400"
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => {
-                              setEditingSalesId(scroll.id);
-                              setTempSalesValue(String(scroll.sales24h || scroll.avgDailySales || ''));
-                            }}
-                            className="cursor-pointer group flex items-center justify-center gap-1 hover:text-sky-400 transition-colors"
-                            title="Ventas 24h / 7d registradas. Clic para ajustar estimación manual."
-                          >
-                            <span className="font-bold text-slate-300">
+                      {/* Ventas 24h / 7d / 30d (Editable con Modal) */}
+                      <td className="py-2 px-3 text-center font-mono">
+                        <div
+                          onClick={() => setScrollForSalesVolume(scroll)}
+                          className="cursor-pointer group inline-flex flex-col items-center justify-center px-2.5 py-1 rounded-xl hover:bg-slate-800/80 transition-all border border-transparent hover:border-slate-700"
+                          title="Haz clic para registrar o editar ventas en 24 horas, 7 días y 30 días"
+                        >
+                          <div className="flex items-center gap-1 font-mono text-xs font-semibold">
+                            <span className={scroll.sales24h > 0 ? "text-cyan-300 font-bold" : "text-slate-500"}>
                               {scroll.sales24h}
                             </span>
                             <span className="text-slate-600">/</span>
-                            <span className="text-slate-500 text-[11px]">
+                            <span className={scroll.sales7d > 0 ? "text-sky-300 font-bold" : "text-slate-500"}>
                               {scroll.sales7d}
                             </span>
-                            <Edit2 className="w-2.5 h-2.5 text-slate-600 group-hover:text-sky-400 opacity-0 group-hover:opacity-100" />
+                            <span className="text-slate-600">/</span>
+                            <span className={scroll.sales30d > 0 ? "text-indigo-300 font-bold" : "text-slate-500"}>
+                              {scroll.sales30d}
+                            </span>
+                            <Edit2 className="w-2.5 h-2.5 text-slate-500 group-hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
                           </div>
-                        )}
+                          {scroll.avgDailySales > 0 ? (
+                            <span className="text-[10px] text-emerald-400 font-mono font-medium">
+                              ~{scroll.avgDailySales.toFixed(1)}/día
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-600 font-mono">
+                              0/día
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Profit Diario Estimado */}
@@ -1406,6 +1396,24 @@ export const ConsumablesCharacteristicView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal para editar ventas 24h, 7d y 30d */}
+      {scrollForSalesVolume && (
+        <EditSalesVolumeModal
+          isOpen={!!scrollForSalesVolume}
+          onClose={() => setScrollForSalesVolume(null)}
+          itemId={scrollForSalesVolume.id}
+          itemName={scrollForSalesVolume.name}
+          itemIconUrl={getItemIconUrl(scrollForSalesVolume.iconId)}
+          itemLevel={scrollForSalesVolume.maxStatLimit}
+          itemType={`Pergamino • ${scrollForSalesVolume.stat}`}
+          currentPrice={marketPrices[scrollForSalesVolume.id] || 0}
+          initialSalesVolume={salesVolumes[scrollForSalesVolume.id]}
+          onSaved={() => {
+            setSalesVolumes(getStoredSalesVolumeMap());
+          }}
+        />
       )}
     </div>
   );

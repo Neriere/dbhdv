@@ -31,8 +31,11 @@ import {
   ArrowUpDown,
   BarChart2,
   Layers,
+  Activity,
+  Edit2,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap, PriceUpdatedAtMap, SalesVolumeMap } from '../types';
+import { EditSalesVolumeModal } from './common/EditSalesVolumeModal';
 import {
   getActivePriceProfileId,
   getImportedItems,
@@ -107,6 +110,7 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
   const [isSnifferModalOpen, setIsSnifferModalOpen] = useState<boolean>(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [itemForHistory, setItemForHistory] = useState<DofusItem | null>(null);
+  const [itemForSalesVolume, setItemForSalesVolume] = useState<DofusItem | null>(null);
 
   // Reset page whenever search, category, or scope changes
   useEffect(() => {
@@ -997,8 +1001,12 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                     </div>
                   </div>
 
-                  {/* ── Sales Volume Mini Panel ──────────────────────── */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* ── Sales Volume Mini Panel (Clickable to Edit 24h, 7d, 30d) ── */}
+                  <div
+                    onClick={() => setItemForSalesVolume(item)}
+                    className="group/vol flex items-center gap-1.5 flex-wrap cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-all"
+                    title="Haz clic para registrar o editar ventas en 24h, 7d y 30d"
+                  >
                     {hasSalesData ? (
                       <>
                         <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-[10px] font-mono font-bold text-cyan-300" title="Ventas últimas 24 horas">
@@ -1015,11 +1023,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                             ~{vol.avgDailySales?.toFixed(1)}/día
                           </span>
                         )}
+                        <Edit2 className="w-3 h-3 text-slate-500 group-hover/vol:text-cyan-400 opacity-0 group-hover/vol:opacity-100 transition-opacity ml-0.5" />
                       </>
                     ) : (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-600">
-                        Sin datos de ventas
-                      </span>
+                      <div className="flex items-center gap-1.5 text-slate-600 group-hover/vol:text-cyan-400 transition-colors">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono group-hover/vol:border-cyan-500/40">
+                          + Registrar ventas (24h/7d/30d)
+                        </span>
+                        <Edit2 className="w-3 h-3 opacity-0 group-hover/vol:opacity-100 transition-opacity" />
+                      </div>
                     )}
                   </div>
 
@@ -1057,6 +1069,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                           <Check className="w-3.5 h-3.5 text-emerald-400" /> Guardado
                         </span>
                       )}
+
+                      {/* Sales Volume Button */}
+                      <button
+                        onClick={() => setItemForSalesVolume(item)}
+                        className="p-2 rounded-xl bg-slate-950 hover:bg-sky-500/20 border border-slate-800 hover:border-sky-500/40 text-slate-400 hover:text-sky-300 transition-all shrink-0"
+                        title="Registrar / editar volumen de ventas (24h, 7d, 30d)"
+                      >
+                        <Activity className="w-3.5 h-3.5" />
+                      </button>
 
                       {/* Price History Button */}
                       <button
@@ -1208,6 +1229,24 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
           setPriceProfiles(getPriceProfiles());
         }}
       />
+
+      {/* Sales Volume Modal (24h, 7d, 30d) */}
+      {itemForSalesVolume && (
+        <EditSalesVolumeModal
+          isOpen={!!itemForSalesVolume}
+          onClose={() => setItemForSalesVolume(null)}
+          itemId={itemForSalesVolume.id}
+          itemName={getItemName(itemForSalesVolume)}
+          itemIconUrl={getItemIconUrl(itemForSalesVolume)}
+          itemLevel={itemForSalesVolume.level}
+          itemType={getItemTypeName(itemForSalesVolume)}
+          currentPrice={marketPrices[itemForSalesVolume.id] || 0}
+          initialSalesVolume={salesVolumes[itemForSalesVolume.id]}
+          onSaved={() => {
+            setSalesVolumes(getStoredSalesVolumeMap());
+          }}
+        />
+      )}
     </div>
   );
 };
