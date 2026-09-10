@@ -81,3 +81,16 @@ test('DETALLE_RECETAS_MATERIALES y COTIZACIONES_Y_MERCADO tienen datos completos
   assert.ok(recetasData.length > 50, 'Debe contener filas de recetas de materiales');
   assert.ok(cotizacionesData.length > 50, 'Debe contener cotizaciones de mercado');
 });
+
+test('Ogivol Scarratero tiene recurso Hueso de Scarratero (32567) y equipables correctos', () => {
+  const ogivol = BYC_GENERATED_DB.find((h) => h.monsterName === 'Ogivol Scarratero');
+  assert.ok(ogivol, 'Ogivol Scarratero debe encontrarse en la base de datos');
+
+  assert.equal(ogivol.resource.id, 32567, 'ID del recurso debe ser 32567 (Hueso de Scarratero)');
+  assert.equal(ogivol.resource.name, 'Hueso de Scarratero');
+  assert.equal(ogivol.resource.iconId, 47898);
+
+  // Equipables vinculados: Mitón, Calcetines y Dagüesos
+  const eqIds = ogivol.equipments.map((e) => e.id);
+  assert.deepEqual(eqIds, [33559, 33560, 33561], 'Equipables deben ser 33559, 33560, 33561');
+});

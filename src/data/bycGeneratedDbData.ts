@@ -10022,243 +10022,123 @@ export const BYC_GENERATED_DB = [
       }
     ],
     "resource": {
-      "id": 6876,
-      "name": "Token de Ogivol Scarratero",
-      "name_fr": "Token d'Ogivol Scalarcin",
-      "iconId": 32009,
-      "img": "https://api.dofusdb.fr/img/items/32009.png",
-      "type": "Recurso de Se Busca",
-      "defaultPrice": 350000
+      "id": 32567,
+      "name": "Hueso de Scarratero",
+      "name_fr": "Os de Scalarcin",
+      "iconId": 47898,
+      "img": "https://api.dofusdb.fr/img/items/47898.png",
+      "type": "Hueso",
+      "defaultPrice": 31497
     },
     "equipments": [
       {
-        "id": 13130,
-        "name": "Casco de Ogivol",
-        "name_fr": "Coiffe d'Ogivol",
-        "level": 193,
-        "type": "Sombrero",
-        "iconId": 16331,
-        "img": "https://api.dofusdb.fr/img/items/16331.png",
-        "defaultSalePrice": 1236000,
+        "id": 33559,
+        "name": "Mitón de los Scarratero",
+        "name_fr": "Mitaine des Scalarcin",
+        "level": 51,
+        "type": "Anillo",
+        "iconId": 9410,
+        "img": "https://api.dofusdb.fr/img/items/9410.png",
+        "defaultSalePrice": 51000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 9281,
-            "name": "Fragmento de Ugahlureta",
+            "id": 13096,
+            "name": "Fémur del chafer Rōnin",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 47696,
+            "img": "https://api.dofusdb.fr/img/items/47696.png"
+          },
+          {
+            "id": 2540,
+            "name": "Concentrado de oquedal",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15041,
-            "img": "https://api.dofusdb.fr/img/items/15041.png"
+            "defaultPrice": 15000,
+            "iconId": 26017,
+            "img": "https://api.dofusdb.fr/img/items/26017.png"
           },
           {
-            "id": 14928,
-            "name": "Cuerno de Sombra",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47833,
-            "img": "https://api.dofusdb.fr/img/items/47833.png"
-          },
-          {
-            "id": 9401,
-            "name": "Piel de Bworker",
+            "id": 6479,
+            "name": "Oso despedazado",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 59009,
-            "img": "https://api.dofusdb.fr/img/items/59009.png"
-          },
-          {
-            "id": 9263,
-            "name": "Corteza de champáknido",
-            "quantity": 53,
-            "defaultPrice": 10000,
-            "iconId": 96109,
-            "img": "https://api.dofusdb.fr/img/items/96109.png"
-          },
-          {
-            "id": 9269,
-            "name": "Lengua de champidonte",
-            "quantity": 56,
-            "defaultPrice": 10000,
-            "iconId": 15765,
-            "img": "https://api.dofusdb.fr/img/items/15765.png"
-          },
-          {
-            "id": 426,
-            "name": "Fibra de cáñamo",
-            "quantity": 10,
-            "defaultPrice": 10000,
-            "iconId": 55123,
-            "img": "https://api.dofusdb.fr/img/items/55123.png"
-          },
-          {
-            "id": 16460,
-            "name": "Concentrado de selva",
-            "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 177003,
-            "img": "https://api.dofusdb.fr/img/items/177003.png"
-          },
-          {
-            "id": 14921,
-            "name": "Tejido misterioso",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 15848,
-            "img": "https://api.dofusdb.fr/img/items/15848.png"
+            "defaultPrice": 2000,
+            "iconId": 15703,
+            "img": "https://api.dofusdb.fr/img/items/15703.png"
           }
         ]
       },
       {
-        "id": 13131,
-        "name": "Capa de Ogivol",
-        "name_fr": "Cape d'Ogivol",
-        "level": 186,
-        "type": "Capa",
-        "iconId": 17246,
-        "img": "https://api.dofusdb.fr/img/items/17246.png",
-        "defaultSalePrice": 1236000,
+        "id": 33560,
+        "name": "Calcetines de los Scarratero",
+        "name_fr": "Chaussettes des Scalarcin",
+        "level": 53,
+        "type": "Bota",
+        "iconId": 11385,
+        "img": "https://api.dofusdb.fr/img/items/11385.png",
+        "defaultSalePrice": 53000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 9281,
-            "name": "Fragmento de Ugahlureta",
+            "id": 13096,
+            "name": "Fémur del chafer Rōnin",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 47696,
+            "img": "https://api.dofusdb.fr/img/items/47696.png"
+          },
+          {
+            "id": 748,
+            "name": "Magnesita",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 15041,
-            "img": "https://api.dofusdb.fr/img/items/15041.png"
+            "defaultPrice": 3500,
+            "iconId": 40659,
+            "img": "https://api.dofusdb.fr/img/items/40659.png"
           },
           {
-            "id": 14928,
-            "name": "Cuerno de Sombra",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47833,
-            "img": "https://api.dofusdb.fr/img/items/47833.png"
-          },
-          {
-            "id": 13157,
-            "name": "Uña de Bworker",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47695,
-            "img": "https://api.dofusdb.fr/img/items/47695.png"
-          },
-          {
-            "id": 13736,
-            "name": "Forúnculo de mamá bwork",
-            "quantity": 51,
-            "defaultPrice": 10000,
-            "iconId": 15819,
-            "img": "https://api.dofusdb.fr/img/items/15819.png"
-          },
-          {
-            "id": 13746,
-            "name": "Tornillo de cybwork",
-            "quantity": 12,
-            "defaultPrice": 10000,
-            "iconId": 15820,
-            "img": "https://api.dofusdb.fr/img/items/15820.png"
-          },
-          {
-            "id": 13739,
-            "name": "Calzoncillos rojos",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 164002,
-            "img": "https://api.dofusdb.fr/img/items/164002.png"
-          },
-          {
-            "id": 7035,
-            "name": "Piruta",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 40708,
-            "img": "https://api.dofusdb.fr/img/items/40708.png"
-          },
-          {
-            "id": 14921,
-            "name": "Tejido misterioso",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 15848,
-            "img": "https://api.dofusdb.fr/img/items/15848.png"
+            "id": 2277,
+            "name": "Mortaja",
+            "quantity": 1,
+            "defaultPrice": 1500,
+            "iconId": 55430,
+            "img": "https://api.dofusdb.fr/img/items/55430.png"
           }
         ]
       },
       {
-        "id": 13132,
-        "name": "Cinturón de Ogivol",
-        "name_fr": "Ceinture d'Ogivol",
-        "level": 195,
-        "type": "Cinturón",
-        "iconId": 10227,
-        "img": "https://api.dofusdb.fr/img/items/10227.png",
-        "defaultSalePrice": 1236000,
+        "id": 33561,
+        "name": "Dagüesos de los Scarratero",
+        "name_fr": "Dagu'os des Scalarcin",
+        "level": 55,
+        "type": "Daga",
+        "iconId": 5107,
+        "img": "https://api.dofusdb.fr/img/items/5107.png",
+        "defaultSalePrice": 55000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
-            "id": 9280,
-            "name": "Espina de Ugah",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 15040,
-            "img": "https://api.dofusdb.fr/img/items/15040.png"
+            "id": 13096,
+            "name": "Fémur del chafer Rōnin",
+            "quantity": 4,
+            "defaultPrice": 1000,
+            "iconId": 47696,
+            "img": "https://api.dofusdb.fr/img/items/47696.png"
           },
           {
-            "id": 14928,
-            "name": "Cuerno de Sombra",
-            "quantity": 3,
-            "defaultPrice": 10000,
-            "iconId": 47833,
-            "img": "https://api.dofusdb.fr/img/items/47833.png"
-          },
-          {
-            "id": 9401,
-            "name": "Piel de Bworker",
+            "id": 12737,
+            "name": "Guijarro carmesí",
             "quantity": 1,
-            "defaultPrice": 10000,
-            "iconId": 59009,
-            "img": "https://api.dofusdb.fr/img/items/59009.png"
+            "defaultPrice": 5000,
+            "iconId": 15290,
+            "img": "https://api.dofusdb.fr/img/items/15290.png"
           },
           {
-            "id": 13741,
-            "name": "Calzoncillos marrones",
-            "quantity": 9,
-            "defaultPrice": 10000,
-            "iconId": 164004,
-            "img": "https://api.dofusdb.fr/img/items/164004.png"
-          },
-          {
-            "id": 13743,
-            "name": "Calzoncillos azules",
-            "quantity": 9,
-            "defaultPrice": 10000,
-            "iconId": 164006,
-            "img": "https://api.dofusdb.fr/img/items/164006.png"
-          },
-          {
-            "id": 13745,
-            "name": "Calzoncillos blancos",
-            "quantity": 9,
-            "defaultPrice": 10000,
-            "iconId": 164008,
-            "img": "https://api.dofusdb.fr/img/items/164008.png"
-          },
-          {
-            "id": 12740,
-            "name": "Guijarro brasa",
-            "quantity": 2,
-            "defaultPrice": 10000,
-            "iconId": 15289,
-            "img": "https://api.dofusdb.fr/img/items/15289.png"
-          },
-          {
-            "id": 14921,
-            "name": "Tejido misterioso",
-            "quantity": 8,
-            "defaultPrice": 10000,
-            "iconId": 15848,
-            "img": "https://api.dofusdb.fr/img/items/15848.png"
+            "id": 6480,
+            "name": "Mimbre oscuro",
+            "quantity": 1,
+            "defaultPrice": 2000,
+            "iconId": 15123,
+            "img": "https://api.dofusdb.fr/img/items/15123.png"
           }
         ]
       }
