@@ -4,6 +4,7 @@ import {
   Package,
   Sparkles,
   Zap,
+  Briefcase,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -21,6 +22,7 @@ import {
 } from "../services/dofusDbService";
 import { useMarketPrices } from "../hooks/useMarketPrices";
 import { useBankInventory } from "../hooks/useBankInventory";
+import { useUserJobs } from "../hooks/useUserJobs";
 import { BankCatalogFilters } from "./bank/BankCatalogFilters";
 import { BankItemDrawer } from "./bank/BankItemDrawer";
 import { ReverseCraftCard } from "./bank/ReverseCraftCard";
@@ -37,6 +39,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
   onNavigateToShopping,
 }) => {
   const { marketPrices } = useMarketPrices();
+  const { isEnabled: isUserJobsEnabled, canCraft } = useUserJobs();
   const {
     bankInventory: bankItems,
     updateBankItem,
@@ -198,6 +201,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
   const filteredAndSortedOpportunities = useMemo(() => {
     return rawCraftResults
       .filter((craft) => {
+        if (isUserJobsEnabled && !canCraft(craft.item)) return false;
         if (selectedJobId !== "all" && craft.jobId !== selectedJobId) return false;
         if (onlyFullyCraftable && !craft.isFullyCraftable) return false;
         if (craft.item.level < minLevel || craft.item.level > maxLevel) return false;
@@ -333,6 +337,13 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
         lastCalculatedAt={lastCalculatedAt}
         onCalculate={handleCalculateCrafts}
       />
+
+      {isUserJobsEnabled && (
+        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium">
+          <Briefcase className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Filtro activo: Mostrando únicamente recetas que tus oficios pueden fabricar actualmente.</span>
+        </div>
+      )}
 
       {/* Sub-Tab 1: Reverse Craft Finder */}
       {activeSubTab === "crafts" && (

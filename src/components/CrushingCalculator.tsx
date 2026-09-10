@@ -46,12 +46,14 @@ import {
   Moon,
   RefreshCw,
   ShieldCheck,
+  Briefcase,
 } from 'lucide-react';
 import { DofusItem, MarketPriceMap, PriceProfile } from '../types';
 import {
   CRUSHING_ALLOWED_JOBS,
   isPetItem,
 } from '../data/dofusJobs';
+import { useUserJobs } from '../hooks/useUserJobs';
 import {
   BASE_RUNES_BY_ID,
   BaseRuneDefinition,
@@ -212,6 +214,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
   const [viewMode, setViewMode] = useState<CrushingViewMode>(savedViewState.viewMode ?? 'catalog');
   
   // Database & Cache state
+  const { isEnabled: isUserJobsEnabled, canCraftOrMage } = useUserJobs();
   const [activeProfile, setActiveProfile] = useState<PriceProfile | undefined>(() => getActivePriceProfile());
   const [marketPrices, setMarketPrices] = useState<MarketPriceMap>({});
   const [priceUpdatedAt, setPriceUpdatedAt] = useState<Record<number, number>>({});
@@ -1047,6 +1050,9 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     const candidates = crushableItems.filter((item) => {
       if (isPetItem(item)) return false;
 
+      // Global User Jobs filter (can craft to break or mage to break)
+      if (isUserJobsEnabled && !canCraftOrMage(item)) return false;
+
       const level = item.level || 1;
       const typeId = item.typeId || item.type?.id || 0;
 
@@ -1260,6 +1266,8 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
     sortBy,
     ALL_STAT_FILTERS,
     EQUIPMENT_SLOTS,
+    isUserJobsEnabled,
+    canCraftOrMage,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(processedCatalogItems.length / PAGE_SIZE));
@@ -1771,6 +1779,23 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
               </div>
             )}
           </div>
+
+          {/* User Jobs Global Filter Notice */}
+          {isUserJobsEnabled && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs shadow-sm animate-fade-in">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <span className="truncate">
+                  <strong>Filtro global de oficios activo:</strong> Mostrando únicamente equipables que puedes craftear o magear según tus niveles de oficio.
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-emerald-400/80 shrink-0 font-bold">
+                {processedCatalogItems.length} equipables disponibles
+              </span>
+            </div>
+          )}
 
           {/* Results Summary Bar */}
           <div className="flex items-center justify-between text-sm text-slate-400 px-1 font-medium">

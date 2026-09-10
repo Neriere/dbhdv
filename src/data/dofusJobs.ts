@@ -187,6 +187,11 @@ export function isOmittedItem(item: {
     return false;
   }
 
+  // Los objetos de clase (sets de clase) nunca deben aparecer en recetas ni machacado
+  if (isClassItem(item as any)) {
+    return true;
+  }
+
   // Si tiene receta conocida o ingrediente, no omitir
   if ((item as any).has_recipe || (item as any).hasRecipe || (item as any).recipeData || (item as any).isIngredient) {
     return false;
@@ -543,15 +548,86 @@ export function isCosmeticItem(item: {
   return false;
 }
 
+// Sets oficiales de clase en Dofus (19 razas + variantes)
+export const CLASS_ITEM_SET_IDS = new Set<number>([
+  81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92,
+  217, 218, 250, 370, 392, 430, 515, 902
+]);
+
+// Todos los IDs oficiales de ítems de clase en Dofus
+export const CLASS_ITEM_IDS = new Set<number>([
+  8619, 8628, 8629, 8630, 8631, 8632, 8633, 8634, 8635, 8636,
+  8637, 8638, 8639, 8640, 8641, 8642, 8643, 8644, 8645, 8646,
+  8647, 8648, 8649, 8650, 8651, 8652, 8653, 8654, 8655, 8656,
+  8657, 8658, 8659, 8660, 8661, 8662, 8663, 8664, 8665, 8666,
+  8667, 8668, 8669, 8670, 8713, 8714, 8715, 8716, 8717, 8718,
+  8719, 8720, 8721, 8722, 8723, 8724, 8725, 8726, 8727, 8728,
+  9925, 9927, 12385, 12386, 12387, 12388, 12389, 12390, 12391,
+  12392, 12393, 12394, 13261, 13262, 13263, 13264, 13265, 16140,
+  16141, 16142, 16143, 16144, 17448, 17449, 17450, 17451, 17452,
+  18615, 18616, 18617, 18621, 18622, 27551, 27552, 27553, 27554, 27555
+]);
+
+// Nombres exactos y patrones de los objetos de clase
+export const CLASS_ITEM_NAMES_LOWER: string[] = [
+  // Aniripsa - Set Altruista
+  "cinturronchón", "cinturronchon", "botas epsia", "capa labrita", "gorro del maestro piezo", "alianza guero",
+  // Anutrof - Set Venerable
+  "cinto rhente", "zapatos ginkel-hy", "s'capa toria", "scapa toria", "alfue gorro", "anillo stálgico", "anillo stalgico",
+  // Feca - Set Indestructible
+  "la merendera", "botas de úveta", "botas de uveta", "capa docia", "sombrerillo del lazarillo", "anillo vedor",
+  // Forjalanza - Set del Legado
+  "talabarte popeya", "polainas herederas", "capa anteón", "capa anteon", "yelmo mero", "guantes peciales",
+  // Hipermago - Set cuadramental
+  "elementurón", "elementuron", "botas iniciales", "capa sencial", "tocado minante", "anillo rúnico", "anillo runico",
+  // Ocra - Set del Príncipe de los ladrones
+  "chincha diana", "cincha diana", "botas delappioh", "capulko", "gorro del príncipe robin", "gorro del principe robin", "divin anillo",
+  // Osamodas - Set del Innumerable
+  "cinto'rbodyezel", "cinto rbodyezel", "botaz mania", "capa lina", "capucha apino", "col anillo",
+  // Pandawa - Set Etílico
+  "pandinturón", "pandinturon", "chancletas bernáculo", "chancletas bernaculo", "geta bernáculo", "geta bernaculo", "capa weira", "casco locado", "anillo chistoso",
+  // Sacrógrito - Set Exangüe
+  "cinto oturador", "cinto orturator", "chancla vada", "cap'ytal", "cap ytal", "sombrervido", "hospit anillo",
+  // Sadida - Set Salvaje
+  "cintelación", "cintelacion", "botas nicas", "capitón", "capiton", "gorra bano", "anillo peludo",
+  // Selotrop - Set transcendente
+  "cinturón ciclón", "cinturon ciclon", "botas de tránsito", "botas de transito", "capa ortal", "máscara krósmica", "mascara krosmica", "anillo nova",
+  // Sram - Set Criminal
+  "cinto hreru", "botas idermista", "capa migodel oajeno", "multricornio", "avernillo",
+  // Steamer - Set Sumergible
+  "cinturojo debuhey", "robotas", "saca-botellón", "saca-botellon", "escafandra gina", "manometranillo",
+  // Tymador - Set explosivo
+  "cinturón daxpansiva", "cinturon daxpansiva", "botas opsya", "capa horcado", "bandana burlona", "mitones curidad",
+  // Uginak - Set rabioso
+  "cinturón azotón", "cinturon azoton", "botas masnada", "capa pelo", "gorro morro", "anillóseo", "anilloseo",
+  // Xelor - Set Intemporal
+  "cinto o'rario", "cinto orario", "zapato m'prano", "zapato mprano", "capa tic-tac", "diapa sombrero", "puntu alianza",
+  // Yopuka - Set Temerario
+  "correa litichow", "botas altantes", "botas altante", "capa yaso", "casco moasdicho", "pulserriña", "pulserrina",
+  // Zobal - Set lunático
+  "cuerda sura", "zuecos toso", "capa aircusíon", "capa aircusion", "máscara rpone", "mascara rpone", "brazalete yenda",
+  // Zurcarák - Set del Caza Ratones
+  "cintourón baraja", "cintouron baraja", "cinturón baraja", "cinturon baraja", "zapatillas con pelos", "capa gar", "sombrero de tahúr", "sombrero de tahur", "sombrero del tahúr", "anillo del craps",
+  // Nombres de Panoplias de clase
+  "set altruista", "set venerable", "set indestructible", "set del legado", "set cuadramental",
+  "set del príncipe de los ladrones", "set del principe de los ladrones", "set del innumerable",
+  "set etílico", "set etilico", "set exangüe", "set exangue", "set salvaje", "set transcendente",
+  "set criminal", "set sumergible", "set explosivo", "set rabioso", "set intemporal", "set temerario",
+  "set lunático", "set lunatico", "set del caza ratones", "panoplia de clase", "panoplie de classe"
+];
+
 /**
  * Helper to test if an item is a Class Item (Objetos de clase / Panoplias de clase)
- * These items modify spells and generate 0 runes, and must be completely omitted.
+ * These items modify spells and generate 0 runes, and must be completely omitted from recipes, ranking, and crafting.
  */
 export function isClassItem(item: {
   id?: number;
   name?: { es?: string; fr?: string; en?: string } | string;
   description?: { es?: string; fr?: string; en?: string } | string;
   typeId?: number;
+  itemSetId?: number;
+  item_set_id?: number;
+  itemSet?: { id?: number };
   type?: {
     id?: number;
     superCategoryId?: number;
@@ -565,179 +641,58 @@ export function isClassItem(item: {
     to?: number;
     formatted?: string;
   }>;
+  effects?: Array<{
+    id?: number;
+    effectId?: number;
+    characteristic?: number;
+    from?: number;
+    to?: number;
+    formatted?: string;
+  }>;
 }): boolean {
   if (!item) return false;
 
+  // 1. Comprobación directa por ID del ítem
+  const itemId = Number(item.id || 0);
+  if (itemId > 0 && CLASS_ITEM_IDS.has(itemId)) {
+    return true;
+  }
+
+  // 2. Comprobación por ID de set de clase
+  const setId = Number(item.itemSetId || item.item_set_id || item.itemSet?.id || (item as any).item_set || 0);
+  if (setId > 0 && CLASS_ITEM_SET_IDS.has(setId)) {
+    return true;
+  }
+
+  // 3. Comprobación por nombre
   const nameStr = typeof item.name === "string" ? item.name : "";
-  const nameEs = (
-    typeof item.name === "object" ? item.name?.es || "" : nameStr
-  ).toLowerCase().trim();
-  const nameFr = (
-    typeof item.name === "object" ? item.name?.fr || "" : ""
-  ).toLowerCase().trim();
-  const nameEn = (
-    typeof item.name === "object" ? item.name?.en || "" : ""
-  ).toLowerCase().trim();
+  const nameEs = (typeof item.name === "object" ? item.name?.es || "" : nameStr).toLowerCase().trim();
+  const nameFr = (typeof item.name === "object" ? item.name?.fr || "" : "").toLowerCase().trim();
+  const nameEn = (typeof item.name === "object" ? item.name?.en || "" : "").toLowerCase().trim();
 
   const descStr = typeof item.description === "string" ? item.description : "";
-  const descEs = (
-    typeof item.description === "object" ? item.description?.es || "" : descStr
-  ).toLowerCase();
+  const descEs = (typeof item.description === "object" ? item.description?.es || "" : descStr).toLowerCase();
 
   const fullText = `${nameEs} ${nameFr} ${nameEn} ${descEs}`;
 
-  // Patterns for class items and class sets in Dofus
-  const CLASS_ITEM_PATTERNS = [
-    "de clase",
-    "de los feca",
-    "de los yopuka",
-    "de los ocra",
-    "de los sram",
-    "de los eniripsa",
-    "de los osamodas",
-    "de los enutrof",
-    "de los xelor",
-    "de los xélor",
-    "de los zurcarak",
-    "de los zurcarák",
-    "de los sadida",
-    "de los sacrogrito",
-    "de los sacrógrito",
-    "de los pandawa",
-    "de los tymador",
-    "de los zobal",
-    "de los steamer",
-    "de los selotrop",
-    "de los hipermago",
-    "de los uginak",
-    "de los forjalanzas",
-    "panoplie de classe",
-    "panoplia de clase",
-    "objet de classe",
-    "objeto de clase",
-    // Spanish class set item names
-    "birrete tador",
-    "capa teur",
-    "cinturón steur",
-    "cinturon steur",
-    "botas tifas",
-    "sortija lero",
-    "boina turón",
-    "boina turon",
-    "capa razón",
-    "capa razon",
-    "cinturón fante",
-    "cinturon fante",
-    "botas tijas",
-    "sortija gole",
-    "sombrero lito",
-    "capa lita",
-    "cinturón toro",
-    "cinturon toro",
-    "botas tero",
-    "sortija lejo",
-    "sombrero tura",
-    "capa tura",
-    "cinturón tura",
-    "cinturon tura",
-    "botas tura",
-    "sortija tura",
-    "casco hondo",
-    "capa yente",
-    "sombrero lero",
-    "capa lero",
-    "cinturón lero",
-    "cinturon lero",
-    "botas leras",
-    "sortija lera",
-    "sombrero miau",
-    "capa miau",
-    "cinturón miau",
-    "cinturon miau",
-    "botas miau",
-    "sortija miau",
-    "corona tula",
-    "capa tula",
-    "cinturón tulo",
-    "cinturon tulo",
-    "botas tula",
-    "sortija tula",
-    "casco leado",
-    "capa lada",
-    "sombrero rero",
-    "capa rera",
-    "cinturón rero",
-    "cinturon rero",
-    "botas reras",
-    "sortija rera",
-    "sombrero nudo",
-    "capa nuda",
-    "cinturón nudo",
-    "cinturon nudo",
-    "botas nudas",
-    "sortija nuda",
-    "capa pucha",
-    "gorro pucho",
-    "cinturón pucho",
-    "cinturon pucho",
-    "botas puchas",
-    "sortija pucha",
-    "corona txi",
-    "capa txi",
-    "cinturón txi",
-    "cinturon txi",
-    "botas txi",
-    "sortija txi",
-    "boina parda",
-    "capa parda",
-    "cinturón pardo",
-    "cinturon pardo",
-    "botas pardas",
-    "sortija parda",
-    "máscara parda",
-    "mascara parda",
-    "sombrero mero",
-    "capa mera",
-    "cinturón mero",
-    "cinturon mero",
-    "botas meras",
-    "sortija mera",
-    "tocado toro",
-    "capa toro",
-    "cinturón toro",
-    "cinturon toro",
-    "botas toras",
-    "sortija tora",
-    "birrete mágico",
-    "birrete magico",
-    "capa mágica",
-    "capa magica",
-    "sombrero ladro",
-    "capa ladra",
-    "cinturón ladro",
-    "cinturon ladro",
-    "botas ladras",
-    "sortija ladra",
-    "casco lanza",
-    "capa lanza",
-    "cinturón lanza",
-    "cinturon lanza",
-    "botas lanzas",
-    "sortija lanza",
-  ];
-
-  for (const pat of CLASS_ITEM_PATTERNS) {
-    if (fullText.includes(pat)) {
+  for (const className of CLASS_ITEM_NAMES_LOWER) {
+    if (nameEs === className || nameEs.includes(className) || fullText.includes(className)) {
       return true;
     }
   }
 
-  // Spell-modification effects check (Dofus effectIds 281-294)
-  if (Array.isArray(item.possibleEffects) && item.possibleEffects.length > 0) {
-    const spellModifierCount = item.possibleEffects.filter((eff) => {
-      const effId = Number(eff.effectId || eff.id || 0);
+  // 4. Comprobación por efectos de modificación de hechizos (efectos 281-294 o mención de hechizo)
+  const allEffects = [
+    ...(Array.isArray(item.possibleEffects) ? item.possibleEffects : []),
+    ...(Array.isArray(item.effects) ? item.effects : []),
+  ];
+
+  if (allEffects.length > 0) {
+    let spellModifierCount = 0;
+    for (const eff of allEffects) {
+      const effId = Number(eff.effectId || (eff as any).id || 0);
       const isSpellMod = effId >= 281 && effId <= 294;
-      const formatted = (eff.formatted || "").toLowerCase();
+      const formatted = ((eff.formatted as any) || "").toLowerCase();
       const mentionsSpell =
         formatted.includes("hechizo") ||
         formatted.includes("sort ") ||
@@ -747,13 +702,12 @@ export function isClassItem(item: {
         formatted.includes("alcance del hechizo") ||
         formatted.includes("coste en pa del hechizo") ||
         formatted.includes("cooldown");
-      return isSpellMod || mentionsSpell;
-    }).length;
+      if (isSpellMod || mentionsSpell) {
+        spellModifierCount++;
+      }
+    }
 
-    if (
-      spellModifierCount > 0 &&
-      (spellModifierCount === item.possibleEffects.length || spellModifierCount >= 3)
-    ) {
+    if (spellModifierCount > 0 && (spellModifierCount === allEffects.length || spellModifierCount >= 2)) {
       return true;
     }
   }

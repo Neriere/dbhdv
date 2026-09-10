@@ -28,9 +28,11 @@ import {
   ChevronRight,
   ShoppingCart,
   Copy,
+  Briefcase,
 } from "lucide-react";
+import { useUserJobs } from "../hooks/useUserJobs";
 import { MarketPriceMap } from "../types";
-import { DOFUS_JOBS, isOmittedItem, isCrushableJob } from "../data/dofusJobs";
+import { DOFUS_JOBS, isOmittedItem, isClassItem, isCrushableJob } from "../data/dofusJobs";
 import {
   DEFAULT_INGREDIENT_PRICES,
   PresetCraftableItem,
@@ -113,6 +115,8 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     "best_profit_desc" | "sale_profit_desc" | "crush_profit_desc" | "best_roi_desc" | "cost_asc"
   >("best_profit_desc");
 
+  const { isEnabled: isUserJobsEnabled, canCraft: canUserCraft } = useUserJobs();
+
   useEffect(() => {
     setCurrentPage(1);
   }, [
@@ -125,6 +129,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     minRoi,
     maxCraftCost,
     sortBy,
+    isUserJobsEnabled,
   ]);
 
   const { marketPrices: basePrices, priceUpdatedAt, activeProfileId, updatePrice } = useMarketPrices();
@@ -155,7 +160,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
     const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];
-    return raw.filter((item) => !isOmittedItem(item));
+    return raw.filter((item) => !isOmittedItem(item) && !isClassItem(item));
   }, [activeProfileId]);
 
   const rankedItems: CalculatedRecipeRanking[] = useMemo(() => {
@@ -236,6 +241,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     return rankedItems
       .filter((entry) => {
         if (selectedJobId !== "all" && entry.jobId !== selectedJobId) return false;
+        if (isUserJobsEnabled && !canUserCraft(entry.item)) return false;
         if (entry.item.level < effMinLevel || entry.item.level > effMaxLevel) return false;
         if (entry.craftCost > effMaxCraftCost) return false;
 
@@ -282,6 +288,8 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     maxCraftCost,
     searchTerm,
     sortBy,
+    isUserJobsEnabled,
+    canUserCraft,
   ]);
 
   const totalPages = Math.ceil(filteredRankings.length / ITEMS_PER_PAGE) || 1;
@@ -294,6 +302,23 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* User Jobs Global Filter Notice */}
+      {isUserJobsEnabled && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+              <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <span className="truncate">
+              <strong>Filtro global de oficios activo:</strong> El ranking solo incluye recetas que tu personaje puede craftear según tus niveles de oficio.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-emerald-400/80 shrink-0 font-bold">
+            {filteredRankings.length} recetas en ranking
+          </span>
+        </div>
+      )}
+
       {/* Job Selection Cards */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-lg space-y-2">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">

@@ -38,6 +38,7 @@ import {
   addToShoppingListById,
   getItemIconUrl,
 } from "../services/dofusDbService";
+import { resolveServerSlug } from "../data/dofusRuneWeights";
 import { useMarketPrices } from "../hooks/useMarketPrices";
 import { useBankInventory } from "../hooks/useBankInventory";
 import { BycDetailPage } from "./BycDetailPage";
@@ -79,6 +80,15 @@ export interface CalculatedBycEquipment {
 
 const SEBUSCALIN_STORAGE_KEY = "dofus_sebuscalin_unit_price_v1";
 
+const getStoredSebuscalinPrice = (serverSlug?: string): number => {
+  if (typeof window === "undefined") return 320;
+  const slug = resolveServerSlug(serverSlug);
+  const val = localStorage.getItem(`dofus_sebuscalin_unit_price_${slug}`);
+  if (val) return Math.max(1, Number(val));
+  const legacy = localStorage.getItem(SEBUSCALIN_STORAGE_KEY);
+  return legacy ? Math.max(1, Number(legacy)) : 320;
+};
+
 const ZONE_FILTERS = [
   { id: "all", label: "Todas las zonas" },
   { id: "Astrub", label: "Astrub" },
@@ -116,10 +126,21 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
   // Unit rate for Sebuscalines
   const [sebuscalinPrice, setSebuscalinPrice] = useState<number>(() => {
-    if (typeof window === "undefined") return 320;
-    const val = localStorage.getItem(SEBUSCALIN_STORAGE_KEY);
-    return val ? Math.max(1, Number(val)) : 320;
+    return getStoredSebuscalinPrice();
   });
+
+  useEffect(() => {
+    const handleProfileChange = (e: any) => {
+      const slug = e?.detail?.profile?.slug;
+      const newPrice = getStoredSebuscalinPrice(slug);
+      setSebuscalinPrice(newPrice);
+      setTempSebuscalin(String(newPrice));
+    };
+    window.addEventListener("dofus_profile_changed", handleProfileChange);
+    return () => {
+      window.removeEventListener("dofus_profile_changed", handleProfileChange);
+    };
+  }, []);
 
   // UI States
   const [searchQuery, setSearchQuery] = useState("");
@@ -171,6 +192,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
     setSebuscalinPrice(s);
 
     if (typeof window !== "undefined") {
+      const slug = resolveServerSlug();
+      localStorage.setItem(`dofus_sebuscalin_unit_price_${slug}`, String(s));
       localStorage.setItem(SEBUSCALIN_STORAGE_KEY, String(s));
     }
     setIsRatesModalOpen(false);
@@ -412,6 +435,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
           onUpdateSebuscalinPrice={(p) => {
             setSebuscalinPrice(p);
             if (typeof window !== "undefined") {
+              const slug = resolveServerSlug();
+              localStorage.setItem(`dofus_sebuscalin_unit_price_${slug}`, String(p));
               localStorage.setItem(SEBUSCALIN_STORAGE_KEY, String(p));
             }
           }}

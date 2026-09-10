@@ -4,7 +4,7 @@ import { EventEmitter } from "events";
 
 export const marketEvents = new EventEmitter();
 marketEvents.setMaxListeners(100);
-import { isOmittedItem, isCosmeticItem } from "../data/dofusJobs";
+import { isOmittedItem, isCosmeticItem, isClassItem } from "../data/dofusJobs";
 import { DOFUS_BASE_RUNES, extractItemStats } from "../data/dofusRuneWeights";
 import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
 import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_DICT, ALL_DOFUS_RUNES_BY_ID } from "../data/dofusAllRunesDict";

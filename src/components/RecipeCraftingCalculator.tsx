@@ -23,7 +23,7 @@ import {
   ItemSalesVolume,
 } from "../services/salesVolumeService";
 import { DofusItem, RecipeTreeNode } from "../types";
-import { isOmittedItem } from "../data/dofusJobs";
+import { isOmittedItem, isClassItem } from "../data/dofusJobs";
 import {
   PRESET_CRAFTABLE_ITEMS,
   DEFAULT_INGREDIENT_PRICES,
@@ -53,6 +53,8 @@ import {
   getStoredBycMethods,
   saveStoredBycMethod,
 } from "../services/bycCostService";
+import { useUserJobs } from "../hooks/useUserJobs";
+import { Briefcase } from "lucide-react";
 
 const getJobBadgeStyle = (jobName: string) => {
   const name = (jobName || "").toLowerCase();
@@ -109,6 +111,7 @@ export const RecipeCraftingCalculator: React.FC<{
   const [itemForQuickQuote, setItemForQuickQuote] = useState<PresetCraftableItem | null>(null);
 
   const { marketPrices: basePrices, priceUpdatedAt, updatePrice } = useMarketPrices();
+  const { isEnabled: isUserJobsEnabled, canCraft: canUserCraft } = useUserJobs();
   const marketPrices = useMemo(
     () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
     [basePrices]
@@ -144,9 +147,11 @@ export const RecipeCraftingCalculator: React.FC<{
     };
     window.addEventListener("dofus_sales_volume_updated", handleVolumeUpdated);
     window.addEventListener("dofus_byc_method_changed", handleBycChange);
+    window.addEventListener("dofus_profile_changed", handleBycChange);
     return () => {
       window.removeEventListener("dofus_sales_volume_updated", handleVolumeUpdated);
       window.removeEventListener("dofus_byc_method_changed", handleBycChange);
+      window.removeEventListener("dofus_profile_changed", handleBycChange);
     };
   }, []);
 
@@ -295,7 +300,7 @@ export const RecipeCraftingCalculator: React.FC<{
 
   const allCraftableItems: PresetCraftableItem[] = useMemo(() => {
     const raw = getCraftableItemsSnapshot() as PresetCraftableItem[];
-    return raw.filter((item) => !isOmittedItem(item));
+    return raw.filter((item) => !isOmittedItem(item) && !isClassItem(item));
   }, []);
 
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -318,6 +323,7 @@ export const RecipeCraftingCalculator: React.FC<{
     minRoi,
     maxCraftCost,
     itemsPerPage,
+    isUserJobsEnabled,
   ]);
 
   const quotedCount = useMemo(() => {
@@ -442,6 +448,10 @@ export const RecipeCraftingCalculator: React.FC<{
     return allCraftableItems
       .filter((item) => {
         if (selectedJobId !== "all" && item.jobId !== selectedJobId) {
+          return false;
+        }
+
+        if (isUserJobsEnabled && !canUserCraft(item)) {
           return false;
         }
 
@@ -593,6 +603,8 @@ export const RecipeCraftingCalculator: React.FC<{
     minDailySales,
     sortBy,
     itemMetricsMap,
+    isUserJobsEnabled,
+    canUserCraft,
   ]);
 
   const totalPages = Math.max(
@@ -822,6 +834,23 @@ export const RecipeCraftingCalculator: React.FC<{
         onResetFilters={handleResetFilters}
         hasActiveFilters={hasActiveFilters}
       />
+
+      {/* User Jobs Global Filter Notice */}
+      {isUserJobsEnabled && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+              <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <span className="truncate">
+              <strong>Filtro global de oficios activo:</strong> Mostrando únicamente recetas que tu personaje puede craftear según tus niveles de oficio.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-emerald-400/80 shrink-0 font-bold">
+            {filteredItems.length} objetos disponibles
+          </span>
+        </div>
+      )}
 
       {/* Catalog Grid Cards */}
       <div className="space-y-4">

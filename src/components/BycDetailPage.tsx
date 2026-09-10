@@ -17,7 +17,9 @@ import {
   HelpCircle,
   BarChart2,
   FileSpreadsheet,
+  Briefcase,
 } from "lucide-react";
+import { useUserJobs } from "../hooks/useUserJobs";
 import { LegendaryHuntInfo, LEGENDARY_HUNTS } from "../data/legendaryHuntsData";
 import {
   getRelatedEquipmentForHunt,
@@ -65,6 +67,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
   onPriceChange,
   showToast,
 }) => {
+  const { isEnabled: isUserJobsEnabled, canCraft } = useUserJobs();
   // Direct Inline Price Drafts
   const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
 
@@ -206,7 +209,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
   }
 
   // Related equipment list
-  const relatedEquipment: BycRelatedEquipment[] = getRelatedEquipmentForHunt(
+  const rawRelatedEquipment: BycRelatedEquipment[] = getRelatedEquipmentForHunt(
     hunt.id,
     hunt.monsterName,
     hunt.monsterLevel,
@@ -214,6 +217,11 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
     hunt.resource.name,
     resourcePriceGross
   );
+
+  const relatedEquipment = React.useMemo(() => {
+    if (!isUserJobsEnabled) return rawRelatedEquipment;
+    return rawRelatedEquipment.filter((eq) => canCraft(eq as any));
+  }, [rawRelatedEquipment, isUserJobsEnabled, canCraft]);
 
   // Filtered hunts for quick search switch
   const filteredSwitchHunts = LEGENDARY_HUNTS.filter((h) =>
@@ -659,6 +667,13 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
             {relatedEquipment.length} equipable(s)
           </div>
         </div>
+
+        {isUserJobsEnabled && (
+          <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/25 text-purple-300 text-xs font-medium">
+            <Briefcase className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>Filtro activo: Mostrando únicamente equipables que tus oficios pueden fabricar actualmente.</span>
+          </div>
+        )}
 
         {/* Equipment List */}
         <div className="space-y-4">

@@ -10,6 +10,8 @@ import {
   Sparkles,
   Vault,
   Map as MapIcon,
+  Scroll,
+  Briefcase,
 } from 'lucide-react';
 import {
   getActivePriceProfileId,
@@ -23,6 +25,8 @@ import {
 } from '../services/dofusDbService';
 import { DofusTheme } from '../types';
 import { groupPriceProfilesByCategory } from '../utils/serverUtils';
+import { useUserJobs } from '../hooks/useUserJobs';
+import { UserJobsModal } from './common/UserJobsModal';
 
 
 export type ActiveTab =
@@ -34,6 +38,7 @@ export type ActiveTab =
   | 'ranking'
   | 'shopping'
   | 'prices'
+  | 'consumables'
   | 'importer';
 
 interface NavbarProps {
@@ -65,6 +70,7 @@ const TAB_GROUPS = [
       { id: 'bank'          as ActiveTab, label: 'Mi Banco',     icon: Vault },
       { id: 'shopping'      as ActiveTab, label: 'Compras',      icon: ShoppingCart },
       { id: 'treasure_maps' as ActiveTab, label: 'Mapas & ByC',  icon: MapIcon },
+      { id: 'consumables'   as ActiveTab, label: 'Pergaminos',   icon: Scroll },
     ],
   },
   {
@@ -86,7 +92,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const [shoppingCount, setShoppingCount] = useState(getShoppingList().length);
   const [bankCount, setBankCount] = useState(getStoredBankInventory().length);
   const [currentTheme, setCurrentTheme] = useState<DofusTheme>(getStoredTheme());
-
+  const { isEnabled: isJobsEnabled } = useUserJobs();
+  const [isJobsModalOpen, setIsJobsModalOpen] = useState(false);
 
   // Badge map so we can look up quickly per tab id
   const badgeMap: Partial<Record<ActiveTab, number>> = {
@@ -204,6 +211,33 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
               {/* Divider */}
               <div className="hidden sm:block w-px h-5 bg-slate-800" />
 
+              {/* Mis Oficios Button */}
+              <button
+                type="button"
+                onClick={() => setIsJobsModalOpen(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                  isJobsEnabled
+                    ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-950/30"
+                    : "bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white"
+                }`}
+                title="Configurar niveles de oficio y filtro global"
+              >
+                <Briefcase className={`w-3.5 h-3.5 shrink-0 ${isJobsEnabled ? "text-emerald-400" : "text-amber-400"}`} />
+                <span className="hidden sm:inline">Mis Oficios</span>
+                {isJobsEnabled ? (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 leading-none">
+                    ON
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-slate-800 text-slate-400 leading-none">
+                    OFF
+                  </span>
+                )}
+              </button>
+
+              {/* Divider */}
+              <div className="hidden sm:block w-px h-5 bg-slate-800" />
+
               {/* Server selector */}
               <div className="flex items-center gap-1.5">
                 <span className="hidden lg:inline text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -286,7 +320,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         </div>
       </header>
 
-
+      <UserJobsModal
+        isOpen={isJobsModalOpen}
+        onClose={() => setIsJobsModalOpen(false)}
+      />
     </>
   );
 };

@@ -370,6 +370,7 @@ function updateMemoryCache(payload: {
   coefficients?: Record<number, number>;
   coefficientUpdatedAt?: Record<number, number>;
   manualEdits?: Record<number, number>;
+  replacePrices?: boolean;
 }): void {
   let changedStructure = false;
   if (payload.items || payload.recipes) {
@@ -392,13 +393,16 @@ function updateMemoryCache(payload: {
           };
 
     const merged = mergePresetData(combinedItems, combinedRecipes);
-    itemsMemoryCache = merged.items.filter((item) => !isOmittedItem(item));
+    itemsMemoryCache = merged.items.filter((item) => !isOmittedItem(item) && !isClassItem(item));
     recipesMemoryCache = merged.recipes;
     changedStructure = true;
   }
 
   if (payload.prices) {
-    if (payload.priceUpdatedAt) {
+    if (payload.replacePrices) {
+      pricesMemoryCache = { ...payload.prices };
+      priceUpdatedAtMemoryCache = { ...(payload.priceUpdatedAt || {}) };
+    } else if (payload.priceUpdatedAt) {
       for (const [idStr, price] of Object.entries(payload.prices)) {
         const id = Number(idStr);
         const incomingTime = payload.priceUpdatedAt[id] || 0;
@@ -1842,7 +1846,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     const presetItem = presetItemMap.get(resultId);
     const itemToUse = existingItem || presetItem;
 
-    if (itemToUse && (isCosmeticItem(itemToUse as any) || isDofusItem(itemToUse as any))) {
+    if (itemToUse && (isCosmeticItem(itemToUse as any) || isDofusItem(itemToUse as any) || isClassItem(itemToUse as any) || isOmittedItem(itemToUse as any))) {
       continue;
     }
 
@@ -1878,6 +1882,10 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
       SUPPLEMENTARY_ITEMS_DICT[sId] ||
       "";
     const resolvedName = knownName || `Objeto #${resultId}`;
+
+    if (isClassItem({ id: resultId, name: resolvedName }) || isOmittedItem({ id: resultId, name: resolvedName })) {
+      continue;
+    }
 
     resultList.push({
       id: resultId,
@@ -2240,8 +2248,10 @@ export async function setActiveLocalPriceProfile(
     coefficients: response.coefficients,
     coefficientUpdatedAt: response.coefficientUpdatedAt,
     manualEdits: response.manualEdits,
+    replacePrices: true,
   });
 
+  clearRecipeTreeCache();
   resetLivePriceSyncTimestamp();
 
   if (typeof window !== "undefined") {
@@ -2261,6 +2271,18 @@ export async function setActiveLocalPriceProfile(
         },
       })
     );
+    window.dispatchEvent(
+      new CustomEvent("dofus_prices_updated", {
+        detail: {
+          profileId: response.activePriceProfileId,
+          updatedPrices: response.prices || {},
+          priceUpdatedAt: response.priceUpdatedAt || {},
+          count: Object.keys(response.prices || {}).length,
+          timestamp: Date.now(),
+        },
+      })
+    );
+    emitDatabaseUpdated();
   }
 }
 

@@ -1791,9 +1791,10 @@ function getManualEditsStorageKey(serverSlug?: string): string {
 export function getAllSavedItemManualEdits(serverSlug?: string): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
-    const serverKey = getManualEditsStorageKey(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const serverKey = getManualEditsStorageKey(slug);
     let raw = localStorage.getItem(serverKey);
-    if (!raw && serverKey !== BASE_COEFFICIENTS_MANUAL_EDITS_KEY) {
+    if (!raw && slug === "draconiros") {
       raw = localStorage.getItem(BASE_COEFFICIENTS_MANUAL_EDITS_KEY);
     }
     return raw ? JSON.parse(raw) : {};
@@ -1815,10 +1816,11 @@ export function getItemManualEditTimestamp(itemId: number, serverSlug?: string):
 export function getSavedItemCoefficient(itemId: number, serverSlug?: string): number | null {
   if (typeof window === "undefined") return null;
   try {
-    const serverKey = getCoefficientsStorageKey(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const serverKey = getCoefficientsStorageKey(slug);
     let raw = localStorage.getItem(serverKey);
-    // Backward compatibility fallback to base key if server key is empty
-    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+    // Backward compatibility fallback to base key ONLY if server is draconiros
+    if (!raw && slug === "draconiros") {
       raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
     }
     if (!raw) return null;
@@ -1832,9 +1834,10 @@ export function getSavedItemCoefficient(itemId: number, serverSlug?: string): nu
 export function getItemCoefficientTimestamp(itemId: number, serverSlug?: string): number | null {
   if (typeof window === "undefined") return null;
   try {
-    const serverKey = getTimestampsStorageKey(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const serverKey = getTimestampsStorageKey(slug);
     let raw = localStorage.getItem(serverKey);
-    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+    if (!raw && slug === "draconiros") {
       raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
     }
     if (!raw) return null;
@@ -1941,9 +1944,10 @@ export function saveItemCoefficient(
 export function getAllSavedItemCoefficients(serverSlug?: string): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
-    const serverKey = getCoefficientsStorageKey(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const serverKey = getCoefficientsStorageKey(slug);
     let raw = localStorage.getItem(serverKey);
-    if (!raw && serverKey !== BASE_COEFFICIENTS_STORAGE_KEY) {
+    if (!raw && slug === "draconiros") {
       raw = localStorage.getItem(BASE_COEFFICIENTS_STORAGE_KEY);
     }
     return raw ? JSON.parse(raw) : {};
@@ -1955,9 +1959,10 @@ export function getAllSavedItemCoefficients(serverSlug?: string): Record<number,
 export function getAllSavedItemCoefficientTimestamps(serverSlug?: string): Record<number, number> {
   if (typeof window === "undefined") return {};
   try {
-    const serverKey = getTimestampsStorageKey(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const serverKey = getTimestampsStorageKey(slug);
     let raw = localStorage.getItem(serverKey);
-    if (!raw && serverKey !== BASE_COEFFICIENTS_TIMESTAMPS_KEY) {
+    if (!raw && slug === "draconiros") {
       raw = localStorage.getItem(BASE_COEFFICIENTS_TIMESTAMPS_KEY);
     }
     return raw ? JSON.parse(raw) : {};

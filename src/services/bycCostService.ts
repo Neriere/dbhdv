@@ -154,6 +154,8 @@ export function getOptimizedIngredientCost(
   return { cost: direct, isByc: false };
 }
 
+import { resolveServerSlug } from "../data/dofusRuneWeights";
+
 const BYC_STORAGE_KEY = "dofus_byc_preferred_methods";
 
 /**
@@ -161,8 +163,12 @@ const BYC_STORAGE_KEY = "dofus_byc_preferred_methods";
  */
 export function getStoredBycMethods(serverSlug?: string): Record<number, "direct" | "fragments" | "map"> {
   try {
-    const key = serverSlug ? `${BYC_STORAGE_KEY}_${serverSlug}` : BYC_STORAGE_KEY;
-    const raw = localStorage.getItem(key);
+    const slug = resolveServerSlug(serverSlug);
+    const key = `${BYC_STORAGE_KEY}_${slug}`;
+    let raw = localStorage.getItem(key);
+    if (!raw && slug === "draconiros") {
+      raw = localStorage.getItem(BYC_STORAGE_KEY);
+    }
     if (!raw) return {};
     return JSON.parse(raw);
   } catch {
@@ -179,14 +185,15 @@ export function saveStoredBycMethod(
   serverSlug?: string
 ): Record<number, "direct" | "fragments" | "map"> {
   try {
-    const key = serverSlug ? `${BYC_STORAGE_KEY}_${serverSlug}` : BYC_STORAGE_KEY;
-    const current = getStoredBycMethods(serverSlug);
+    const slug = resolveServerSlug(serverSlug);
+    const key = `${BYC_STORAGE_KEY}_${slug}`;
+    const current = getStoredBycMethods(slug);
     current[itemId] = method;
     localStorage.setItem(key, JSON.stringify(current));
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("dofus_byc_method_changed", {
-          detail: { itemId, method },
+          detail: { itemId, method, server: slug },
         })
       );
     }

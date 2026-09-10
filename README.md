@@ -9,12 +9,15 @@ Plataforma web para análisis económico, optimización de crafteo, gestión de 
 Dofus Craft combina una interfaz en React 19 con un servidor Node.js/Express, funciones serverless para despliegues en Vercel y persistencia en SQLite (`local.db`) con soporte opcional para bases de datos remotas en Turso (LibSQL).
 
 Capacidades principales:
-1. Analizar la rentabilidad de recetas con desglose jerárquico de subcrafteos.
+1. Analizar la rentabilidad de recetas con desglose jerarquico de subcrafteos.
 2. Identificar recetas fabricables a partir del inventario disponible en el banco (crafteo inverso).
-3. Simular el machacado de equipamiento para la obtención de runas de forjamagia y consultar coeficientes de rotura.
-4. Capturar precios de mercadillo en tiempo real mediante un sniffer de red pasivo para Dofus Unity.
-5. Importar y cotizar builds completas de Dofusbook, comparando el costo de compra frente al costo de crafteo.
-6. Consultar el historial de fluctuaciones de precios y gestionar perfiles independientes por servidor.
+3. Simular el machacado de equipamiento para la obtencion de runas de forjamagia y consultar coeficientes de rotura.
+4. Analizar la rentabilidad de consumibles de caracteristicas de protectores y canje de sebuscalines por pergaminos.
+5. Evaluar cacerias legendarias (BYC) y la decision comercial entre vender el recurso crudo o fabricar equipables.
+6. Filtrar globalmente todas las secciones segun los niveles reales de oficio del usuario ("Mis Oficios").
+7. Capturar precios de mercadillo en tiempo real mediante un sniffer de red pasivo para Dofus Unity.
+8. Importar y cotizar builds completas de Dofusbook, comparando el costo de compra frente al costo de crafteo.
+9. Consultar el historial de fluctuaciones, velocidad de rotacion (24h/7d/30d) y gestionar perfiles independientes por servidor.
 
 ---
 
@@ -22,6 +25,7 @@ Capacidades principales:
 
 ### 1. Calculadora de Recetas y Subcrafteo Multinivel
 - Catalogo de recetas de todos los oficios (Forjador, Escultor, Sastre, Zapatero, Joyero, Alquimista, etc.).
+- Exclusion automatica de los 97 objetos de clase y sus 20 panoplias para evitar items sin demanda comercial ni generacion de runas.
 - Modos de calculo del arbol de ingredientes:
   - Compra directa: Costo total comprando los ingredientes inmediatos en mercadillo.
   - Subcrafteo total: Desglose recursivo hasta materias primas basicas.
@@ -37,55 +41,71 @@ Capacidades principales:
   - Completamente crafteables con recursos propios.
   - Fabricables comprando pocos ingredientes faltantes.
   - Oportunidades de alto ROI potencial.
-- Filtros por oficio, nivel y categoria de objeto.
+- Filtros por oficio, nivel, categoria de objeto y restriccion opcional segun los oficios del usuario.
 
 ### 3. Simulador de Machacado de Runas y Coeficientes
 - Estimacion de tipos y cantidades de runas obtenidas al machacar equipamiento (niveles 1 al 200).
 - Calculos basados en formulas oficiales de peso de efectos (`dofusRuneWeights.ts`).
-- Soporte para coeficientes de rotura personalizados y consulta de coeficientes de servidores mediante integracion con Dofocus.
+- Soporte para coeficientes de rotura personalizados con aislamiento estricto por servidor (Draconiros, Talok, etc.).
 - Comparacion entre el costo de fabricacion del objeto y el valor de venta proyectado de las runas resultantes.
 
 ### 4. Ranking Global de Rentabilidad
 - Tabla clasificatoria de recetas ordenadas por margen comercial y ROI.
 - Filtros configurables por rango de nivel, oficio, categoria de objeto, beneficio minimo en kamas y porcentaje de ROI.
 - Acceso directo hacia la Calculadora de Recetas o hacia el Simulador de Machacado.
+- Compatibilidad directa con el filtro de oficios personales.
 
-### 5. Calculadora de Sets de Dofusbook
+### 5. Consumibles de Caracteristicas y Pergaminos
+- Modulo especializado para consumibles permanentes de recoleccion (Cazador, Pescador, Campesino, Alquimista) derivados de protectores de recursos.
+- Analisis comparativo de vias de progresion (0 a 100 de estadistica): coste de subir con consumibles frente al uso exclusivo de pergaminos.
+- Comparador de rentabilidad de pergaminos frente al valor de referencia seguro (Turmalina a 200 sebuscalines).
+- Metricas de rotacion en 24h, 7d y ratio de kamas generadas por cada sebuscalin invertido.
+- Simulador de canje optimo con asignacion automatica de unidades segun el saldo de sebuscalines disponible.
+
+### 6. Cacerias Legendarias y Mapas de Se Busca (BYC)
+- Base de datos completa de las 45 cacerias legendarias de Se Busca con precios aislados por servidor.
+- Decision comercial automatizada: vender el recurso crudo del jefe en mercadillo frente a fabricar el equipable asociado.
+- Evaluacion de las 3 vias de adquisicion de cada equipable:
+  - Via 1: Compra de fragmentos, realizacion de la caceria y craft del objeto.
+  - Via 2: Compra directa del mapa completo en mercadillo, caceria y craft.
+  - Via 3: Compra directa del recurso del jefe en mercadillo y craft.
+- Exportador a libros de Excel con 4 hojas analiticas y formulas nativas.
+
+### 7. Filtro Global de Niveles de Oficio (Mis Oficios)
+- Configuracion y persistencia 100% local en el navegador (`localStorage`) para los 20 oficios del juego:
+  - Recoleccion: Alquimista, Campesino, Cazador, Lenador, Minero, Pescador.
+  - Crafteo: Joyero, Sastre, Zapatero, Herrero, Escultor, Fabricante, Manitas, Pescadero/Panadero.
+  - Forjamagia: Joyeromago, Sastremago, Zapateromago, Forjamago de armas, Escultormago, Forjamago de escudos.
+- Interruptor maestro para activar o desactivar el filtrado global con un solo clic.
+- Integracion en cascada: Recetas, Rompedora (requiere crafteo o forjamagia), Ranking de Rentabilidad, Mi Banco, Consumibles y Cacerias BYC.
+
+### 8. Calculadora de Sets de Dofusbook
 - Importacion mediante enlace publico o identificador de build (incluyendo enlaces cortos `d-bk.net`).
 - Deteccion automatica del equipamiento asignado a los slots principales.
-- Comparacion de costos:
-  - Costo total comprando las piezas directamente en mercadillo.
-  - Costo total adquiriendo los materiales para craftear cada pieza.
-  - Costo optimo combinado y calculo de ahorro estimado.
-- Generacion de lista de compras consolidada con la suma total de materiales requeridos.
+- Comparacion de costos entre compra directa y fabricacion artesanal con calculo de ahorro estimado.
+- Generacion de lista de compras consolidada.
 
-### 6. Busqueda de Tesoros y Mapas Legendarios
-- Base de datos de fragmentos de mapas legendarios y cofres de busqueda de tesoros.
-- Comparacion del valor de mercado de los fragmentos individuales frente al valor medio del botin y cofres obtenidos.
-
-### 7. Planificador de Lista de Compras
+### 9. Planificador de Lista de Compras
 - Agrupacion y suma de materiales requeridos para lotes de fabricacion de uno o multiples objetos.
-- Clasificacion de ingredientes segun el mercadillo correspondiente (Recursos, Alquimistas, Mineros/Lenadores, Consumibles/Criadores).
+- Clasificacion de ingredientes segun el mercadillo correspondiente.
 - Calculo del presupuesto total estimado en kamas para completar las compras.
 
-### 8. Gestor de Precios de Mercadillo e Historial
-- Perfiles de precios por servidor de juego:
-  - Monocuenta: Draconiros, Kourial, Mikhal, Dakal.
-  - Multicuenta: Brial, Rafal, Salar, Tal Kasha, Hell Mina, Imagiro, Orukam, Tylezia.
-  - Servidor Epico: Shadow.
-- Registro historico de modificaciones de precios con fecha, valor previo, diferencia neta, porcentaje de variacion y fuente (manual o sniffer).
-- Herramientas de exportacion e importacion de precios en formato JSON.
+### 10. Gestor de Precios de Mercadillo e Historial
+- Perfiles de precios independientes por servidor de juego con reactividad inmediata y aislamiento estricto.
+- Scope pre-filtro: visualizacion diferenciada de solo recursos puros sin receta, solo crafteables o catalogo completo.
+- Panel de metricas de demanda: volumen de ventas en 24h, 7d, 30d y promedio diario estimado.
+- Ordenacion avanzada por velocidad de rotacion y volumen de ventas.
+- Historial de variaciones de cotizaciones y herramientas de respaldo JSON.
 
-### 9. Sniffer de Mercadillo para Dofus Unity
+### 11. Sniffer de Mercadillo para Dofus Unity
 - Script en Python (`scripts/sniffer_standalone.py`) que analiza pasivamente paquetes TCP en el puerto 5555 del juego utilizando `scapy`.
 - Operacion directa sin intermediarios ni almacenamiento de credenciales.
-- Resolucion ultrarrapida de nombres de objetos mediante el diccionario indexado local (`/api/market/items-dictionary`).
-- Descarga automatizada del script preconfigurado y del lanzador por lotes (`ejecutar_sniffer.bat`) para Windows.
-- Envio asincrono por lotes mediante `/api/market/batch-update` o `/api/market/update`.
+- Resolucion de nombres de objetos mediante diccionario indexado local (`/api/market/items-dictionary`).
+- Descarga automatizada de paquetes preconfigurados para Windows.
 
-### 10. Integracion con DofusDB y Dofocus
+### 12. Integracion con DofusDB y Dofocus
 - Sincronizacion directa con la API publica de DofusDB (`https://api.dofusdb.fr`) para items, recetas y tipos de objetos.
-- Exclusion automatica de objetos cosmeticos, apariencias y elementos sin utilidad economica.
+- Exclusion de objetos cosmeticos, apariencias y objetos de clase.
 - Consulta de coeficientes por servidor mediante endpoints de Dofocus.
 
 ---

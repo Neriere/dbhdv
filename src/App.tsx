@@ -55,6 +55,11 @@ const DofusImporter = lazy(() =>
     default: m.DofusImporter,
   }))
 );
+const ConsumablesCharacteristicView = lazy(() =>
+  import('./components/ConsumablesCharacteristicView').then((m) => ({
+    default: m.ConsumablesCharacteristicView,
+  }))
+);
 
 // ── Status bar hook — checks if sniffer has synced recently ─────────────────
 function useSnifferStatus() {
@@ -186,6 +191,10 @@ export default function App() {
                 handleSelectRecipeForCalculator(item);
               }}
             />
+          )}
+
+          {activeTab === 'consumables' && (
+            <ConsumablesCharacteristicView />
           )}
 
           {activeTab === 'importer' && (
