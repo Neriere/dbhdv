@@ -10043,6 +10043,14 @@
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
+            "id": 32567,
+            "name": "Hueso de Scarratero",
+            "quantity": 1,
+            "defaultPrice": 31497,
+            "iconId": 47898,
+            "img": "https://api.dofusdb.fr/img/items/47898.png"
+          },
+          {
             "id": 13096,
             "name": "Fémur del chafer Rōnin",
             "quantity": 4,
@@ -10080,6 +10088,14 @@
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
           {
+            "id": 32567,
+            "name": "Hueso de Scarratero",
+            "quantity": 1,
+            "defaultPrice": 31497,
+            "iconId": 47898,
+            "img": "https://api.dofusdb.fr/img/items/47898.png"
+          },
+          {
             "id": 13096,
             "name": "Fémur del chafer Rōnin",
             "quantity": 4,
@@ -10116,6 +10132,14 @@
         "defaultSalePrice": 55000,
         "resourceQuantityNeeded": 1,
         "recipeIngredients": [
+          {
+            "id": 32567,
+            "name": "Hueso de Scarratero",
+            "quantity": 1,
+            "defaultPrice": 31497,
+            "iconId": 47898,
+            "img": "https://api.dofusdb.fr/img/items/47898.png"
+          },
           {
             "id": 13096,
             "name": "Fémur del chafer Rōnin",

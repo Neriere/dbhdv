@@ -74,7 +74,7 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
   const parsed30d = v30dInput !== "" ? parseInt(v30dInput, 10) : undefined;
 
   // Real-time metrics preview
-  const tax = parsedPrice > 0 ? Math.ceil(parsedPrice * 0.03) : 0;
+  const tax = parsedPrice > 0 ? Math.ceil(parsedPrice * 0.02) : 0;
   const netProfit = parsedPrice > 0 ? parsedPrice - tax - craftCost : 0;
   const roi = craftCost > 0 && parsedPrice > 0 ? (netProfit / craftCost) * 100 : 0;
 
@@ -187,7 +187,7 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
               <span>Costo de crafteo: {craftCost > 0 ? `${craftCost.toLocaleString()} K` : "---"}</span>
-              <span>Tasa mercadillo (3%): {tax > 0 ? `${tax.toLocaleString()} K` : "0 K"}</span>
+              <span>Tasa mercadillo (2%): {tax > 0 ? `${tax.toLocaleString()} K` : "0 K"}</span>
             </div>
           </div>
 

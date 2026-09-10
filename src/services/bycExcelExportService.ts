@@ -31,7 +31,7 @@ function normalizeZone(cat: string): string {
 export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook {
   const playersCount = options.playersCount ?? 5;
   const sebuscalinPrice = options.sebuscalinPrice ?? 320;
-  const marketTaxRate = options.marketTaxRate ?? 0.03;
+  const marketTaxRate = options.marketTaxRate ?? 0.02;
   const marketPrices = options.marketPrices ?? {};
   const salesVolumeMap = options.salesVolumeMap ?? {};
 
@@ -74,7 +74,7 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
   // Row 3: Subheader
   s1Rows.push(["PARAMETROS GLOBALES", "", "", "COTIZACIONES Y TASAS"]);
   
-  // Row 4: Parameters: B4 = N (5), E4 = Kamas/Sebus (320), H4 = Tax (0.03)
+  // Row 4: Parameters: B4 = N (5), E4 = Kamas/Sebus (320), H4 = Tax (0.02)
   s1Rows.push([
     "N° de Jugadores en el Grupo (N):",
     playersCount,
@@ -82,7 +82,7 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
     "Kamas por Sebuscalin:",
     sebuscalinPrice,
     "",
-    "Impuesto HDV (3%):",
+    "Impuesto HDV (2%):",
     marketTaxRate,
   ]);
 
@@ -137,7 +137,7 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
   ];
 
   let currentZone = "";
-  const huntRowIndexMap: Record<number, { incRow: number; rawRow: number; bestCraftRow: number }> = {};
+  const huntRowIndexMap: Record<number, { incRow: number; rawRow: number; bestCraftRow: number; bestCraftIdx?: number }> = {};
 
   sortedHunts.forEach((hunt) => {
     const zone = normalizeZone(hunt.category);
@@ -342,16 +342,31 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
     // 4. Option B: Craft Equipments (all associated recipes)
     const crafts = hunt.equipments || [];
     const craftRows: number[] = [];
+    let bestCraftRow = rawRow;
+    let bestCraftIdx = -1;
+    let maxProfit = -Infinity;
 
     crafts.forEach((eq, eqIdx) => {
       const eqRow = s1Rows.length + 1;
       craftRows.push(eqRow);
 
       const eqPrice = getPrice(eq.id, eq.defaultSalePrice || 0);
-      const otherIngCost = (eq.recipeIngredients || []).reduce((acc, ing) => {
+      const otherIngredients = (eq.recipeIngredients || []).filter(
+        (ing) => ing.id !== hunt.resource.id
+      );
+      const otherIngCost = otherIngredients.reduce((acc, ing) => {
         return acc + ing.quantity * getPrice(ing.id, ing.defaultPrice);
       }, 0);
       const eqSales = getSales(eq.id);
+
+      // Evaluate profit to select optimal craft for Sheet 2 summary
+      const netEquip = eqPrice * (1 - marketTaxRate);
+      const profitCraft = netEquip - otherIngCost;
+      if (profitCraft > maxProfit) {
+        maxProfit = profitCraft;
+        bestCraftRow = eqRow;
+        bestCraftIdx = eqIdx;
+      }
 
       s1Rows.push([
         `OPCIÓN B.${eqIdx + 1}: Crafteo`,
@@ -377,9 +392,10 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
       ]);
     });
 
-    // Best craft row index (or raw row if no crafts)
-    const bestCraftRow = craftRows.length > 0 ? craftRows[0] : rawRow;
-    huntRowIndexMap[hunt.id] = { incRow: startRowIdx, rawRow, bestCraftRow };
+    if (craftRows.length === 0) {
+      bestCraftRow = rawRow;
+    }
+    huntRowIndexMap[hunt.id] = { incRow: startRowIdx, rawRow, bestCraftRow, bestCraftIdx };
 
     s1Rows.push([]); // blank line between ByCs
   });
@@ -448,7 +464,12 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
     const craftR = mapInfo ? mapInfo.bestCraftRow : 11;
     const incR = mapInfo ? mapInfo.incRow : 10;
     const resSales = getSales(hunt.resource.id);
-    const bestEq = (hunt.equipments && hunt.equipments.length > 0) ? hunt.equipments[0] : null;
+    const bestEq =
+      mapInfo && mapInfo.bestCraftIdx !== undefined && mapInfo.bestCraftIdx >= 0 && hunt.equipments
+        ? hunt.equipments[mapInfo.bestCraftIdx]
+        : hunt.equipments && hunt.equipments.length > 0
+        ? hunt.equipments[0]
+        : null;
     const eqSales = bestEq ? getSales(bestEq.id) : { s24: 0, s7: 0, s30: 0 };
 
     s2Rows.push([
@@ -547,7 +568,9 @@ export function buildBycWorkbook(options: BycExportOptions = {}): XLSX.WorkBook 
   sortedHunts.forEach((hunt) => {
     (hunt.equipments || []).forEach((eq) => {
       const eqPrice = getPrice(eq.id, eq.defaultSalePrice || 0);
-      const ingredients = eq.recipeIngredients || [];
+      const ingredients = (eq.recipeIngredients || []).filter(
+        (ing) => ing.id !== hunt.resource.id
+      );
 
       ingredients.forEach((ing, iIdx) => {
         const uPrice = getPrice(ing.id, ing.defaultPrice || 0);

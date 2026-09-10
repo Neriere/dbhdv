@@ -21,11 +21,13 @@ import {
   DofusEffect,
   DofusItem,
   DofusRecipe,
+  ItemSalesVolume,
   MarketPriceMap,
   PriceHistoryEntry,
   ItemPriceHistorySummary,
   PriceProfile,
   PriceUpdatedAtMap,
+  SalesVolumeMap,
   ServerCategory,
   SyncSettings,
   SyncStatus,
@@ -227,6 +229,19 @@ export async function initDB() {
           PRIMARY KEY (profile_id, item_id)
         );
 
+        CREATE TABLE IF NOT EXISTS profile_sales_volume (
+          profile_id INTEGER NOT NULL,
+          item_id INTEGER NOT NULL,
+          sales_24h INTEGER,
+          sales_7d INTEGER,
+          sales_30d INTEGER,
+          avg_daily_sales REAL,
+          suggested_price INTEGER,
+          price_strategy TEXT,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, item_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_items_type_id ON items(type_id);
         CREATE INDEX IF NOT EXISTS idx_items_name_es ON items(name_es);
         CREATE INDEX IF NOT EXISTS idx_items_has_recipe ON items(has_recipe);
@@ -245,6 +260,10 @@ export async function initDB() {
 
         CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_id ON profile_coefficients(profile_id);
         CREATE INDEX IF NOT EXISTS idx_profile_coefficients_profile_item ON profile_coefficients(profile_id, item_id);
+
+        CREATE INDEX IF NOT EXISTS idx_profile_sales_volume_profile ON profile_sales_volume(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_sales_volume_item ON profile_sales_volume(item_id);
+        CREATE INDEX IF NOT EXISTS idx_profile_sales_volume_updated ON profile_sales_volume(profile_id, updated_at DESC);
 
         CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(profile_id, item_id, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(profile_id, timestamp DESC);
@@ -557,6 +576,7 @@ type BootstrapData = {
   recipes: Record<number, DofusRecipe>;
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
+  salesVolume?: SalesVolumeMap;
   coefficients?: Record<number, number>;
   coefficientUpdatedAt?: Record<number, number>;
   manualEdits?: Record<number, number>;
@@ -1364,26 +1384,34 @@ async function upsertPrice(
   itemId: number,
   price: number,
   source: string = "manual",
-): Promise<void> {
+  updatedAt?: number,
+): Promise<boolean> {
   const cleanPrice = Math.max(0, Math.trunc(price));
-  const now = Date.now();
+  const now = updatedAt && updatedAt > 0 ? updatedAt : Date.now();
 
   let oldPrice = 0;
+  let existingUpdatedAt = 0;
   try {
     const existing = await database.execute({
-      sql: "SELECT price FROM profile_prices WHERE profile_id = ? AND item_id = ?",
+      sql: "SELECT price, updated_at FROM profile_prices WHERE profile_id = ? AND item_id = ?",
       args: [profileId, itemId],
     });
     if (existing.rows.length > 0) {
       oldPrice = Number(existing.rows[0].price) || 0;
+      existingUpdatedAt = Number(existing.rows[0].updated_at) || 0;
     }
   } catch {
     // Ignore
   }
 
+  // Conflict resolution: only update if incoming timestamp is >= existing timestamp
+  if (existingUpdatedAt > now) {
+    return false;
+  }
+
   const statements: Array<{ sql: string; args: any[] }> = [
     {
-      sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+      sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at WHERE excluded.updated_at >= profile_prices.updated_at`,
       args: [profileId, itemId, cleanPrice, now],
     },
   ];
@@ -1412,6 +1440,7 @@ async function upsertPrice(
   }
 
   await database.batch(statements, "write");
+  return true;
 }
 
 async function replaceAllPrices(
@@ -1789,6 +1818,7 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     { sql: "SELECT value_json FROM meta WHERE key = 'sync_settings'", args: [] },
     { sql: "SELECT id, name, slug, category, category_label, is_default FROM price_profiles ORDER BY id ASC", args: [] },
     { sql: "SELECT item_id, coefficient, updated_at, is_manual, manual_updated_at FROM profile_coefficients WHERE profile_id = ?", args: [activeProfileId] },
+    { sql: "SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ?", args: [activeProfileId] },
   ], "read");
 
   const items: DofusItem[] = batchResults[0].rows
@@ -1865,11 +1895,28 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     }
   }
 
+  const salesVolume: SalesVolumeMap = {};
+  if (batchResults[7]?.rows) {
+    for (const row of batchResults[7].rows) {
+      const id = row.item_id as number;
+      salesVolume[id] = {
+        sales24h: row.sales_24h != null ? Number(row.sales_24h) : undefined,
+        sales7d: row.sales_7d != null ? Number(row.sales_7d) : undefined,
+        sales30d: row.sales_30d != null ? Number(row.sales_30d) : undefined,
+        avgDailySales: row.avg_daily_sales != null ? Number(row.avg_daily_sales) : undefined,
+        suggestedPrice: row.suggested_price != null ? Number(row.suggested_price) : undefined,
+        priceStrategy: (row.price_strategy as any) || undefined,
+        updatedAt: Number(row.updated_at) || Date.now(),
+      };
+    }
+  }
+
   const resultData: BootstrapData = {
     items,
     recipes,
     prices,
     priceUpdatedAt,
+    salesVolume,
     coefficients,
     coefficientUpdatedAt,
     manualEdits,
@@ -2289,16 +2336,178 @@ export async function setItemPrice(
   itemId: number,
   price: number,
   profileId?: number,
+  source: string = "manual",
+  updatedAt?: number,
 ) {
   invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
-  await upsertPrice(pid, itemId, price);
+  const applied = await upsertPrice(pid, itemId, price, source, updatedAt);
   const { prices, priceUpdatedAt } = await getPricesAndUpdatedAtMaps(pid);
   return {
     prices,
     priceUpdatedAt,
     activePriceProfileId: pid,
+    applied,
   };
+}
+
+export async function getProfileSalesVolume(profileId?: number): Promise<SalesVolumeMap> {
+  const pid = profileId || (await getActivePriceProfileId());
+  try {
+    const result = await database.execute({
+      sql: "SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ?",
+      args: [pid],
+    });
+    const map: SalesVolumeMap = {};
+    for (const row of result.rows) {
+      const id = row.item_id as number;
+      map[id] = {
+        sales24h: row.sales_24h != null ? Number(row.sales_24h) : undefined,
+        sales7d: row.sales_7d != null ? Number(row.sales_7d) : undefined,
+        sales30d: row.sales_30d != null ? Number(row.sales_30d) : undefined,
+        avgDailySales: row.avg_daily_sales != null ? Number(row.avg_daily_sales) : undefined,
+        suggestedPrice: row.suggested_price != null ? Number(row.suggested_price) : undefined,
+        priceStrategy: (row.price_strategy as any) || undefined,
+        updatedAt: Number(row.updated_at) || Date.now(),
+      };
+    }
+    return map;
+  } catch (err) {
+    console.warn("[getProfileSalesVolume] Error querying profile_sales_volume:", err);
+    return {};
+  }
+}
+
+export async function setItemSalesVolume(
+  itemId: number,
+  volume: Partial<ItemSalesVolume>,
+  profileId?: number,
+  updatedAt?: number,
+): Promise<{ success: boolean; volume: ItemSalesVolume; updatedAt: number }> {
+  invalidateServerBootstrapCache();
+  const pid = profileId || (await getActivePriceProfileId());
+  const now = updatedAt && updatedAt > 0 ? updatedAt : Date.now();
+
+  try {
+    const existing = await database.execute({
+      sql: "SELECT updated_at, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy FROM profile_sales_volume WHERE profile_id = ? AND item_id = ?",
+      args: [pid, itemId],
+    });
+    if (existing.rows.length > 0) {
+      const existingTime = Number(existing.rows[0].updated_at) || 0;
+      if (existingTime > now) {
+        // Stale incoming update; return the existing newer record
+        const row = existing.rows[0];
+        return {
+          success: false,
+          updatedAt: existingTime,
+          volume: {
+            sales24h: row.sales_24h != null ? Number(row.sales_24h) : undefined,
+            sales7d: row.sales_7d != null ? Number(row.sales_7d) : undefined,
+            sales30d: row.sales_30d != null ? Number(row.sales_30d) : undefined,
+            avgDailySales: row.avg_daily_sales != null ? Number(row.avg_daily_sales) : undefined,
+            suggestedPrice: row.suggested_price != null ? Number(row.suggested_price) : undefined,
+            priceStrategy: (row.price_strategy as any) || undefined,
+            updatedAt: existingTime,
+          },
+        };
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  const s24 = volume.sales24h != null ? Math.max(0, Math.trunc(volume.sales24h)) : null;
+  const s7 = volume.sales7d != null ? Math.max(0, Math.trunc(volume.sales7d)) : null;
+  const s30 = volume.sales30d != null ? Math.max(0, Math.trunc(volume.sales30d)) : null;
+  const avg = volume.avgDailySales != null ? Math.max(0, Number(volume.avgDailySales)) : null;
+  const sug = volume.suggestedPrice != null ? Math.max(0, Math.trunc(volume.suggestedPrice)) : null;
+  const strat = volume.priceStrategy || null;
+
+  await database.execute({
+    sql: `INSERT INTO profile_sales_volume (
+      profile_id, item_id, sales_24h, sales_7d, sales_30d,
+      avg_daily_sales, suggested_price, price_strategy, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(profile_id, item_id) DO UPDATE SET
+      sales_24h = excluded.sales_24h,
+      sales_7d = excluded.sales_7d,
+      sales_30d = excluded.sales_30d,
+      avg_daily_sales = excluded.avg_daily_sales,
+      suggested_price = excluded.suggested_price,
+      price_strategy = excluded.price_strategy,
+      updated_at = excluded.updated_at
+    WHERE excluded.updated_at >= profile_sales_volume.updated_at`,
+    args: [pid, itemId, s24, s7, s30, avg, sug, strat, now],
+  });
+
+  const fullVol: ItemSalesVolume = {
+    sales24h: s24 ?? undefined,
+    sales7d: s7 ?? undefined,
+    sales30d: s30 ?? undefined,
+    avgDailySales: avg ?? undefined,
+    suggestedPrice: sug ?? undefined,
+    priceStrategy: strat as any,
+    updatedAt: now,
+  };
+
+  marketEvents.emit("volume_update", {
+    profileId: pid,
+    itemId,
+    volume: fullVol,
+    updatedAt: now,
+  });
+
+  return { success: true, volume: fullVol, updatedAt: now };
+}
+
+export async function bulkSetItemSalesVolume(
+  volumes: Record<number, Partial<ItemSalesVolume>>,
+  profileId?: number,
+): Promise<{ success: boolean; count: number }> {
+  invalidateServerBootstrapCache();
+  const pid = profileId || (await getActivePriceProfileId());
+  const statements: Array<{ sql: string; args: any[] }> = [];
+
+  for (const [idStr, vol] of Object.entries(volumes)) {
+    const itemId = Number(idStr);
+    if (!itemId || !vol) continue;
+    const now = vol.updatedAt && vol.updatedAt > 0 ? vol.updatedAt : Date.now();
+    const s24 = vol.sales24h != null ? Math.max(0, Math.trunc(vol.sales24h)) : null;
+    const s7 = vol.sales7d != null ? Math.max(0, Math.trunc(vol.sales7d)) : null;
+    const s30 = vol.sales30d != null ? Math.max(0, Math.trunc(vol.sales30d)) : null;
+    const avg = vol.avgDailySales != null ? Math.max(0, Number(vol.avgDailySales)) : null;
+    const sug = vol.suggestedPrice != null ? Math.max(0, Math.trunc(vol.suggestedPrice)) : null;
+    const strat = vol.priceStrategy || null;
+
+    statements.push({
+      sql: `INSERT INTO profile_sales_volume (
+        profile_id, item_id, sales_24h, sales_7d, sales_30d,
+        avg_daily_sales, suggested_price, price_strategy, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(profile_id, item_id) DO UPDATE SET
+        sales_24h = excluded.sales_24h,
+        sales_7d = excluded.sales_7d,
+        sales_30d = excluded.sales_30d,
+        avg_daily_sales = excluded.avg_daily_sales,
+        suggested_price = excluded.suggested_price,
+        price_strategy = excluded.price_strategy,
+        updated_at = excluded.updated_at
+      WHERE excluded.updated_at >= profile_sales_volume.updated_at`,
+      args: [pid, itemId, s24, s7, s30, avg, sug, strat, now],
+    });
+  }
+
+  if (statements.length > 0) {
+    await database.batch(statements, "write");
+    marketEvents.emit("batch_volume_updated", {
+      profileId: pid,
+      count: statements.length,
+      timestamp: Date.now(),
+    });
+  }
+
+  return { success: true, count: statements.length };
 }
 
 export async function overwritePrices(

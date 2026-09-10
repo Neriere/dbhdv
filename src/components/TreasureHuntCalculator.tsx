@@ -235,7 +235,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
       const calculatedEquipments: CalculatedBycEquipment[] = relatedEquipments.map((eq) => {
         const salePriceGross = getPrice(eq.id, eq.defaultSalePrice);
-        const salePriceNet = Math.round(salePriceGross * (1 - 0.03)); // 3% HDV Tax
+        const salePriceNet = Math.round(salePriceGross * (1 - 0.02)); // 2% HDV Tax
         const resourceQtyNeeded = eq.resourceQuantityNeeded || 1;
 
         let otherIngredientsCost = 0;
@@ -264,8 +264,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         const optimalInvestment = optimalMethod === "hunt" ? totalInvestmentHunt : totalInvestmentHdv;
         const optimalRoi = optimalInvestment > 0 ? (optimalNetProfit / optimalInvestment) * 100 : 0;
 
-        // Value added vs raw resource sale in HDV (-3% tax)
-        const resourceNetIncome = Math.round(resourcePrice * (1 - 0.03));
+        // Value added vs raw resource sale in HDV (-2% tax)
+        const resourceNetIncome = Math.round(resourcePrice * (1 - 0.02));
         const addedValueVsRawSale = salePriceNet - otherIngredientsCost - (resourceNetIncome * resourceQtyNeeded);
 
         return {
@@ -953,7 +953,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                           <div className="space-y-0.5 min-w-0">
                             <span className="text-xs text-slate-400 block font-medium">Venta en Mercadillo:</span>
                             <span className="text-xs text-slate-400 block font-mono">
-                              Neto (-3%): <strong className="text-slate-200">{activeEq.salePriceNet.toLocaleString()} K</strong>
+                              Neto (-2%): <strong className="text-slate-200">{activeEq.salePriceNet.toLocaleString()} K</strong>
                             </span>
                           </div>
                           <div className="flex items-center gap-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 focus-within:border-purple-400 shrink-0 shadow-inner">

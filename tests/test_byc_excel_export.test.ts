@@ -43,11 +43,11 @@ test('ByC Database contiene exactamente 45 búsquedas y categorías corregidas',
   assert.equal(fragsCountMap[8], 10, 'Debe haber 10 cacerías con 8 fragmentos');
 });
 
-test('ANALISIS_POR_BYC contiene parámetros en B4, E4, H4 y fórmulas con SUMIF', () => {
+test('ANALISIS_POR_BYC contiene parámetros en B4, E4, H4 y fórmulas con SUMIF (2% impuesto por defecto)', () => {
   const wb = buildBycWorkbook({
     playersCount: 5,
     sebuscalinPrice: 320,
-    marketTaxRate: 0.03,
+    // Por defecto debe ser 0.02 (2%)
   });
 
   const ws = wb.Sheets['ANALISIS_POR_BYC'];
@@ -56,7 +56,7 @@ test('ANALISIS_POR_BYC contiene parámetros en B4, E4, H4 y fórmulas con SUMIF'
   // Parámetros de control
   assert.equal(ws['B4']?.v, 5, 'B4 debe ser 5 jugadores');
   assert.equal(ws['E4']?.v, 320, 'E4 debe ser 320 kamas');
-  assert.equal(ws['H4']?.v, 0.03, 'H4 debe ser 0.03 tasa');
+  assert.equal(ws['H4']?.v, 0.02, 'H4 debe ser 0.02 tasa (2% impuesto de venta)');
 
   // Fórmulas de resumen global en filas 5 y 6
   assert.ok(ws['B5']?.f?.includes('SUMIF'), 'B5 debe usar SUMIF para sumar inversión de cacerías con SÍ');
@@ -94,3 +94,21 @@ test('Ogivol Scarratero tiene recurso Hueso de Scarratero (32567) y equipables c
   const eqIds = ogivol.equipments.map((e) => e.id);
   assert.deepEqual(eqIds, [33559, 33560, 33561], 'Equipables deben ser 33559, 33560, 33561');
 });
+
+test('Dambeldoro y demás ByCs excluyen el recurso de búsqueda al calcular otros ingredientes de crafteo', () => {
+  const dambeldoro = BYC_GENERATED_DB.find((h) => h.monsterName === 'Dambeldoro');
+  assert.ok(dambeldoro, 'Dambeldoro debe existir en BYC_GENERATED_DB');
+  assert.equal(dambeldoro.resource.name, 'Pie de Dambeldoro');
+
+  // Verificar que en todas las recetas asociadas se distinga el recurso del jefe de los ingredientes secundarios
+  dambeldoro.equipments.forEach((eq) => {
+    const hasBossResourceInRecipe = eq.recipeIngredients.some((ing) => ing.id === dambeldoro.resource.id);
+    assert.ok(hasBossResourceInRecipe, `La receta de ${eq.name} debe contener el recurso Pie de Dambeldoro`);
+
+    const secondaryIngredients = eq.recipeIngredients.filter((ing) => ing.id !== dambeldoro.resource.id);
+    // El costo secundario solo debe sumar los ingredientes secundarios
+    assert.ok(secondaryIngredients.length > 0, `Debe haber ingredientes secundarios además del drop del jefe`);
+    assert.ok(!secondaryIngredients.some((ing) => ing.id === dambeldoro.resource.id), 'Los ingredientes secundarios no deben duplicar el drop');
+  });
+});
+

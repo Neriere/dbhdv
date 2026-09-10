@@ -41,6 +41,9 @@ import {
   getProfileCoefficients,
   setItemCoefficient,
   bulkSaveProfileCoefficients,
+  getProfileSalesVolume,
+  setItemSalesVolume,
+  bulkSetItemSalesVolume,
   processAndIngestMarketPrice,
   processAndIngestMarketPricesBatch,
   getItemsDictionary,
@@ -446,18 +449,30 @@ app.put("/api/local-db/prices/:itemId", async (req, res) => {
     const itemId = Number(req.params.itemId);
     const price = Number(req.body?.price);
     const profileId = Number(req.body?.profileId) || undefined;
+    const updatedAt = req.body?.updatedAt ? Number(req.body.updatedAt) : Date.now();
     if (!itemId || Number.isNaN(price)) {
       return res
         .status(400)
         .json({ error: "Valid itemId and price are required" });
     }
 
-    const prices = await setItemPrice(itemId, price, profileId);
+    const prices = await setItemPrice(itemId, price, profileId, "manual", updatedAt);
     const profileState = await getPriceProfileState();
+    const effectivePid = profileId || profileState.activePriceProfileId;
+
+    // Broadcast in real-time to all connected players via SSE
+    marketEvents.emit("price_update", {
+      profileId: effectivePid,
+      itemId,
+      price,
+      updatedAt: prices.priceUpdatedAt[itemId] || updatedAt,
+    });
+
     res.json({
       prices: prices.prices,
       priceUpdatedAt: prices.priceUpdatedAt,
       activePriceProfileId: profileState.activePriceProfileId,
+      applied: prices.applied,
     });
   } catch (error) {
     const message =
@@ -668,6 +683,54 @@ app.post("/api/local-db/coefficients/bulk", async (req, res) => {
   }
 });
 
+// Sales Volume & Rotation Endpoints
+app.get("/api/local-db/sales-volume", async (req, res) => {
+  try {
+    const profileId = req.query.profileId ? Number(req.query.profileId) : undefined;
+    const salesVolume = await getProfileSalesVolume(profileId);
+    res.json({ salesVolume });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to fetch sales volume";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.put("/api/local-db/sales-volume/:itemId", async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    const volume = req.body?.volume;
+    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+    const updatedAt = req.body?.updatedAt ? Number(req.body?.updatedAt) : Date.now();
+
+    if (!itemId || !volume || typeof volume !== "object") {
+      return res.status(400).json({ error: "Valid itemId and volume object are required" });
+    }
+
+    const result = await setItemSalesVolume(itemId, volume, profileId, updatedAt);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save sales volume";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/local-db/sales-volume/bulk", async (req, res) => {
+  try {
+    const volumes = req.body?.volumes;
+    const profileId = req.body?.profileId ? Number(req.body?.profileId) : undefined;
+
+    if (!volumes || typeof volumes !== "object") {
+      return res.status(400).json({ error: "volumes dictionary is required" });
+    }
+
+    const result = await bulkSetItemSalesVolume(volumes, profileId);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to bulk save sales volume";
+    res.status(500).json({ error: message });
+  }
+});
+
 // DoFocus Automated Background Sync Status & Trigger
 app.get("/api/dofocus/sync-all-status", (req, res) => {
   res.json(getDofocusGlobalSyncState());
@@ -860,6 +923,34 @@ marketEvents.on("price_update", (data) => {
 marketEvents.on("batch_updated", (data) => {
   const payload = JSON.stringify({
     type: "batch_updated",
+    ...data,
+  });
+  for (const client of Array.from(liveSseClients)) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      liveSseClients.delete(client);
+    }
+  }
+});
+
+marketEvents.on("volume_update", (data) => {
+  const payload = JSON.stringify({
+    type: "volume_update",
+    ...data,
+  });
+  for (const client of Array.from(liveSseClients)) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      liveSseClients.delete(client);
+    }
+  }
+});
+
+marketEvents.on("batch_volume_updated", (data) => {
+  const payload = JSON.stringify({
+    type: "batch_volume_updated",
     ...data,
   });
   for (const client of Array.from(liveSseClients)) {

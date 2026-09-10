@@ -339,3 +339,16 @@ export interface ReverseCraftAnalysis {
   isFullyCraftable: boolean;
 }
 
+export interface ItemSalesVolume {
+  sales24h?: number;
+  sales7d?: number;
+  sales30d?: number;
+  avgDailySales?: number;
+  estimatedDaysToSell?: number;
+  suggestedPrice?: number;
+  priceStrategy?: "fast" | "fair" | "patient";
+  updatedAt?: number;
+}
+
+export type SalesVolumeMap = Record<number, ItemSalesVolume>;
+

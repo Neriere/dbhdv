@@ -52,7 +52,7 @@ interface BycDetailPageProps {
   showToast: (msg: string) => void;
 }
 
-const MARKET_TAX_RATE = 0.03; // 3% HDV Tax
+const MARKET_TAX_RATE = 0.02; // 2% HDV Tax
 
 export const BycDetailPage: React.FC<BycDetailPageProps> = ({
   hunt,
@@ -147,7 +147,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
   // Prices for this hunt
   const wholeMapPrice = getPrice(hunt.mapItem.id, hunt.mapItem.defaultPrice);
   const resourcePriceGross = getPrice(hunt.resource.id, hunt.resource.defaultPrice);
-  // Net resource income after 3% HDV sales tax
+  // Net resource income after 2% HDV sales tax
   const resourceNetIncome = Math.round(resourcePriceGross * (1 - MARKET_TAX_RATE));
 
   // Calculate fragments cost
@@ -169,7 +169,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
 
   // Total gross and net returns for pure Hunting (Hunt & Sell raw items)
   const totalHuntGrossReturn = resourcePriceGross + sebuscalinesValue;
-  // Net return considering 3% tax on selling the boss resource in HDV (Sebuscalines converted directly have no HDV tax)
+  // Net return considering 2% tax on selling the boss resource in HDV (Sebuscalines converted directly have no HDV tax)
   const totalHuntNetReturn = resourceNetIncome + sebuscalinesValue;
 
   // Profit for hunting via Whole Map
@@ -382,7 +382,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                 )}
               </div>
               <p className="text-xs sm:text-sm text-slate-400">
-                Cofre otorga <strong className="text-amber-300 font-mono">+{chestSebuscalines} Sebuscalines</strong> ({formatKamas(sebuscalinesValue)} K) <span className="text-slate-500 font-normal">({missionSebuscalines} u de misión, 50% en cofre)</span> + 1x {hunt.resource.name} (Retorno neto venta -3% tasa mercadillo: <strong className="text-emerald-400 font-mono">{formatKamas(totalHuntNetReturn)} K</strong>).
+                Cofre otorga <strong className="text-amber-300 font-mono">+{chestSebuscalines} Sebuscalines</strong> ({formatKamas(sebuscalinesValue)} K) <span className="text-slate-500 font-normal">({missionSebuscalines} u de misión, 50% en cofre)</span> + 1x {hunt.resource.name} (Retorno neto venta -2% tasa mercadillo: <strong className="text-emerald-400 font-mono">{formatKamas(totalHuntNetReturn)} K</strong>).
               </p>
             </div>
           </div>
@@ -651,7 +651,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
               </h2>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Calcula si vale la pena transformar {hunt.resource.name} crafteando el equipable vs solo vender el recurso crudo en mercadillo. Incluye impuesto del 3% en ventas de mercadillo.
+              Calcula si vale la pena transformar {hunt.resource.name} crafteando el equipable vs solo vender el recurso crudo en mercadillo. Incluye impuesto del 2% en ventas de mercadillo.
             </p>
           </div>
 
@@ -664,7 +664,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
         <div className="space-y-4">
           {relatedEquipment.map((eq) => {
             const salePriceGross = getPrice(eq.id, eq.defaultSalePrice);
-            // Net equipment sale income after 3% tax
+            // Net equipment sale income after 2% tax
             const saleIncomeNet = Math.round(salePriceGross * (1 - MARKET_TAX_RATE));
             const isExpanded = expandedEquipmentIds[eq.id] ?? true;
 
@@ -825,7 +825,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                           Venta Mercadillo:
                         </span>
                         <span className="text-xs text-emerald-400 font-mono font-bold">
-                          Neto (-3%): {formatKamas(saleIncomeNet)} K
+                          Neto (-2%): {formatKamas(saleIncomeNet)} K
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 focus-within:border-amber-400">
@@ -1145,7 +1145,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
                           </div>
                           <div className="text-xs text-slate-400 space-y-0.5 pt-1 border-t border-slate-800">
                             <div className="flex justify-between">
-                              <span>Venta Equipo (Mercadillo -3%):</span>
+                              <span>Venta Equipo (Mercadillo -2%):</span>
                               <span className="font-mono text-slate-300">{formatKamas(saleIncomeNet)} K</span>
                             </div>
                             <div className="flex justify-between">

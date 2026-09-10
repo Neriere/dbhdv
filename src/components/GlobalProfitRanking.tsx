@@ -183,7 +183,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
       });
 
       const salePrice = marketPrices[item.id] || 0;
-      const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.03) : 0;
+      const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.02) : 0;
       const saleNetProfit = salePrice > 0 ? salePrice - saleTax - craftCost : -craftCost;
       const saleRoiPercent = craftCost > 0 && salePrice > 0 ? (saleNetProfit / craftCost) * 100 : 0;
 

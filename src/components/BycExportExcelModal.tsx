@@ -33,7 +33,7 @@ export const BycExportExcelModal: React.FC<BycExportExcelModalProps> = ({
 }) => {
   const [playersCount, setPlayersCount] = useState<number>(defaultPlayersCount);
   const [sebuscalinPrice, setSebuscalinPrice] = useState<number>(defaultSebuscalinPrice);
-  const [marketTaxPercent, setMarketTaxPercent] = useState<number>(3);
+  const [marketTaxPercent, setMarketTaxPercent] = useState<number>(2);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   if (!isOpen) return null;
@@ -164,7 +164,7 @@ export const BycExportExcelModal: React.FC<BycExportExcelModalProps> = ({
                 />
               </div>
               <span className="text-[10px] text-slate-500 block leading-tight">
-                Impuesto de venta (3%)
+                Impuesto de venta (2%)
               </span>
             </div>
           </div>

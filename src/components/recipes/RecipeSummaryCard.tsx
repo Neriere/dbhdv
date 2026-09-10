@@ -74,7 +74,7 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
   const activeSalesAnalysis = analyzeSalesVolume(effectiveSalePrice, activeSalesVolume);
   const { flashClass: priceFlashClass } = useLivePriceFlash(item.id);
 
-  const netSalePrice = effectiveSalePrice > 0 ? Math.floor(effectiveSalePrice * 0.97) : 0;
+  const netSalePrice = effectiveSalePrice > 0 ? Math.floor(effectiveSalePrice * 0.98) : 0;
   const activeSaleTax = effectiveSalePrice - netSalePrice;
   const netProfit = effectiveSalePrice > 0 ? netSalePrice - autoOptimalCost : 0;
   const profitMarginPercent =
@@ -341,7 +341,7 @@ export const RecipeSummaryCard: React.FC<RecipeSummaryCardProps> = ({
 
         <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-0.5 shadow-md">
           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-            Venta (-3%)
+            Venta (-2%)
           </span>
           <div className="text-xl font-black font-mono text-emerald-400">
             {effectiveSalePrice > 0 ? `${netSalePrice.toLocaleString()} K` : "---"}

@@ -14,10 +14,16 @@ import {
   RecipeTreeNode,
   ReverseCraftAnalysis,
   ReverseCraftIngredientStatus,
+  SalesVolumeMap,
   ShoppingListItem,
   SyncSettings,
   SyncStatus,
 } from "../types";
+import {
+  syncRemoteSalesVolume,
+  handleRemoteVolumeUpdate,
+  fetchAndSyncSalesVolume,
+} from "./salesVolumeService";
 import {
   isClassItem,
   isCrushableJob,
@@ -244,6 +250,7 @@ type BootstrapResponse = {
   recipes: Record<number, DofusRecipe>;
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
+  salesVolume?: SalesVolumeMap;
   coefficients?: Record<number, number>;
   coefficientUpdatedAt?: Record<number, number>;
   manualEdits?: Record<number, number>;
@@ -391,11 +398,19 @@ function updateMemoryCache(payload: {
   }
 
   if (payload.prices) {
-    pricesMemoryCache = payload.prices;
-  }
-
-  if (payload.priceUpdatedAt) {
-    priceUpdatedAtMemoryCache = payload.priceUpdatedAt;
+    if (payload.priceUpdatedAt) {
+      for (const [idStr, price] of Object.entries(payload.prices)) {
+        const id = Number(idStr);
+        const incomingTime = payload.priceUpdatedAt[id] || 0;
+        const localTime = priceUpdatedAtMemoryCache[id] || 0;
+        if (incomingTime >= localTime || pricesMemoryCache[id] === undefined) {
+          pricesMemoryCache[id] = price;
+          priceUpdatedAtMemoryCache[id] = incomingTime;
+        }
+      }
+    } else {
+      pricesMemoryCache = { ...pricesMemoryCache, ...payload.prices };
+    }
   }
 
   if (payload.syncStatus) {
@@ -528,6 +543,10 @@ async function executeBootstrapFetch(): Promise<BootstrapResponse> {
     activePriceProfileId: bootstrap.activePriceProfileId,
   });
 
+  if (bootstrap.salesVolume) {
+    syncRemoteSalesVolume(bootstrap.salesVolume);
+  }
+
   if (typeof window !== "undefined") {
     void setIdbVal(CACHE_KEY, bootstrap);
     window.dispatchEvent(
@@ -618,64 +637,90 @@ export function connectLivePriceStream(): void {
           const pid = Number(data.profileId);
           const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
           if (pid === activePid) {
-            pricesMemoryCache[data.itemId] = data.price;
-            priceUpdatedAtMemoryCache[data.itemId] = data.updatedAt || Date.now();
-            lastPriceUpdateTime = Date.now();
-            clearRecipeTreeCache();
+            const incomingTime = data.updatedAt || Date.now();
+            const localTime = priceUpdatedAtMemoryCache[data.itemId] || 0;
 
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("dofus_prices_updated", {
-                  detail: {
-                    profileId: pid,
-                    updatedPrices: { [data.itemId]: data.price },
-                    priceUpdatedAt: { [data.itemId]: data.updatedAt || Date.now() },
-                    count: 1,
-                    timestamp: data.updatedAt || Date.now(),
-                  },
-                })
-              );
-              emitDatabaseUpdated();
-              getMarketBroadcastChannel()?.postMessage({
-                type: "PRICE_SYNC",
-                profileId: pid,
-                prices: { [data.itemId]: data.price },
-                priceUpdatedAt: { [data.itemId]: data.updatedAt || Date.now() },
-                serverTime: data.updatedAt || Date.now(),
-              });
+            // Only apply if incoming quote is newer or equal to current local quote
+            if (incomingTime >= localTime || pricesMemoryCache[data.itemId] === undefined) {
+              pricesMemoryCache[data.itemId] = data.price;
+              priceUpdatedAtMemoryCache[data.itemId] = incomingTime;
+              lastPriceUpdateTime = Date.now();
+              clearRecipeTreeCache();
+
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("dofus_prices_updated", {
+                    detail: {
+                      profileId: pid,
+                      updatedPrices: { [data.itemId]: data.price },
+                      priceUpdatedAt: { [data.itemId]: incomingTime },
+                      count: 1,
+                      timestamp: incomingTime,
+                    },
+                  })
+                );
+                emitDatabaseUpdated();
+                getMarketBroadcastChannel()?.postMessage({
+                  type: "PRICE_SYNC",
+                  profileId: pid,
+                  prices: { [data.itemId]: data.price },
+                  priceUpdatedAt: { [data.itemId]: incomingTime },
+                  serverTime: incomingTime,
+                });
+              }
             }
           }
         } else if (data.type === "batch_updated" && data.prices) {
           const pid = Number(data.profileId);
           const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
           if (pid === activePid) {
-            Object.assign(pricesMemoryCache, data.prices);
-            Object.assign(priceUpdatedAtMemoryCache, data.priceUpdatedAt || {});
-            lastPriceUpdateTime = Date.now();
-            clearRecipeTreeCache();
+            const updatedSubset: MarketPriceMap = {};
+            const updatedTimesSubset: PriceUpdatedAtMap = {};
+            const fallbackTime = data.timestamp || Date.now();
 
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("dofus_prices_updated", {
-                  detail: {
-                    profileId: pid,
-                    updatedPrices: data.prices,
-                    priceUpdatedAt: data.priceUpdatedAt || {},
-                    count: data.count,
-                    timestamp: data.timestamp || Date.now(),
-                  },
-                })
-              );
-              emitDatabaseUpdated();
-              getMarketBroadcastChannel()?.postMessage({
-                type: "PRICE_SYNC",
-                profileId: pid,
-                prices: data.prices,
-                priceUpdatedAt: data.priceUpdatedAt || {},
-                serverTime: data.timestamp || Date.now(),
-              });
+            for (const [idStr, price] of Object.entries(data.prices)) {
+              const id = Number(idStr);
+              const inTime = data.priceUpdatedAt?.[id] || fallbackTime;
+              const curTime = priceUpdatedAtMemoryCache[id] || 0;
+              if (inTime >= curTime || pricesMemoryCache[id] === undefined) {
+                pricesMemoryCache[id] = price as number;
+                priceUpdatedAtMemoryCache[id] = inTime;
+                updatedSubset[id] = price as number;
+                updatedTimesSubset[id] = inTime;
+              }
+            }
+
+            if (Object.keys(updatedSubset).length > 0) {
+              lastPriceUpdateTime = Date.now();
+              clearRecipeTreeCache();
+
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("dofus_prices_updated", {
+                    detail: {
+                      profileId: pid,
+                      updatedPrices: updatedSubset,
+                      priceUpdatedAt: updatedTimesSubset,
+                      count: Object.keys(updatedSubset).length,
+                      timestamp: fallbackTime,
+                    },
+                  })
+                );
+                emitDatabaseUpdated();
+                getMarketBroadcastChannel()?.postMessage({
+                  type: "PRICE_SYNC",
+                  profileId: pid,
+                  prices: updatedSubset,
+                  priceUpdatedAt: updatedTimesSubset,
+                  serverTime: fallbackTime,
+                });
+              }
             }
           }
+        } else if (data.type === "volume_update" && data.itemId && data.volume) {
+          handleRemoteVolumeUpdate(Number(data.itemId), data.volume);
+        } else if (data.type === "batch_volume_updated") {
+          void fetchAndSyncSalesVolume();
         }
       } catch (err) {
         console.warn("[Live Price Stream] Parse error:", err);
@@ -2037,6 +2082,7 @@ export async function saveMarketPrice(
       body: JSON.stringify({
         price,
         profileId: pid,
+        updatedAt: now,
       }),
     });
 

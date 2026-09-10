@@ -410,7 +410,7 @@ export const RecipeCraftingCalculator: React.FC<{
 
       const sale = marketPrices[item.id] || 0;
 
-      const tax = sale > 0 ? Math.ceil(sale * 0.03) : 0;
+      const tax = sale > 0 ? Math.ceil(sale * 0.02) : 0;
       const net = sale > 0 ? sale - tax - directCost : -directCost;
       const roi = directCost > 0 && sale > 0 ? (net / directCost) * 100 : 0;
 
