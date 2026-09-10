@@ -780,8 +780,13 @@ export function connectLivePriceStream(): void {
       }
     };
 
+    let streamErrors = 0;
     es.onerror = () => {
-      // EventSource reconnects automatically
+      streamErrors++;
+      if (streamErrors >= 2) {
+        es.close();
+        liveStreamEventSource = null;
+      }
     };
   } catch (err) {
     console.warn("[Live Price Stream] Connection failed:", err);
