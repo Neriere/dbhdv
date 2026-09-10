@@ -86,7 +86,7 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
   isManualEdit,
   savedCoeffFeedback,
   breakEvenCoefficient,
-  activeServerName = 'Draconiros',
+  activeServerName,
   activeServerSlug,
   onCoefficientChange,
   onSaveCoefficient,

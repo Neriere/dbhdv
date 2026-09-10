@@ -261,6 +261,55 @@ type BootstrapResponse = {
   databasePath: string;
 };
 
+export const DEFAULT_PRICE_PROFILES: PriceProfile[] = [
+  { id: 1, slug: "draconiros", name: "Draconiros", category: "monocuenta_clasico", categoryLabel: "Monocuenta Clásico", isDefault: true },
+  { id: 2, slug: "kourial", name: "Kourial", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero", isDefault: false },
+  { id: 3, slug: "mikhal", name: "Mikhal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero", isDefault: false },
+  { id: 4, slug: "dakal", name: "Dakal", category: "monocuenta_pionero", categoryLabel: "Monocuenta Pionero", isDefault: false },
+  { id: 5, slug: "brial", name: "Brial", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero", isDefault: false },
+  { id: 6, slug: "rafal", name: "Rafal", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero", isDefault: false },
+  { id: 7, slug: "salar", name: "Salar", category: "multicuenta_pionero", categoryLabel: "Multicuenta Pionero", isDefault: false },
+  { id: 8, slug: "tal-kasha", name: "Tal Kasha", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico", isDefault: false },
+  { id: 9, slug: "hellmina", name: "Hell Mina", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico", isDefault: false },
+  { id: 10, slug: "imagiro", name: "Imagiro", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico", isDefault: false },
+  { id: 11, slug: "orukam", name: "Orukam", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico", isDefault: false },
+  { id: 12, slug: "tylezia", name: "Tylezia", category: "multicuenta_clasico", categoryLabel: "Multicuenta Clásico", isDefault: false },
+];
+
+export function getLocalServerPrices(serverSlug: string): {
+  prices: MarketPriceMap;
+  priceUpdatedAt: PriceUpdatedAtMap;
+} {
+  if (typeof window === "undefined") {
+    return { prices: {}, priceUpdatedAt: {} };
+  }
+  const cleanSlug = resolveServerSlug(serverSlug);
+  try {
+    const rawPrices = localStorage.getItem(`dofus_server_prices_${cleanSlug}`);
+    const rawTimes = localStorage.getItem(`dofus_server_price_times_${cleanSlug}`);
+    const prices: MarketPriceMap = rawPrices ? JSON.parse(rawPrices) : {};
+    const priceUpdatedAt: PriceUpdatedAtMap = rawTimes ? JSON.parse(rawTimes) : {};
+    return { prices, priceUpdatedAt };
+  } catch {
+    return { prices: {}, priceUpdatedAt: {} };
+  }
+}
+
+export function saveLocalServerPrices(
+  serverSlug: string,
+  prices: MarketPriceMap,
+  priceUpdatedAt: PriceUpdatedAtMap,
+): void {
+  if (typeof window === "undefined") return;
+  const cleanSlug = resolveServerSlug(serverSlug);
+  try {
+    localStorage.setItem(`dofus_server_prices_${cleanSlug}`, JSON.stringify(prices));
+    localStorage.setItem(`dofus_server_price_times_${cleanSlug}`, JSON.stringify(priceUpdatedAt));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export interface CraftableItem extends DofusItem {
   jobId: number;
   jobNameEs: string;
@@ -276,8 +325,8 @@ let coefficientsMemoryCache: Record<number, number> = {};
 let coefficientUpdatedAtMemoryCache: Record<number, number> = {};
 let syncStatusMemoryCache: SyncStatus = { ...DEFAULT_SYNC_STATUS };
 let syncSettingsMemoryCache: SyncSettings = { ...DEFAULT_SYNC_SETTINGS };
-let priceProfilesMemoryCache: PriceProfile[] = [];
-let activePriceProfileIdMemoryCache = 0;
+let priceProfilesMemoryCache: PriceProfile[] = [...DEFAULT_PRICE_PROFILES];
+let activePriceProfileIdMemoryCache = 1;
 let isDbInitialized = false;
 let bootstrapPromise: Promise<BootstrapResponse> | null = null;
 
@@ -2036,6 +2085,10 @@ export async function saveMarketPrice(
 ): Promise<MarketPriceMap> {
   const now = Date.now();
   const pid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+  const currentProfile =
+    priceProfilesMemoryCache.find((p) => p.id === pid) ||
+    priceProfilesMemoryCache[0];
+  const currentSlug = currentProfile?.slug || "draconiros";
 
   // 1. Optimistic memory update
   pricesMemoryCache[itemId] = price;
@@ -2043,8 +2096,10 @@ export async function saveMarketPrice(
   lastPriceUpdateTime = now;
   clearRecipeTreeCache();
 
-  // 2. Persist to IndexedDB immediately
+  // 2. Persist to IndexedDB and server-partitioned local storage immediately
   if (typeof window !== "undefined") {
+    saveLocalServerPrices(currentSlug, pricesMemoryCache, priceUpdatedAtMemoryCache);
+
     void setIdbVal(CACHE_KEY, {
       items: itemsMemoryCache,
       recipes: recipesMemoryCache,
@@ -2100,6 +2155,7 @@ export async function saveMarketPrice(
         priceUpdatedAt: response.priceUpdatedAt,
         activePriceProfileId: response.activePriceProfileId,
       });
+      saveLocalServerPrices(currentSlug, response.prices, response.priceUpdatedAt || {});
     }
   } catch (err) {
     console.warn("[saveMarketPrice] Backend sync warning (local cache retained):", err);
@@ -2113,6 +2169,10 @@ export async function saveAllMarketPrices(
 ): Promise<MarketPriceMap> {
   const now = Date.now();
   const pid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+  const currentProfile =
+    priceProfilesMemoryCache.find((p) => p.id === pid) ||
+    priceProfilesMemoryCache[0];
+  const currentSlug = currentProfile?.slug || "draconiros";
 
   // 1. Optimistic memory update
   Object.assign(pricesMemoryCache, newPricesMap);
@@ -2124,8 +2184,10 @@ export async function saveAllMarketPrices(
   lastPriceUpdateTime = now;
   clearRecipeTreeCache();
 
-  // 2. Persist to IndexedDB immediately
+  // 2. Persist to IndexedDB and server-partitioned local storage immediately
   if (typeof window !== "undefined") {
+    saveLocalServerPrices(currentSlug, pricesMemoryCache, priceUpdatedAtMemoryCache);
+
     void setIdbVal(CACHE_KEY, {
       items: itemsMemoryCache,
       recipes: recipesMemoryCache,
@@ -2180,6 +2242,7 @@ export async function saveAllMarketPrices(
         priceUpdatedAt: response.priceUpdatedAt,
         activePriceProfileId: response.activePriceProfileId,
       });
+      saveLocalServerPrices(currentSlug, response.prices, response.priceUpdatedAt || {});
     }
   } catch (err) {
     console.warn("[saveAllMarketPrices] Backend sync warning (local cache retained):", err);
@@ -2212,28 +2275,73 @@ export async function importFullDatabaseJSON(data: unknown): Promise<void> {
 export async function setActiveLocalPriceProfile(
   profileId: number,
 ): Promise<void> {
+  const previousProfile =
+    priceProfilesMemoryCache.find((p) => p.id === activePriceProfileIdMemoryCache) ||
+    priceProfilesMemoryCache[0];
+  const previousSlug = previousProfile?.slug || "draconiros";
+
+  // 1. Snapshot previous server prices to persistent local partition
   if (typeof window !== "undefined") {
+    saveLocalServerPrices(previousSlug, pricesMemoryCache, priceUpdatedAtMemoryCache);
     localStorage.setItem("selected_dofus_price_profile_id", String(profileId));
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   }
 
-  const response = await requestJson<{
-    profiles: PriceProfile[];
-    activePriceProfileId: number;
-    prices: MarketPriceMap;
-    priceUpdatedAt: PriceUpdatedAtMap;
-    coefficients?: Record<number, number>;
-    coefficientUpdatedAt?: Record<number, number>;
-    manualEdits?: Record<number, number>;
-  }>(`${LOCAL_DB_API_BASE}/price-profiles/active`, {
-    method: "PUT",
-    body: JSON.stringify({ profileId }),
-  });
+  // 2. Identify target profile
+  const targetProfile =
+    priceProfilesMemoryCache.find((p) => p.id === profileId) ||
+    DEFAULT_PRICE_PROFILES.find((p) => p.id === profileId) ||
+    priceProfilesMemoryCache[0];
+  const targetSlug = targetProfile?.slug || "draconiros";
+
+  // 3. Prepare response container with local fallbacks
+  const localTarget = getLocalServerPrices(targetSlug);
+  let newProfiles = priceProfilesMemoryCache;
+  let newActiveProfileId = profileId;
+  let newPrices = localTarget.prices;
+  let newPriceUpdatedAt = localTarget.priceUpdatedAt;
+  let newCoeffs: Record<number, number> | undefined = undefined;
+  let newCoeffTimes: Record<number, number> | undefined = undefined;
+  let newManualEdits: Record<number, number> | undefined = undefined;
+
+  // 4. Try backend sync; if unreachable or offline, fallback smoothly to local partition
+  try {
+    const response = await requestJson<{
+      profiles: PriceProfile[];
+      activePriceProfileId: number;
+      prices: MarketPriceMap;
+      priceUpdatedAt: PriceUpdatedAtMap;
+      coefficients?: Record<number, number>;
+      coefficientUpdatedAt?: Record<number, number>;
+      manualEdits?: Record<number, number>;
+    }>(`${LOCAL_DB_API_BASE}/price-profiles/active`, {
+      method: "PUT",
+      body: JSON.stringify({ profileId }),
+    });
+
+    if (response) {
+      if (response.profiles && response.profiles.length > 0) {
+        newProfiles = response.profiles;
+      }
+      newActiveProfileId = response.activePriceProfileId || profileId;
+      newPrices = response.prices || {};
+      newPriceUpdatedAt = response.priceUpdatedAt || {};
+      newCoeffs = response.coefficients;
+      newCoeffTimes = response.coefficientUpdatedAt;
+      newManualEdits = response.manualEdits;
+
+      // Update local storage for target server
+      saveLocalServerPrices(targetSlug, newPrices, newPriceUpdatedAt);
+    }
+  } catch (err) {
+    console.warn("[setActiveLocalPriceProfile] Backend API sync unreachable, using client offline partition:", err);
+  }
 
   const activeProfile =
-    response.profiles.find((p) => p.id === response.activePriceProfileId) ||
-    response.profiles[0];
+    newProfiles.find((p) => p.id === newActiveProfileId) ||
+    targetProfile ||
+    newProfiles[0];
 
   if (typeof window !== "undefined" && activeProfile) {
     localStorage.setItem("selected_dofus_price_profile_slug", activeProfile.slug);
@@ -2241,13 +2349,13 @@ export async function setActiveLocalPriceProfile(
   }
 
   updateMemoryCache({
-    priceProfiles: response.profiles,
-    activePriceProfileId: response.activePriceProfileId,
-    prices: response.prices,
-    priceUpdatedAt: response.priceUpdatedAt,
-    coefficients: response.coefficients,
-    coefficientUpdatedAt: response.coefficientUpdatedAt,
-    manualEdits: response.manualEdits,
+    priceProfiles: newProfiles,
+    activePriceProfileId: newActiveProfileId,
+    prices: newPrices,
+    priceUpdatedAt: newPriceUpdatedAt,
+    coefficients: newCoeffs,
+    coefficientUpdatedAt: newCoeffTimes,
+    manualEdits: newManualEdits,
     replacePrices: true,
   });
 
@@ -2258,7 +2366,7 @@ export async function setActiveLocalPriceProfile(
     window.dispatchEvent(
       new CustomEvent("dofus_profile_changed", {
         detail: {
-          profileId: response.activePriceProfileId,
+          profileId: newActiveProfileId,
           profile: activeProfile,
         },
       })
@@ -2266,7 +2374,7 @@ export async function setActiveLocalPriceProfile(
     window.dispatchEvent(
       new CustomEvent("dofus_coefficients_updated", {
         detail: {
-          profileId: response.activePriceProfileId,
+          profileId: newActiveProfileId,
           server: activeProfile?.slug,
         },
       })
@@ -2274,11 +2382,12 @@ export async function setActiveLocalPriceProfile(
     window.dispatchEvent(
       new CustomEvent("dofus_prices_updated", {
         detail: {
-          profileId: response.activePriceProfileId,
-          updatedPrices: response.prices || {},
-          priceUpdatedAt: response.priceUpdatedAt || {},
-          count: Object.keys(response.prices || {}).length,
+          profileId: newActiveProfileId,
+          updatedPrices: newPrices,
+          priceUpdatedAt: newPriceUpdatedAt,
+          count: Object.keys(newPrices).length,
           timestamp: Date.now(),
+          replacePrices: true,
         },
       })
     );

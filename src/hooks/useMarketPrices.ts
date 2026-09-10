@@ -53,8 +53,11 @@ export function useMarketPrices(): UseMarketPricesReturn {
       const customEvent = event as CustomEvent<{
         updatedPrices?: MarketPriceMap;
         priceUpdatedAt?: PriceUpdatedAtMap;
+        replacePrices?: boolean;
       }>;
-      if (customEvent?.detail?.updatedPrices) {
+      if (customEvent?.detail?.replacePrices) {
+        setMarketPrices({ ...(customEvent.detail.updatedPrices || getStoredMarketPrices()) });
+      } else if (customEvent?.detail?.updatedPrices) {
         setMarketPrices((prev) => ({
           ...prev,
           ...customEvent.detail.updatedPrices,
@@ -63,7 +66,9 @@ export function useMarketPrices(): UseMarketPricesReturn {
         setMarketPrices({ ...getStoredMarketPrices() });
       }
 
-      if (customEvent?.detail?.priceUpdatedAt) {
+      if (customEvent?.detail?.replacePrices) {
+        setPriceUpdatedAt({ ...(customEvent.detail.priceUpdatedAt || getStoredPriceUpdatedAt()) });
+      } else if (customEvent?.detail?.priceUpdatedAt) {
         setPriceUpdatedAt((prev) => ({
           ...prev,
           ...customEvent.detail.priceUpdatedAt,
@@ -74,8 +79,6 @@ export function useMarketPrices(): UseMarketPricesReturn {
     };
 
     const handleDatabaseUpdated = () => {
-      // If prices were just updated within 100ms by dofus_prices_updated, avoid redundant full refresh
-      if (Date.now() - lastPriceEventTime < 100) return;
       refreshPrices();
     };
 

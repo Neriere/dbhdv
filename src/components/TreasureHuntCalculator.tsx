@@ -135,6 +135,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
       const newPrice = getStoredSebuscalinPrice(slug);
       setSebuscalinPrice(newPrice);
       setTempSebuscalin(String(newPrice));
+      setPriceDrafts({});
     };
     window.addEventListener("dofus_profile_changed", handleProfileChange);
     return () => {

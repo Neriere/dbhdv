@@ -39,6 +39,11 @@ import {
   getAllSavedItemCoefficients,
 } from '../src/data/dofusRuneWeights.js';
 
+import {
+  getLocalServerPrices,
+  saveLocalServerPrices,
+} from '../src/services/dofusDbService.js';
+
 test('userJobsService: guarda y recupera niveles de oficio con persistencia local', () => {
   localStorage.clear();
 
@@ -119,3 +124,27 @@ test('dofusRuneWeights: aislamiento estricto de coeficientes por servidor', () =
   assert.equal(getSavedItemCoefficient(9999, 'talok'), 85);
   assert.equal(getSavedItemCoefficient(9999, 'draconiros'), 120, 'Draconiros no debe ser sobreescrito por Talok');
 });
+
+test('dofusDbService: partición y aislamiento estricto de precios entre servidores', () => {
+  localStorage.clear();
+
+  // Guardar precios en Draconiros
+  saveLocalServerPrices('draconiros', { 32259: 3999970, 32293: 2600000 }, { 32259: 1000, 32293: 1000 });
+  const dracoPrices = getLocalServerPrices('draconiros');
+  assert.equal(dracoPrices.prices[32259], 3999970);
+  assert.equal(dracoPrices.prices[32293], 2600000);
+
+  // Servidor Tal Kasha debe estar limpio sin cotizaciones de Draconiros
+  const talKashaPrices = getLocalServerPrices('tal-kasha');
+  assert.equal(talKashaPrices.prices[32259], undefined, 'Tal Kasha no debe heredar el precio de Mecanimut de Draconiros');
+
+  // Guardar cotización propia en Tal Kasha
+  saveLocalServerPrices('tal-kasha', { 32259: 1500000 }, { 32259: 2000 });
+  const updatedTalKasha = getLocalServerPrices('tal-kasha');
+  assert.equal(updatedTalKasha.prices[32259], 1500000);
+
+  // Re-verificar que Draconiros sigue intacto
+  const verifyDraco = getLocalServerPrices('draconiros');
+  assert.equal(verifyDraco.prices[32259], 3999970, 'El precio de Draconiros debe permanecer inmutable');
+});
+

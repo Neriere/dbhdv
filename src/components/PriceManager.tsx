@@ -186,8 +186,17 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
       const customEvent = event as CustomEvent<{
         updatedPrices?: MarketPriceMap;
         priceUpdatedAt?: PriceUpdatedAtMap;
+        replacePrices?: boolean;
       }>;
-      if (customEvent?.detail?.updatedPrices) {
+      if (customEvent?.detail?.replacePrices) {
+        const freshPrices = customEvent.detail.updatedPrices || getStoredMarketPrices();
+        setMarketPrices({ ...freshPrices });
+        const nextDrafts: Record<number, string> = {};
+        for (const [id, p] of Object.entries(freshPrices)) {
+          if (Number(p) > 0) nextDrafts[Number(id)] = String(p);
+        }
+        setPriceDrafts(nextDrafts);
+      } else if (customEvent?.detail?.updatedPrices) {
         setMarketPrices((prev) => ({ ...prev, ...customEvent.detail.updatedPrices }));
         setPriceDrafts((prev) => {
           const next = { ...prev };
@@ -198,13 +207,15 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
         });
       }
       if (customEvent?.detail?.priceUpdatedAt) {
-        setPriceUpdatedAt((prev) => ({ ...prev, ...customEvent.detail.priceUpdatedAt }));
+        if (customEvent.detail.replacePrices) {
+          setPriceUpdatedAt({ ...customEvent.detail.priceUpdatedAt });
+        } else {
+          setPriceUpdatedAt((prev) => ({ ...prev, ...customEvent.detail.priceUpdatedAt }));
+        }
       }
     };
 
     const handleDbUpdate = () => {
-      // If prices were just updated, do not reload all items and re-parse runes
-      if (Date.now() - lastPricesEventTime < 100) return;
       hydrateState();
     };
 

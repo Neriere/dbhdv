@@ -95,11 +95,13 @@ export const ConsumablesCharacteristicView: React.FC = () => {
 
     window.addEventListener('dofus_database_updated', handlePricesUpdate);
     window.addEventListener('dofus_prices_updated', handlePricesUpdate);
+    window.addEventListener('dofus_profile_changed', handlePricesUpdate);
     window.addEventListener('dofus_sales_volume_updated', handleVolumeUpdate);
 
     return () => {
       window.removeEventListener('dofus_database_updated', handlePricesUpdate);
       window.removeEventListener('dofus_prices_updated', handlePricesUpdate);
+      window.removeEventListener('dofus_profile_changed', handlePricesUpdate);
       window.removeEventListener('dofus_sales_volume_updated', handleVolumeUpdate);
     };
   }, []);
