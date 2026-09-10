@@ -14,6 +14,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
+  History,
 } from "lucide-react";
 import { ItemPriceHistoryModal } from "./ItemPriceHistoryModal";
 import { QuickQuoteModal } from "./recipes/QuickQuoteModal";
@@ -110,7 +111,7 @@ export const RecipeCraftingCalculator: React.FC<{
   const [maxCraftCost, setMaxCraftCost] = useState<number | "">("");
   const [itemForQuickQuote, setItemForQuickQuote] = useState<PresetCraftableItem | null>(null);
 
-  const { marketPrices: basePrices, priceUpdatedAt, updatePrice } = useMarketPrices();
+  const { marketPrices: basePrices, priceUpdatedAt, updatePrice, refreshPrices, activeProfileId } = useMarketPrices();
   const { isEnabled: isUserJobsEnabled, canCraft: canUserCraft } = useUserJobs();
   const marketPrices = useMemo(
     () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
@@ -786,7 +787,12 @@ export const RecipeCraftingCalculator: React.FC<{
           item={itemForHistory}
           isOpen={!!itemForHistory}
           onClose={() => setItemForHistory(null)}
-          onPriceChanged={() => {}}
+          profileId={activeProfileId}
+          onPriceChanged={() => {
+            clearRecipeTreeCache();
+            setRecipeTreeVersion((v) => v + 1);
+            refreshPrices();
+          }}
         />
       </div>
     );
@@ -1042,7 +1048,19 @@ export const RecipeCraftingCalculator: React.FC<{
                     ) : null}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setItemForHistory(item);
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-950 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-400/50 text-slate-400 hover:text-amber-300 transition-all cursor-pointer shadow-sm"
+                      title="Ver historial de precios de este objeto"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
+
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1145,7 +1163,12 @@ export const RecipeCraftingCalculator: React.FC<{
         item={itemForHistory}
         isOpen={!!itemForHistory}
         onClose={() => setItemForHistory(null)}
-        onPriceChanged={() => {}}
+        profileId={activeProfileId}
+        onPriceChanged={() => {
+          clearRecipeTreeCache();
+          setRecipeTreeVersion((v) => v + 1);
+          refreshPrices();
+        }}
       />
 
       {/* Quick Quote & Sales Volume Modal */}
@@ -1164,6 +1187,7 @@ export const RecipeCraftingCalculator: React.FC<{
         onSaveVolume={() => {
           setSalesVolumeMap(getStoredSalesVolumeMap());
         }}
+        onOpenHistory={(item) => setItemForHistory(item)}
       />
     </div>
   );

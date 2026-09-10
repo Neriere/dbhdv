@@ -293,6 +293,32 @@ export default async function handler(req: any, res: any) {
               ],
             },
           });
+
+          // Insert into price_history only if price changed
+          if (item.finalPrice !== prevPrice) {
+            const diff = item.finalPrice - prevPrice;
+            const pct = prevPrice > 0
+              ? ((item.finalPrice - prevPrice) / prevPrice) * 100
+              : (item.finalPrice > 0 ? 100 : 0);
+
+            requests.push({
+              type: "execute",
+              stmt: {
+                sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                  { type: "integer", value: String(item.profileId) },
+                  { type: "integer", value: String(item.itemId) },
+                  { type: "integer", value: String(item.finalPrice) },
+                  { type: "integer", value: String(prevPrice) },
+                  { type: "integer", value: String(diff) },
+                  { type: "float", value: Number(pct.toFixed(2)) },
+                  { type: "text", value: String(item.source || "sniffer") },
+                  { type: "integer", value: String(now) },
+                ],
+              },
+            });
+          }
         }
 
         results.push({
@@ -357,6 +383,49 @@ export default async function handler(req: any, res: any) {
     if (item.finalPrice > 0 && dbUrl) {
       try {
         const endpoint = dbUrl.endsWith("/v2/pipeline") ? dbUrl : `${dbUrl}/v2/pipeline`;
+        const pipelineRequests: any[] = [
+          {
+            type: "execute",
+            stmt: {
+              sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+              args: [
+                { type: "integer", value: String(item.profileId) },
+                { type: "integer", value: String(item.itemId) },
+                { type: "integer", value: String(item.finalPrice) },
+                { type: "integer", value: String(now) },
+              ],
+            },
+          },
+        ];
+
+        // Insert into price_history only if price changed
+        if (item.finalPrice !== previousPrice) {
+          const diff = item.finalPrice - previousPrice;
+          const pct = previousPrice > 0
+            ? ((item.finalPrice - previousPrice) / previousPrice) * 100
+            : (item.finalPrice > 0 ? 100 : 0);
+
+          pipelineRequests.push({
+            type: "execute",
+            stmt: {
+              sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              args: [
+                { type: "integer", value: String(item.profileId) },
+                { type: "integer", value: String(item.itemId) },
+                { type: "integer", value: String(item.finalPrice) },
+                { type: "integer", value: String(previousPrice) },
+                { type: "integer", value: String(diff) },
+                { type: "float", value: Number(pct.toFixed(2)) },
+                { type: "text", value: String(item.source || "sniffer") },
+                { type: "integer", value: String(now) },
+              ],
+            },
+          });
+        }
+
         await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -364,37 +433,7 @@ export default async function handler(req: any, res: any) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            requests: [
-              {
-                type: "execute",
-                stmt: {
-                  sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
-                  args: [
-                    { type: "integer", value: String(item.profileId) },
-                    { type: "integer", value: String(item.itemId) },
-                    { type: "integer", value: String(item.finalPrice) },
-                    { type: "integer", value: String(now) },
-                  ],
-                },
-              },
-              {
-                type: "execute",
-                stmt: {
-                  sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp)
-                        VALUES (?, ?, ?, 0, 0, 0, ?, ?)`,
-                  args: [
-                    { type: "integer", value: String(item.profileId) },
-                    { type: "integer", value: String(item.itemId) },
-                    { type: "integer", value: String(item.finalPrice) },
-                    { type: "text", value: String(item.source) },
-                    { type: "integer", value: String(now) },
-                  ],
-                },
-              },
-              { type: "close" },
-            ],
+            requests: [...pipelineRequests, { type: "close" }],
           }),
         });
         (globalThis as any).__lastMarketWriteTimestamp = now;

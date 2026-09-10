@@ -3532,7 +3532,8 @@ export async function fetchItemPriceHistory(
   itemId: number,
   profileId?: number
 ): Promise<ItemPriceHistorySummary> {
-  const query = profileId ? `?profileId=${profileId}` : "";
+  const pid = profileId || activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+  const query = `?profileId=${pid}`;
   return await requestJson<ItemPriceHistorySummary>(
     `${LOCAL_DB_API_BASE}/price-history/item/${itemId}${query}`
   );

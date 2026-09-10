@@ -10,6 +10,7 @@ import {
   Clock,
   Sparkles,
   Info,
+  History,
 } from "lucide-react";
 import { DofusItem } from "../../types";
 import {
@@ -33,6 +34,7 @@ interface QuickQuoteModalProps {
   salesVolume?: ItemSalesVolume;
   onSavePrice: (itemId: number, price: number) => void;
   onSaveVolume?: (itemId: number, vol: Partial<ItemSalesVolume>) => void;
+  onOpenHistory?: (item: DofusItem) => void;
 }
 
 export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
@@ -44,6 +46,7 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
   salesVolume,
   onSavePrice,
   onSaveVolume,
+  onOpenHistory,
 }) => {
   const [salePriceInput, setSalePriceInput] = useState<string>("");
   const [dailySalesInput, setDailySalesInput] = useState<string>("");
@@ -151,13 +154,29 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenHistory(item);
+                }}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 transition-all cursor-pointer shadow-sm"
+                title="Ver historial de precios registrado"
+              >
+                <History className="w-4 h-4" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}

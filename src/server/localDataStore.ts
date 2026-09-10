@@ -1673,6 +1673,26 @@ export async function getItemPriceHistory(
     pricesList.push(currentPrice);
   }
 
+  // If there are no history entries yet but the item has a current price, synthesize a baseline entry
+  if (history.length === 0 && currentPrice > 0) {
+    const itemRec = (STATIC_ITEMS_DICT as any)[itemId] || (bycGeneratedDb as any)?.[itemId];
+    history.push({
+      id: 0,
+      profileId: pid,
+      itemId,
+      itemName: itemRec?.name?.es || `Objeto #${itemId}`,
+      itemIconId: itemRec?.iconId || itemId,
+      itemLevel: itemRec?.level || 1,
+      itemTypeId: itemRec?.type?.id || 0,
+      price: currentPrice,
+      oldPrice: 0,
+      difference: 0,
+      percentageChange: 0,
+      source: "actual",
+      timestamp: lastUpdatedAt,
+    });
+  }
+
   const minPrice =
     pricesList.length > 0 ? Math.min(...pricesList) : currentPrice;
   const maxPrice =
@@ -1693,7 +1713,7 @@ export async function getItemPriceHistory(
     currentPrice,
     firstRecordedAt,
     lastUpdatedAt,
-    totalChanges: history.length,
+    totalChanges: history.length === 1 && history[0].id === 0 ? 0 : history.length,
   };
 }
 
@@ -3174,16 +3194,22 @@ export async function processAndIngestMarketPricesBatch(
   for (const pid of uniqueProfileIds) {
     const itemIdsForProfile = Array.from(new Set(parsedItems.filter(p => p.profileId === pid).map(p => p.itemId)));
     if (itemIdsForProfile.length > 0) {
-      try {
-        const placeholders = itemIdsForProfile.map(() => '?').join(',');
-        const queryRes = await database.execute({
-          sql: `SELECT item_id, price FROM profile_prices WHERE profile_id = ? AND item_id IN (${placeholders})`,
-          args: [pid, ...itemIdsForProfile],
-        });
-        for (const row of queryRes.rows) {
-          oldPricesMap.set(`${pid}:${row.item_id}`, Number(row.price) || 0);
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < itemIdsForProfile.length; i += CHUNK_SIZE) {
+        const chunk = itemIdsForProfile.slice(i, i + CHUNK_SIZE);
+        try {
+          const placeholders = chunk.map(() => '?').join(',');
+          const queryRes = await database.execute({
+            sql: `SELECT item_id, price FROM profile_prices WHERE profile_id = ? AND item_id IN (${placeholders})`,
+            args: [pid, ...chunk],
+          });
+          for (const row of queryRes.rows) {
+            oldPricesMap.set(`${pid}:${row.item_id}`, Number(row.price) || 0);
+          }
+        } catch (err) {
+          console.warn(`[processAndIngestMarketPricesBatch] Error querying old prices chunk for profile ${pid}:`, err);
         }
-      } catch {}
+      }
     }
   }
 
