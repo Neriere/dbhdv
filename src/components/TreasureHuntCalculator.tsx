@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Hammer,
   X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { LEGENDARY_HUNTS, LegendaryHuntInfo } from "../data/legendaryHuntsData";
 import {
@@ -40,6 +41,7 @@ import {
 import { useMarketPrices } from "../hooks/useMarketPrices";
 import { useBankInventory } from "../hooks/useBankInventory";
 import { BycDetailPage } from "./BycDetailPage";
+import { BycExportExcelModal } from "./BycExportExcelModal";
 
 interface TreasureHuntCalculatorProps {
   onNavigateToShopping?: () => void;
@@ -114,9 +116,9 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
   // Unit rate for Sebuscalines
   const [sebuscalinPrice, setSebuscalinPrice] = useState<number>(() => {
-    if (typeof window === "undefined") return 25;
+    if (typeof window === "undefined") return 320;
     const val = localStorage.getItem(SEBUSCALIN_STORAGE_KEY);
-    return val ? Math.max(1, Number(val)) : 25;
+    return val ? Math.max(1, Number(val)) : 320;
   });
 
   // UI States
@@ -153,6 +155,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
   // Rate config modal
   const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [tempSebuscalin, setTempSebuscalin] = useState(String(sebuscalinPrice));
 
   // Success toast message
@@ -470,6 +473,16 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
             >
               <Coins className="w-3.5 h-3.5" />
               Editar Cotización
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsExcelModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40"
+              title="Exportar Plan de Inversión Grupal (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Exportar Excel (.xlsx)</span>
             </button>
           </div>
         </div>
@@ -1141,6 +1154,18 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
           </div>
         </div>
       )}
+
+      {/* Excel Group Investment Export Modal */}
+      <BycExportExcelModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        defaultPlayersCount={5}
+        defaultSebuscalinPrice={sebuscalinPrice}
+        marketPrices={marketPrices}
+        onExportSuccess={(filename) => {
+          showToast(`Archivo Excel descargado: ${filename}`);
+        }}
+      />
 
       {/* Direct inline editing is available on each item */}
     </div>

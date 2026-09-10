@@ -10970,7 +10970,7 @@ export const BYC_GENERATED_DB = [
     "monsterNameFr": "Aermyne 'Braco' Scalptaras",
     "monsterLevel": 80,
     "monsterId": 446,
-    "category": "Castillo de Amakna",
+    "category": "Astrub",
     "mapItem": {
       "id": 32937,
       "name": "Mapa de Aermyn Scalptaras",
@@ -11218,7 +11218,7 @@ export const BYC_GENERATED_DB = [
     "monsterNameFr": "Musha L'Oni",
     "monsterLevel": 80,
     "monsterId": 552,
-    "category": "Castillo de Amakna",
+    "category": "Astrub",
     "mapItem": {
       "id": 32938,
       "name": "Mapa de Musha el Maldito",
@@ -11714,7 +11714,7 @@ export const BYC_GENERATED_DB = [
     "monsterNameFr": "Rok Gnorok",
     "monsterLevel": 90,
     "monsterId": 550,
-    "category": "Castillo de Amakna",
+    "category": "Astrub",
     "mapItem": {
       "id": 32940,
       "name": "Mapa de Rok Gnorok",
@@ -13103,7 +13103,7 @@ export const BYC_GENERATED_DB = [
     "monsterNameFr": "Padgref Demoël",
     "monsterLevel": 130,
     "monsterId": 32631,
-    "category": "Castillo de Amakna",
+    "category": "Astrub",
     "mapItem": {
       "id": 32945,
       "name": "Mapa de Noai Aludem",

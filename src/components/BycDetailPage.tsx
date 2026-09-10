@@ -16,6 +16,7 @@ import {
   AlertCircle,
   HelpCircle,
   BarChart2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { LegendaryHuntInfo, LEGENDARY_HUNTS } from "../data/legendaryHuntsData";
 import {
@@ -33,6 +34,7 @@ import {
   analyzeSalesVolume,
   ItemSalesVolume,
 } from "../services/salesVolumeService";
+import { BycExportExcelModal } from "./BycExportExcelModal";
 
 interface BycDetailPageProps {
   hunt: LegendaryHuntInfo;
@@ -84,6 +86,7 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
   // Search/filter for switching hunt quickly
   const [huntSearch, setHuntSearch] = useState("");
   const [isSwitchDropdownOpen, setIsSwitchDropdownOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
 
   // Sales Volume Map (24h, 7d, 30d records)
   const [salesVolumeMap, setSalesVolumeMap] = useState<Record<number, ItemSalesVolume>>(() => {
@@ -275,6 +278,17 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Excel Export Button */}
+          <button
+            type="button"
+            onClick={() => setIsExcelModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-xl border border-emerald-400/40 text-xs sm:text-sm font-semibold transition shadow-md shadow-emerald-950/40 shrink-0"
+            title="Exportar Plan de Inversión Grupal (.xlsx)"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span className="hidden sm:inline">Exportar Excel</span>
+          </button>
 
           {/* Quick Hunt Switcher */}
           <div className="relative">
@@ -1279,6 +1293,18 @@ export const BycDetailPage: React.FC<BycDetailPageProps> = ({
           })}
         </div>
       </div>
+
+      {/* Excel Export Modal */}
+      <BycExportExcelModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        defaultPlayersCount={5}
+        defaultSebuscalinPrice={sebuscalinPrice}
+        marketPrices={marketPrices}
+        onExportSuccess={(filename) => {
+          showToast(`Plan de Inversión exportado: ${filename}`);
+        }}
+      />
     </div>
   );
 };
