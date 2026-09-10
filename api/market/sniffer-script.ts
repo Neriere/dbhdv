@@ -53,6 +53,7 @@ if sys.platform == "win32":
         pass
 
 LOG_FILE = "sniffer.log"
+INSPECTION_FILE = "cotizaciones_inspeccion.txt"
 
 class SessionPacketLogger:
     def __init__(self, log_path=LOG_FILE, server_name=None, current_token=None):
@@ -130,6 +131,120 @@ class SessionPacketLogger:
                     with open(self.log_path, "w", encoding="utf-8") as f:
                         f.write(f"=== LOG ROTADO (Sesion activa continua - {now}) ===\\n\\n")
 
+                with open(self.log_path, "a", encoding="utf-8") as f:
+                    f.write("\\n".join(lines) + "\\n")
+            except Exception:
+                pass
+
+
+class SalesInspectionLogger:
+    def __init__(self, log_path=INSPECTION_FILE):
+        self.log_path = log_path
+        self.lock = threading.Lock()
+        self.packet_count = 0
+        header_lines = [
+            "=" * 90,
+            "  DOFUS UNITY -> REGISTRO ESPECIAL DE INSPECCION DE COTIZACIONES Y HISTORIAL DE VENTAS",
+            f"  Inicio de sesion : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"  Archivo destino  : {self.log_path}",
+            "  (Usa este log para encontrar los numeros exactos de 24h, 7d y 30d de ventas)",
+            "=" * 90,
+            "",
+            "",
+        ]
+        try:
+            with open(self.log_path, "w", encoding="utf-8") as f:
+                f.write("\\n".join(header_lines))
+        except Exception:
+            pass
+
+    def inspect_packet(self, payload, item_id=0, item_name=""):
+        with self.lock:
+            self.packet_count += 1
+            now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            all_numbers = []
+            tree_lines = []
+
+            def walk_tree(b, depth=0):
+                off = 0
+                while off < len(b):
+                    tag, r = decode_varint(b, off)
+                    if r == 0:
+                        break
+                    off += r
+                    fnum = tag >> 3
+                    wtype = tag & 7
+                    indent = "  " * depth
+
+                    if wtype == 0:
+                        v, r2 = decode_varint(b, off)
+                        off += r2
+                        all_numbers.append(v)
+                        tree_lines.append(f"{indent}  • [Depth {depth}] Campo #{fnum} (Varint) = {v:,} (0x{v:X})")
+                    elif wtype == 2:
+                        length, r2 = decode_varint(b, off)
+                        off += r2
+                        if off + length > len(b):
+                            break
+                        data = b[off:off + length]
+                        off += length
+                        if is_valid_submessage(data):
+                            tree_lines.append(f"{indent}  ▸ [Depth {depth}] Campo #{fnum} (Submensaje {length} bytes):")
+                            if depth < 4:
+                                walk_tree(data, depth + 1)
+                        else:
+                            p_ints = decode_packed_varints(data)
+                            if p_ints and all(x >= 0 for x in p_ints):
+                                for x in p_ints:
+                                    all_numbers.append(x)
+                                tree_lines.append(f"{indent}  • [Depth {depth}] Campo #{fnum} (Packed Varints, {len(p_ints)} valores) = {p_ints}")
+                            else:
+                                try:
+                                    txt = data.decode("utf-8")
+                                    tree_lines.append(f"{indent}  • [Depth {depth}] Campo #{fnum} (Texto) = '{txt}'")
+                                except Exception:
+                                    tree_lines.append(f"{indent}  • [Depth {depth}] Campo #{fnum} (Bytes {length}b) = {data.hex()[:40]}...")
+                    elif wtype == 1:
+                        off += 8
+                    elif wtype == 5:
+                        off += 4
+                    else:
+                        break
+
+            try:
+                walk_tree(payload)
+            except Exception:
+                pass
+
+            unique_candidates = sorted(list(set([v for v in all_numbers if v > 0])))
+            hex_lines = []
+            for i in range(0, min(len(payload), 512), 16):
+                chunk = payload[i:i+16]
+                hex_part = " ".join(f"{b:02X}" for b in chunk)
+                ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
+                hex_lines.append(f"    {i:04X}: {hex_part:<48}  |{ascii_part}|")
+
+            name_disp = f"{item_name} (#{item_id})" if item_id else "Desconocido / Sin resolver"
+            lines = [
+                "=" * 90,
+                f"[{now}] PAQUETE INSPECCIONADO #{self.packet_count} | Longitud: {len(payload)} bytes | Objeto detectado: {name_disp}",
+                "-" * 90,
+                "NUMEROS / VARINTS DETECTADOS EN ESTE PAQUETE (Busca aqui tus numeros de ventas 24h, 7d, 30d):",
+                f"  {unique_candidates}",
+                "-" * 90,
+                "ESTRUCTURA PROTOBUF:",
+            ]
+            if tree_lines:
+                lines.extend(tree_lines)
+            else:
+                lines.append("  (No se decodifico estructura de campos estandar)")
+            lines.append("-" * 90)
+            lines.append("VOLCADO HEXADECIMAL:")
+            lines.extend(hex_lines)
+            lines.append("=" * 90)
+            lines.append("")
+
+            try:
                 with open(self.log_path, "a", encoding="utf-8") as f:
                     f.write("\\n".join(lines) + "\\n")
             except Exception:
@@ -235,6 +350,7 @@ def load_calibrated_token():
 
 CURRENT_TOKEN = load_calibrated_token()
 packet_logger = SessionPacketLogger(LOG_FILE, server_name=SERVER_NAME, current_token=CURRENT_TOKEN)
+sales_inspector = SalesInspectionLogger(INSPECTION_FILE)
 # =======================================================
 
 # Catálogo precargado de todas las Runas oficiales de Dofus Unity
@@ -790,8 +906,15 @@ def process_packet(pkt):
             return
 
         payload = bytes(pkt[Raw].load)
+        if len(payload) < 4:
+            return
 
         item_id, item_type, prices, debug_info = parse_market_message(payload)
+        item_name = get_item_name(item_id) if item_id else ""
+
+        # Registrar en cotizaciones_inspeccion.txt para descubrir los números de cotización / 24h / 7d / 30d
+        sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
+
         if item_id and prices:
             # Forzar tipo equipable si está catalogado en EQUIPMENT_IDS
             is_equipment = item_type == "equipable" or is_item_equipment(item_id) or len(prices) > 4
