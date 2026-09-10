@@ -59,6 +59,38 @@ async function queryTurso(endpoint: string, dbToken: string, requests: any[]) {
   return await res.json();
 }
 
+function extractPathSegments(req: any, basePath: string): string[] {
+  const candidates = [
+    req.query?.["...path"],
+    req.query?.path,
+    req.query?.["[...path]"],
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      return candidate.map((s) => String(s).trim()).filter(Boolean);
+    }
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.split("/").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+
+  if (req.url && typeof req.url === "string") {
+    const pathname = req.url.split("?")[0] || "";
+    const segments = pathname.split("/").filter(Boolean);
+    const idx = segments.indexOf(basePath);
+    if (idx !== -1) {
+      return segments.slice(idx + 1);
+    }
+    if (segments[0] === "api") {
+      return segments.slice(1);
+    }
+    return segments;
+  }
+
+  return [];
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -70,13 +102,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
   const { dbUrl, dbToken, endpoint } = getTursoClient();
-  const rawPath = req.query?.path;
-  const pathSegments = Array.isArray(rawPath)
-    ? rawPath
-    : typeof rawPath === "string"
-    ? rawPath.split("/").filter(Boolean)
-    : [];
-
+  const pathSegments = extractPathSegments(req, "local-db");
   const route0 = pathSegments[0] || "";
   const route1 = pathSegments[1] || "";
   const route2 = pathSegments[2] || "";
