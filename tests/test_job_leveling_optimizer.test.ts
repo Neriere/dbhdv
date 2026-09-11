@@ -4,8 +4,9 @@ import {
   levelToXp,
   xpToLevel,
   getCraftXpByJobLevel,
-  calculateLevelTiers,
   getNextMilestoneLevel,
+  simulateCraftBatch,
+  simulateCraftsUntilLevel,
   SUPPORTED_JOB_IDS,
 } from "../src/services/jobLevelingService.js";
 
@@ -38,6 +39,12 @@ test("Curva de XP acumulada oficial de Dofus (levelToXp)", () => {
   assert.equal(levelToXp(50), 24500);
   // Nivel 100: 100 * 99 * 10 = 99,000 XP
   assert.equal(levelToXp(100), 99000);
+  // Nivel 188: 188 * 187 * 10 = 351,560 XP
+  assert.equal(levelToXp(188), 351560);
+  // Nivel 189: 189 * 188 * 10 = 355,320 XP
+  assert.equal(levelToXp(189), 355320);
+  // Nivel 190: 190 * 189 * 10 = 359,100 XP
+  assert.equal(levelToXp(190), 359100);
   // Nivel 200: 200 * 199 * 10 = 398,000 XP
   assert.equal(levelToXp(200), 398000);
 });
@@ -48,6 +55,9 @@ test("Inversa exacta de la curva de XP (xpToLevel)", () => {
   assert.equal(xpToLevel(20), 2);
   assert.equal(xpToLevel(900), 10);
   assert.equal(xpToLevel(99000), 100);
+  assert.equal(xpToLevel(351560), 188);
+  assert.equal(xpToLevel(355320), 189);
+  assert.equal(xpToLevel(359100), 190);
   assert.equal(xpToLevel(398000), 200);
   assert.equal(xpToLevel(500000), 200); // Clamped at 200
 });
@@ -77,49 +87,34 @@ test("Cálculo de XP por receta y decaimiento dinámico (getCraftXpByJobLevel)",
   assert.equal(xpBoosted, 800);
 });
 
-test("Segmentación en tramos de 10 niveles y adaptación a niveles intermedios (calculateLevelTiers)", () => {
-  // Caso estándar: de 1 a 30 -> [1->10, 10->20, 20->30]
-  const standardTiers = calculateLevelTiers(1, 30);
-  assert.equal(standardTiers.length, 3);
-  assert.deepEqual(standardTiers[0], {
-    tierIndex: 1,
-    fromLevel: 1,
-    toLevel: 10,
-    requiredXp: 900,
-  });
-  assert.deepEqual(standardTiers[1], {
-    tierIndex: 2,
-    fromLevel: 10,
-    toLevel: 20,
-    requiredXp: 3800 - 900, // 2900 XP
-  });
-  assert.deepEqual(standardTiers[2], {
-    tierIndex: 3,
-    fromLevel: 20,
-    toLevel: 30,
-    requiredXp: 8700 - 3800, // 4900 XP
-  });
+test("CASO DOFUSDB VERIFICADO: 3x Congelorra (Lvl 188) de Nivel 188 a 190 da exactamente 10,596 XP", () => {
+  const startXp = levelToXp(188); // 351,560 XP
+  const recipeLevel = 188;
 
-  // Caso intermedio del usuario: nivel 43 a nivel 70
-  // Primer tramo debe ser 43 -> 50, luego 50 -> 60, luego 60 -> 70
-  const intermediateTiers = calculateLevelTiers(43, 70);
-  assert.equal(intermediateTiers.length, 3);
-  assert.equal(intermediateTiers[0].fromLevel, 43);
-  assert.equal(intermediateTiers[0].toLevel, 50);
-  assert.equal(intermediateTiers[0].requiredXp, levelToXp(50) - levelToXp(43));
+  // Simular 3 crafteos
+  const sim = simulateCraftBatch(startXp, recipeLevel, 3);
 
-  assert.equal(intermediateTiers[1].fromLevel, 50);
-  assert.equal(intermediateTiers[1].toLevel, 60);
+  // Verificación exacta contra DofusDB:
+  // Craft 1 (a nivel 188): da 3,760 XP -> sube a nivel 189
+  // Craft 2 (a nivel 189): con decaimiento da 3,418 XP
+  // Craft 3 (a nivel 189): con decaimiento da 3,418 XP
+  // Total: 3760 + 3418 + 3418 = 10,596 XP!
+  assert.equal(sim.totalXpEarned, 10596);
+  assert.equal(sim.finalLevel, 190);
+  assert.equal(sim.finalXp, startXp + 10596);
 
-  assert.equal(intermediateTiers[2].fromLevel, 60);
-  assert.equal(intermediateTiers[2].toLevel, 70);
+  // Simular botón "-> 190" (simulateCraftsUntilLevel)
+  const until190 = simulateCraftsUntilLevel(startXp, recipeLevel, 190);
+  assert.equal(until190.amountNeeded, 3);
+  assert.equal(until190.totalXpEarned, 10596);
+  assert.equal(until190.finalLevel, 190);
 });
 
 test("Cálculo del siguiente hito decadal (getNextMilestoneLevel)", () => {
   assert.equal(getNextMilestoneLevel(1), 10);
   assert.equal(getNextMilestoneLevel(10), 20);
   assert.equal(getNextMilestoneLevel(43), 50);
-  assert.equal(getNextMilestoneLevel(99), 100);
+  assert.equal(getNextMilestoneLevel(188), 190);
   assert.equal(getNextMilestoneLevel(195), 200);
   assert.equal(getNextMilestoneLevel(200), 200);
 });
