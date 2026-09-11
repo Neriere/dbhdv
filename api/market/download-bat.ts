@@ -18,6 +18,9 @@ chcp 65001 >nul
 title Dofus Unity - Sincronizador y Calibrador de Mercadillo (${server})
 cd /d "%~dp0"
 
+:: Forzar salida inmediata en tiempo real sin almacenamiento en búfer
+set PYTHONUNBUFFERED=1
+
 echo ===================================================================
 echo       DOFUS UNITY - SINCRONIZADOR DE MERCADILLO
 echo       Servidor: ${server}
