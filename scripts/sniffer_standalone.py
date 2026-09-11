@@ -28,6 +28,7 @@ import traceback
 import subprocess
 import urllib.request
 from datetime import datetime
+import statistics
 
 # UTF-8 y Line-Buffering en Windows + Desactivar QuickEdit Mode para evitar pausas al hacer clic en la consola
 if sys.platform == "win32":
@@ -287,7 +288,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 try:
-    from scapy.all import sniff, TCP, Raw
+    from scapy.all import sniff, TCP, Raw, IP
 except Exception as e:
     print("\n" + "=" * 70)
     print(" [CONTROLADOR DE RED NPCAP REQUERIDO EN WINDOWS]")
@@ -883,41 +884,39 @@ def async_worker():
             print(f"[{now_str}] [Aviso]: {e}", flush=True)
 
 ITEM_SALES_VOLUME = {}
+STREAM_BUFFERS = {}
+STREAM_LOCK = threading.Lock()
+MAX_BUFFER_SIZE = 1000000
 
 def parse_quotation_message(payload):
     """
     Decodifica paquetes Ankama Protobuf Any ('type.ankama.com/iuk' o 'type.ankama.com/ive')
-    de la ventana de Cotizaciones del Mercado (gráficos de 24h, 7d, 30d y precio medio/mediano).
+    de la ventana de Cotizaciones del Mercado. Extrae simultáneamente las series temporales
+    completas de 24 Horas (Campo #1), 30 Días (Campo #2) y 7 Días (últimos 7 días).
     """
     if not payload or b"type.ankama.com/iuk" not in payload:
         return 0, None, None, ""
 
     try:
         idx = payload.find(b"type.ankama.com/iuk")
-        if idx < 2:
-            return 0, None, None, ""
-
-        start = idx - 2
-        off = start
-        tag1, r1 = decode_varint(payload, off)
-        off += r1
-        len1, r1_len = decode_varint(payload, off)
-        off += r1_len + len1
+        off = idx + len(b"type.ankama.com/iuk")
         tag2, r2 = decode_varint(payload, off)
         off += r2
         len2, r2_len = decode_varint(payload, off)
         off += r2_len
         payload_data = payload[off:off + len2]
 
-        p_off = 0
-        entries = []
+        entries_24h = []
+        entries_30d = []
         item_id_found = 0
-        date_list = []
+
+        p_off = 0
         while p_off < len(payload_data):
             tag_e, r_e = decode_varint(payload_data, p_off)
             if r_e == 0:
                 break
             p_off += r_e
+            fnum_e = tag_e >> 3
             len_e, r_len_e = decode_varint(payload_data, p_off)
             p_off += r_len_e
             entry_buf = payload_data[p_off:p_off + len_e]
@@ -950,57 +949,73 @@ def parse_quotation_message(payload):
                     e_off += l_str
                 else:
                     break
-            if date_str and (price > 0 or vol > 0):
-                entries.append({"date": date_str, "price": price, "volume": vol, "item_id": iid})
-                date_list.append(date_str)
 
-        if not entries:
+            if date_str and (price > 0 or vol > 0):
+                entry = {"date": date_str, "price": price, "volume": vol, "item_id": iid}
+                if fnum_e == 1:
+                    entries_24h.append(entry)
+                elif fnum_e == 2:
+                    entries_30d.append(entry)
+                else:
+                    entries_30d.append(entry)
+
+        if not entries_24h and not entries_30d:
             return 0, None, None, ""
 
-        total_vol = sum(e["volume"] for e in entries)
-        weighted_sum = sum(e["price"] * e["volume"] for e in entries)
-        suggested_price = round(weighted_sum / total_vol) if total_vol > 0 else round(sum(e["price"] for e in entries) / len(entries))
+        # En caso de mensaje no particionado o legado
+        if not entries_30d and len(entries_24h) > 24:
+            entries_30d = entries_24h
+            entries_24h = []
 
-        # Clasificar período (24h, 7d o 30d) analizando el rango de fechas
-        period = "24h"
-        try:
-            timestamps = []
-            for d in date_list:
-                cleaned = d.split(".")[0].replace("Z", "+00:00")
-                ts = datetime.fromisoformat(cleaned).timestamp()
-                timestamps.append(ts)
-            if timestamps:
-                diff_days = (max(timestamps) - min(timestamps)) / 86400.0
-                if diff_days <= 1.2:
-                    period = "24h"
-                elif diff_days <= 8.0:
-                    period = "7d"
-                else:
-                    period = "30d"
-        except Exception:
-            period = "24h" if len(entries) <= 25 else "30d"
+        # 1. Métricas 24 Horas
+        sales24h = sum(e["volume"] for e in entries_24h)
+        w_sum_24 = sum(e["price"] * e["volume"] for e in entries_24h)
+        price24h = round(w_sum_24 / sales24h) if sales24h > 0 else 0
+        p_list_24 = [e["price"] for e in entries_24h if e["price"] > 0]
+        median24h = round(statistics.median(p_list_24)) if p_list_24 else price24h
+
+        # 2. Métricas 30 Días
+        sales30d = sum(e["volume"] for e in entries_30d)
+        w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
+        price30d = round(w_sum_30 / sales30d) if sales30d > 0 else 0
+        p_list_30 = [e["price"] for e in entries_30d if e["price"] > 0]
+        median30d = round(statistics.median(p_list_30)) if p_list_30 else price30d
+
+        # 3. Métricas 7 Días (últimos 7 registros de la serie diaria)
+        entries_7d = entries_30d[-7:] if len(entries_30d) >= 7 else entries_30d
+        sales7d = sum(e["volume"] for e in entries_7d)
+        w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
+        price7d = round(w_sum_7 / sales7d) if sales7d > 0 else 0
+        p_list_7 = [e["price"] for e in entries_7d if e["price"] > 0]
+        median7d = round(statistics.median(p_list_7)) if p_list_7 else price7d
+
+        # Estimación promedio diario
+        avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))
+        suggested_price = price24h or price7d or price30d or median24h or median7d or median30d
 
         sales_data = {
-            "period": period,
-            "periodVol": total_vol,
+            "sales24h": sales24h,
+            "sales7d": sales7d,
+            "sales30d": sales30d,
+            "avgDailySales": avg_daily,
             "suggestedPrice": suggested_price,
+            "medianPrice": median24h or median7d or median30d,
+            "price24h": price24h,
+            "price7d": price7d,
+            "price30d": price30d,
+            "median24h": median24h,
+            "median7d": median7d,
+            "median30d": median30d,
             "updatedAt": int(time.time() * 1000)
         }
 
-        return item_id_found, sales_data, entries, period
+        return item_id_found, sales_data, entries_30d or entries_24h, "all"
     except Exception:
         return 0, None, None, ""
 
-def process_packet(pkt):
+def process_single_message(payload):
     global LAST_MARKET_ITEM_ID
     try:
-        if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
-            return
-        # Ignorar paquetes que salen del cliente hacia el puerto 5555 para evitar procesar nuestras propias peticiones
-        if pkt[TCP].sport != 5555 and pkt[TCP].dport == 5555:
-            return
-
-        payload = bytes(pkt[Raw].load)
         if len(payload) < 4:
             return
 
@@ -1014,43 +1029,35 @@ def process_packet(pkt):
         sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
 
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
-        q_item_id, quotation_data, _, period = parse_quotation_message(payload)
+        q_item_id, quotation_data, _, _ = parse_quotation_message(payload)
         target_id = q_item_id or LAST_MARKET_ITEM_ID
         if quotation_data and target_id > 0:
             target_name = get_item_name(target_id)
             now_str = datetime.now().strftime("%H:%M:%S")
 
-            # Acumular en memoria las ventanas de 24h, 7d y 30d
-            existing = ITEM_SALES_VOLUME.get(target_id, {})
-            period_vol = quotation_data.get("periodVol", 0)
-            if period == "24h":
-                existing["sales24h"] = period_vol
-            elif period == "7d":
-                existing["sales7d"] = period_vol
-            elif period == "30d":
-                existing["sales30d"] = period_vol
-                existing["avgDailySales"] = round(period_vol / 30.0, 1)
+            ITEM_SALES_VOLUME[target_id] = quotation_data
 
-            if quotation_data.get("suggestedPrice"):
-                existing["suggestedPrice"] = quotation_data["suggestedPrice"]
-            existing["updatedAt"] = quotation_data.get("updatedAt", int(time.time() * 1000))
-            ITEM_SALES_VOLUME[target_id] = existing
+            s24 = quotation_data.get("sales24h", 0)
+            p24 = quotation_data.get("price24h", 0)
+            m24 = quotation_data.get("median24h", 0)
 
-            v24 = existing.get("sales24h")
-            v7 = existing.get("sales7d")
-            v30 = existing.get("sales30d")
-            s_price = existing.get("suggestedPrice", 0)
+            s7 = quotation_data.get("sales7d", 0)
+            p7 = quotation_data.get("price7d", 0)
+            m7 = quotation_data.get("median7d", 0)
 
-            v_parts = []
-            if v24 is not None: v_parts.append(f"24h: {v24:,}")
-            if v7 is not None: v_parts.append(f"7d: {v7:,}")
-            if v30 is not None: v_parts.append(f"30d: {v30:,}")
-            v_str = " | ".join(v_parts) if v_parts else f"{period}: {period_vol:,}"
+            s30 = quotation_data.get("sales30d", 0)
+            p30 = quotation_data.get("price30d", 0)
+            m30 = quotation_data.get("median30d", 0)
 
-            period_label = "24 Horas" if period == "24h" else ("7 Días" if period == "7d" else "30 Días")
-            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) [{period_label}] -> Precio medio: {s_price:,} k | Ventas [{v_str}]", flush=True)
+            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id})", flush=True)
+            if s24 > 0:
+                print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
+            if s7 > 0:
+                print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k", flush=True)
+            if s30 > 0:
+                print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado)", flush=True)
 
-            def send_quotation(t_id=target_id, s_data=existing):
+            def send_quotation(t_id=target_id, s_data=quotation_data):
                 try:
                     headers = {"Content-Type": "application/json"}
                     if API_SECRET_KEY:
@@ -1083,6 +1090,67 @@ def process_packet(pkt):
                 packet_queue.put_nowait(raw_entry)
             except queue.Full:
                 pass
+    except Exception:
+        pass
+
+def process_packet(pkt):
+    try:
+        if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
+            return
+        # Ignorar paquetes que salen del cliente hacia el puerto 5555 para evitar procesar nuestras propias peticiones
+        if pkt[TCP].sport != 5555 and pkt[TCP].dport == 5555:
+            return
+
+        raw_load = bytes(pkt[Raw].load)
+        if len(raw_load) == 0:
+            return
+
+        conn_key = (pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport) if pkt.haslayer(IP) else pkt[TCP].sport
+
+        with STREAM_LOCK:
+            buf = STREAM_BUFFERS.get(conn_key, b"") + raw_load
+
+            loop_limit = 50
+            while len(buf) >= 2 and loop_limit > 0:
+                loop_limit -= 1
+                msg_len, r_len = decode_varint(buf, 0)
+                if r_len == 0 or msg_len <= 0:
+                    idx = buf.find(b"type.ankama.com")
+                    if idx > 4:
+                        buf = buf[idx - 4:]
+                        continue
+                    elif idx != -1:
+                        buf = buf[idx:]
+                        break
+                    else:
+                        buf = b""
+                        break
+
+                if msg_len > 250000:
+                    idx = buf.find(b"type.ankama.com")
+                    if idx > 4:
+                        buf = buf[idx - 4:]
+                        continue
+                    else:
+                        buf = b""
+                        break
+
+                total_needed = r_len + msg_len
+                if len(buf) < total_needed:
+                    # Fragmento TCP incompleto, esperar siguientes paquetes de la conexión
+                    break
+
+                full_msg = buf[:total_needed]
+                buf = buf[total_needed:]
+                try:
+                    process_single_message(full_msg)
+                except Exception:
+                    pass
+
+            if len(buf) > MAX_BUFFER_SIZE:
+                buf = b""
+            STREAM_BUFFERS[conn_key] = buf
+
     except Exception:
         pass
 
