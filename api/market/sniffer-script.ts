@@ -897,7 +897,7 @@ def async_worker():
         except Exception as e:
             print(f"[{now_str}] [Aviso]: {e}", flush=True)
 
-LAST_MARKET_ITEM_ID = 0
+ITEM_SALES_VOLUME = {}
 
 def parse_quotation_message(payload):
     """
@@ -905,12 +905,12 @@ def parse_quotation_message(payload):
     de la ventana de Cotizaciones del Mercado (gráficos de 24h, 7d, 30d y precio medio/mediano).
     """
     if not payload or b"type.ankama.com/iuk" not in payload:
-        return 0, None, None
+        return 0, None, None, ""
 
     try:
         idx = payload.find(b"type.ankama.com/iuk")
         if idx < 2:
-            return 0, None, None
+            return 0, None, None, ""
 
         start = idx - 2
         off = start
@@ -927,6 +927,7 @@ def parse_quotation_message(payload):
         p_off = 0
         entries = []
         item_id_found = 0
+        date_list = []
         while p_off < len(payload_data):
             tag_e, r_e = decode_varint(payload_data, p_off)
             if r_e == 0:
@@ -966,31 +967,44 @@ def parse_quotation_message(payload):
                     break
             if date_str and (price > 0 or vol > 0):
                 entries.append({"date": date_str, "price": price, "volume": vol, "item_id": iid})
+                date_list.append(date_str)
 
         if not entries:
-            return 0, None, None
+            return 0, None, None, ""
 
         total_vol = sum(e["volume"] for e in entries)
         weighted_sum = sum(e["price"] * e["volume"] for e in entries)
         suggested_price = round(weighted_sum / total_vol) if total_vol > 0 else round(sum(e["price"] for e in entries) / len(entries))
 
-        num_points = len(entries)
+        # Clasificar período (24h, 7d o 30d) analizando el rango de fechas
+        period = "24h"
+        try:
+            timestamps = []
+            for d in date_list:
+                cleaned = d.split(".")[0].replace("Z", "+00:00")
+                ts = datetime.fromisoformat(cleaned).timestamp()
+                timestamps.append(ts)
+            if timestamps:
+                diff_days = (max(timestamps) - min(timestamps)) / 86400.0
+                if diff_days <= 1.2:
+                    period = "24h"
+                elif diff_days <= 8.0:
+                    period = "7d"
+                else:
+                    period = "30d"
+        except Exception:
+            period = "24h" if len(entries) <= 25 else "30d"
+
         sales_data = {
+            "period": period,
+            "periodVol": total_vol,
             "suggestedPrice": suggested_price,
-            "avgDailySales": round(total_vol / max(1, min(30, num_points)), 1),
             "updatedAt": int(time.time() * 1000)
         }
 
-        if num_points <= 25:
-            sales_data["sales24h"] = total_vol
-        elif num_points <= 10:
-            sales_data["sales7d"] = total_vol
-        else:
-            sales_data["sales30d"] = total_vol
-
-        return item_id_found, sales_data, entries
+        return item_id_found, sales_data, entries, period
     except Exception:
-        return 0, None, None
+        return 0, None, None, ""
 
 def process_packet(pkt):
     global LAST_MARKET_ITEM_ID
@@ -1011,20 +1025,47 @@ def process_packet(pkt):
         if item_id:
             LAST_MARKET_ITEM_ID = item_id
 
-        # Registrar en cotizaciones_inspeccion.txt para descubrir los números de cotización / 24h / 7d / 30d
+        # Registrar en cotizaciones_inspeccion.txt para auditoría forense
         sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
 
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
-        q_item_id, quotation_data, _ = parse_quotation_message(payload)
+        q_item_id, quotation_data, _, period = parse_quotation_message(payload)
         target_id = q_item_id or LAST_MARKET_ITEM_ID
         if quotation_data and target_id > 0:
             target_name = get_item_name(target_id)
             now_str = datetime.now().strftime("%H:%M:%S")
-            s_price = quotation_data.get("suggestedPrice", 0)
-            s_vol = quotation_data.get("sales30d") or quotation_data.get("sales24h") or 0
-            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) -> Precio medio: {s_price:,} k | Volumen: {s_vol:,} (Sincronizado)", flush=True)
 
-            def send_quotation(t_id=target_id, q_data=quotation_data):
+            # Acumular en memoria las ventanas de 24h, 7d y 30d
+            existing = ITEM_SALES_VOLUME.get(target_id, {})
+            period_vol = quotation_data.get("periodVol", 0)
+            if period == "24h":
+                existing["sales24h"] = period_vol
+            elif period == "7d":
+                existing["sales7d"] = period_vol
+            elif period == "30d":
+                existing["sales30d"] = period_vol
+                existing["avgDailySales"] = round(period_vol / 30.0, 1)
+
+            if quotation_data.get("suggestedPrice"):
+                existing["suggestedPrice"] = quotation_data["suggestedPrice"]
+            existing["updatedAt"] = quotation_data.get("updatedAt", int(time.time() * 1000))
+            ITEM_SALES_VOLUME[target_id] = existing
+
+            v24 = existing.get("sales24h")
+            v7 = existing.get("sales7d")
+            v30 = existing.get("sales30d")
+            s_price = existing.get("suggestedPrice", 0)
+
+            v_parts = []
+            if v24 is not None: v_parts.append(f"24h: {v24:,}")
+            if v7 is not None: v_parts.append(f"7d: {v7:,}")
+            if v30 is not None: v_parts.append(f"30d: {v30:,}")
+            v_str = " | ".join(v_parts) if v_parts else f"{period}: {period_vol:,}"
+
+            period_label = "24 Horas" if period == "24h" else ("7 Días" if period == "7d" else "30 Días")
+            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) [{period_label}] -> Precio medio: {s_price:,} k | Ventas [{v_str}]", flush=True)
+
+            def send_quotation(t_id=target_id, s_data=existing):
                 try:
                     headers = {"Content-Type": "application/json"}
                     if API_SECRET_KEY:
@@ -1032,7 +1073,7 @@ def process_packet(pkt):
                     body = {
                         "server": SERVER_NAME,
                         "salesVolume": {
-                            str(t_id): q_data
+                            str(t_id): s_data
                         }
                     }
                     http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
