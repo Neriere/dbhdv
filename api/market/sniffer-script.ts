@@ -897,7 +897,100 @@ def async_worker():
         except Exception as e:
             print(f"[{now_str}] [Aviso]: {e}", flush=True)
 
+LAST_MARKET_ITEM_ID = 0
+
+def parse_quotation_message(payload):
+    """
+    Decodifica paquetes Ankama Protobuf Any ('type.ankama.com/iuk' o 'type.ankama.com/ive')
+    de la ventana de Cotizaciones del Mercado (gráficos de 24h, 7d, 30d y precio medio/mediano).
+    """
+    if not payload or b"type.ankama.com/iuk" not in payload:
+        return None, None
+
+    try:
+        idx = payload.find(b"type.ankama.com/iuk")
+        if idx < 2:
+            return None, None
+
+        start = idx - 2
+        off = start
+        tag1, r1 = decode_varint(payload, off)
+        off += r1
+        len1, r1_len = decode_varint(payload, off)
+        off += r1_len + len1
+        tag2, r2 = decode_varint(payload, off)
+        off += r2
+        len2, r2_len = decode_varint(payload, off)
+        off += r2_len
+        payload_data = payload[off:off + len2]
+
+        p_off = 0
+        entries = []
+        while p_off < len(payload_data):
+            tag_e, r_e = decode_varint(payload_data, p_off)
+            if r_e == 0:
+                break
+            p_off += r_e
+            len_e, r_len_e = decode_varint(payload_data, p_off)
+            p_off += r_len_e
+            entry_buf = payload_data[p_off:p_off + len_e]
+            p_off += len_e
+
+            e_off = 0
+            f1, f2, f3, f4 = 0, "", 0, 0
+            while e_off < len(entry_buf):
+                t_f, r_f = decode_varint(entry_buf, e_off)
+                if r_f == 0:
+                    break
+                e_off += r_f
+                f_num = t_f >> 3
+                w_type = t_f & 7
+                if w_type == 0:
+                    v_val, r_v = decode_varint(entry_buf, e_off)
+                    e_off += r_v
+                    if f_num == 1:
+                        f1 = v_val
+                    elif f_num == 3:
+                        f3 = v_val
+                    elif f_num == 4:
+                        f4 = v_val
+                elif w_type == 2:
+                    l_str, r_s = decode_varint(entry_buf, e_off)
+                    e_off += r_s
+                    f2 = entry_buf[e_off:e_off + l_str].decode("utf-8", errors="ignore")
+                    e_off += l_str
+                else:
+                    break
+            if f2 and (f3 > 0 or f4 > 0):
+                entries.append({"date": f2, "price": f3, "volume": f4})
+
+        if not entries:
+            return None, None
+
+        total_vol = sum(e["volume"] for e in entries)
+        weighted_sum = sum(e["price"] * e["volume"] for e in entries)
+        suggested_price = round(weighted_sum / total_vol) if total_vol > 0 else round(sum(e["price"] for e in entries) / len(entries))
+
+        num_points = len(entries)
+        sales_data = {
+            "suggestedPrice": suggested_price,
+            "avgDailySales": round(total_vol / max(1, min(30, num_points)), 1),
+            "updatedAt": int(time.time() * 1000)
+        }
+
+        if num_points <= 25:
+            sales_data["sales24h"] = total_vol
+        elif num_points <= 10:
+            sales_data["sales7d"] = total_vol
+        else:
+            sales_data["sales30d"] = total_vol
+
+        return sales_data, entries
+    except Exception:
+        return None, None
+
 def process_packet(pkt):
+    global LAST_MARKET_ITEM_ID
     try:
         if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
             return
@@ -912,9 +1005,40 @@ def process_packet(pkt):
         item_id, item_type, prices, debug_info = parse_market_message(payload)
         item_name = get_item_name(item_id) if item_id else ""
 
+        if item_id:
+            LAST_MARKET_ITEM_ID = item_id
+
         # Registrar en cotizaciones_inspeccion.txt para descubrir los números de cotización / 24h / 7d / 30d
         sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
 
+        # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
+        quotation_data, _ = parse_quotation_message(payload)
+        if quotation_data and LAST_MARKET_ITEM_ID > 0:
+            target_id = LAST_MARKET_ITEM_ID
+            target_name = get_item_name(target_id)
+            now_str = datetime.now().strftime("%H:%M:%S")
+            s_price = quotation_data.get("suggestedPrice", 0)
+            s_vol = quotation_data.get("sales30d") or quotation_data.get("sales24h") or 0
+            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) -> Precio medio: {s_price:,} k | Volumen: {s_vol:,} (Sincronizado)", flush=True)
+
+            def send_quotation():
+                try:
+                    headers = {"Content-Type": "application/json"}
+                    if API_SECRET_KEY:
+                        headers["x-api-key"] = API_SECRET_KEY
+                    body = {
+                        "server": SERVER_NAME,
+                        "salesVolume": {
+                            str(target_id): quotation_data
+                        }
+                    }
+                    http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
+                except Exception:
+                    pass
+
+            threading.Thread(target=send_quotation, daemon=True).start()
+
+        # 2. Si es paquete de mercadillo normal con lotes/precios
         if item_id and prices:
             # Forzar tipo equipable si está catalogado en EQUIPMENT_IDS
             is_equipment = item_type == "equipable" or is_item_equipment(item_id) or len(prices) > 4

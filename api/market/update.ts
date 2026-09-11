@@ -23,13 +23,19 @@ const serverMap: Record<string, number> = {
   henual: 8,
 };
 
+interface ItemMarketRef {
+  price: number;
+  suggestedPrice?: number;
+  sales30d?: number;
+}
+
 async function getPreviousPrices(
   dbUrl: string,
   dbToken: string,
   profileId: number,
   itemIds: number[]
-): Promise<Map<number, number>> {
-  const priceMap = new Map<number, number>();
+): Promise<Map<number, ItemMarketRef>> {
+  const priceMap = new Map<number, ItemMarketRef>();
   const validIds = Array.from(new Set(itemIds.filter((id) => typeof id === "number" && id > 0)));
   if (!dbUrl || validIds.length === 0) return priceMap;
 
@@ -59,6 +65,13 @@ async function getPreviousPrices(
                 args,
               },
             },
+            {
+              type: "execute",
+              stmt: {
+                sql: `SELECT item_id, suggested_price, sales_30d FROM profile_sales_volume WHERE profile_id = ? AND item_id IN (${placeholders})`,
+                args,
+              },
+            },
             { type: "close" },
           ],
         }),
@@ -66,12 +79,25 @@ async function getPreviousPrices(
 
       if (res.ok) {
         const data = await res.json();
-        const rows = data?.results?.[0]?.response?.result?.rows || [];
-        for (const row of rows) {
+        const priceRows = data?.results?.[0]?.response?.result?.rows || [];
+        const volumeRows = data?.results?.[1]?.response?.result?.rows || [];
+
+        for (const row of priceRows) {
           const id = Number(row[0]?.value ?? row[0]);
           const price = Number(row[1]?.value ?? row[1]);
           if (id && price > 0) {
-            priceMap.set(id, price);
+            priceMap.set(id, { price });
+          }
+        }
+        for (const row of volumeRows) {
+          const id = Number(row[0]?.value ?? row[0]);
+          const suggestedPrice = Number(row[1]?.value ?? row[1]) || undefined;
+          const sales30d = Number(row[2]?.value ?? row[2]) || undefined;
+          if (id && suggestedPrice) {
+            const existing = priceMap.get(id) || { price: 0 };
+            existing.suggestedPrice = suggestedPrice;
+            existing.sales30d = sales30d;
+            priceMap.set(id, existing);
           }
         }
       }
@@ -83,9 +109,13 @@ async function getPreviousPrices(
   return priceMap;
 }
 
-function processItemPayload(payload: any, now: number, previousPrice: number = 0) {
+function processItemPayload(payload: any, now: number, previousRef: number | ItemMarketRef = 0) {
   const itemId = Number(payload?.item_id ?? payload?.itemId ?? payload?.id);
   if (!itemId || Number.isNaN(itemId) || itemId <= 0) return null;
+
+  const previousPrice = typeof previousRef === "number" ? previousRef : (previousRef?.price || 0);
+  const historicalSuggestedPrice = typeof previousRef === "object" ? (previousRef.suggestedPrice || 0) : Number(payload?.suggested_price ?? payload?.suggestedPrice ?? 0);
+  const sales30d = typeof previousRef === "object" ? (previousRef.sales30d || 0) : Number(payload?.sales_30d ?? payload?.sales30d ?? 0);
 
   const directPrice = Number(payload?.price ?? payload?.precio ?? payload?.calculated_price);
   const precios = payload.precios || payload.prices;
@@ -213,6 +243,18 @@ function processItemPayload(payload: any, now: number, previousPrice: number = 0
     }
   }
 
+  // Salvaguarda de Precios Inflados / Ausencia de Stock:
+  // Si el precio calculado de lotes vivos es absurdamente lejano (>= 4x o <= 0.15x)
+  // respecto al precio medio histórico real (cuando existe historial de cotizaciones):
+  if (historicalSuggestedPrice >= 50 && finalPrice > 0) {
+    const isExaggerated = finalPrice >= historicalSuggestedPrice * 4.0;
+    const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.15;
+    if (isExaggerated || isExtremeDump) {
+      antiTrollTriggered = true;
+      finalPrice = Math.round(historicalSuggestedPrice);
+    }
+  }
+
   const serverSlug = (payload.server || "draconiros").toLowerCase().replace(/[\s\-_]/g, "");
   const profileId = Number(payload.profileId || payload.profile_id) || serverMap[serverSlug] || 1;
   const profileName = payload.server || "Draconiros";
@@ -258,6 +300,68 @@ export default async function handler(req: any, res: any) {
     const dbToken = (process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || "").trim();
     const now = Date.now();
 
+    // Si la solicitud es únicamente de volúmenes de venta / cotizaciones
+    const rawSalesVolume = body?.salesVolume || body?.sales_volume;
+    if (rawSalesVolume && typeof rawSalesVolume === "object" && !isBatch && (!body.item_id && !body.itemId && !body.prices && !body.precios)) {
+      const serverSlug = (body?.server || "draconiros").toLowerCase().replace(/[\s\-_]/g, "");
+      const profileId = Number(body?.profileId || body?.profile_id) || serverMap[serverSlug] || 1;
+      const requests: any[] = [];
+      const entries = Object.entries(rawSalesVolume);
+
+      for (const [sId, svRaw] of entries) {
+        const sItemId = Number(sId);
+        const sv = svRaw as any;
+        if (sItemId > 0 && sv && typeof sv === "object") {
+          requests.push({
+            type: "execute",
+            stmt: {
+              sql: `INSERT INTO profile_sales_volume (profile_id, item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(profile_id, item_id) DO UPDATE SET
+                      sales_24h = coalesce(excluded.sales_24h, profile_sales_volume.sales_24h),
+                      sales_7d = coalesce(excluded.sales_7d, profile_sales_volume.sales_7d),
+                      sales_30d = coalesce(excluded.sales_30d, profile_sales_volume.sales_30d),
+                      avg_daily_sales = coalesce(excluded.avg_daily_sales, profile_sales_volume.avg_daily_sales),
+                      suggested_price = coalesce(excluded.suggested_price, profile_sales_volume.suggested_price),
+                      price_strategy = coalesce(excluded.price_strategy, profile_sales_volume.price_strategy),
+                      updated_at = excluded.updated_at`,
+              args: [
+                { type: "integer", value: String(profileId) },
+                { type: "integer", value: String(sItemId) },
+                sv.sales24h != null ? { type: "integer", value: String(sv.sales24h) } : { type: "null" },
+                sv.sales7d != null ? { type: "integer", value: String(sv.sales7d) } : { type: "null" },
+                sv.sales30d != null ? { type: "integer", value: String(sv.sales30d) } : { type: "null" },
+                sv.avgDailySales != null ? { type: "float", value: Number(sv.avgDailySales) } : { type: "null" },
+                sv.suggestedPrice != null ? { type: "integer", value: String(sv.suggestedPrice) } : { type: "null" },
+                sv.priceStrategy ? { type: "text", value: String(sv.priceStrategy) } : { type: "null" },
+                { type: "integer", value: String(now) },
+              ],
+            },
+          });
+        }
+      }
+
+      if (requests.length > 0 && dbUrl) {
+        const endpoint = dbUrl.endsWith("/v2/pipeline") ? dbUrl : `${dbUrl}/v2/pipeline`;
+        await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${dbToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requests: [...requests, { type: "close" }] }),
+        });
+        (globalThis as any).__lastMarketWriteTimestamp = now;
+      }
+
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      return res.status(200).json({
+        success: true,
+        updated_sales_volume: entries.length,
+        profile_id: profileId,
+      });
+    }
+
     if (isBatch) {
       const items = Array.isArray(body?.items) ? body.items : Array.isArray(body) ? body : [];
       if (items.length === 0) {
@@ -274,8 +378,9 @@ export default async function handler(req: any, res: any) {
 
       for (const payload of items) {
         const id = Number(payload?.item_id ?? payload?.itemId ?? payload?.id);
-        const prevPrice = previousPriceMap.get(id) || 0;
-        const item = processItemPayload(payload, now, prevPrice);
+        const prevRef = previousPriceMap.get(id);
+        const prevPrice = prevRef?.price || 0;
+        const item = processItemPayload(payload, now, prevRef);
         if (!item) continue;
 
         if (item.finalPrice > 0 && dbUrl) {
@@ -372,10 +477,11 @@ export default async function handler(req: any, res: any) {
     const rawItemId = Number(body?.item_id ?? body?.itemId ?? body?.id);
     const serverSlug = (body?.server || "draconiros").toLowerCase().replace(/[\s\-_]/g, "");
     const profileId = Number(body?.profileId || body?.profile_id) || serverMap[serverSlug] || 1;
-    const previousPriceMap = rawItemId ? await getPreviousPrices(dbUrl, dbToken, profileId, [rawItemId]) : new Map<number, number>();
-    const previousPrice = previousPriceMap.get(rawItemId) || 0;
+    const previousPriceMap = rawItemId ? await getPreviousPrices(dbUrl, dbToken, profileId, [rawItemId]) : new Map<number, ItemMarketRef>();
+    const prevRef = previousPriceMap.get(rawItemId);
+    const previousPrice = prevRef?.price || 0;
 
-    const item = processItemPayload(body, now, previousPrice);
+    const item = processItemPayload(body, now, prevRef);
     if (!item) {
       return res.status(400).json({ error: "item_id inválido o requerido" });
     }
