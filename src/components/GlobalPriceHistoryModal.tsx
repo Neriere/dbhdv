@@ -27,6 +27,7 @@ import {
   getItemIconUrl,
   getItemFallbackIconUrl,
 } from '../services/dofusDbService';
+import { ModalPortal } from './common/ModalPortal';
 
 interface GlobalPriceHistoryModalProps {
   isOpen: boolean;
@@ -119,7 +120,8 @@ export const GlobalPriceHistoryModal: React.FC<GlobalPriceHistoryModalProps> = (
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200">
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200">
       <div
         className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -437,5 +439,6 @@ export const GlobalPriceHistoryModal: React.FC<GlobalPriceHistoryModalProps> = (
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };

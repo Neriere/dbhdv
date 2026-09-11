@@ -24,6 +24,7 @@ import {
   getItemName,
   getItemTypeName,
 } from '../services/dofusDbService';
+import { ModalPortal } from './common/ModalPortal';
 
 interface ItemPriceHistoryModalProps {
   item: DofusItem | null;
@@ -252,7 +253,8 @@ export const ItemPriceHistoryModal: React.FC<ItemPriceHistoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200">
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200">
       <div
         className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -498,5 +500,6 @@ export const ItemPriceHistoryModal: React.FC<ItemPriceHistoryModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };

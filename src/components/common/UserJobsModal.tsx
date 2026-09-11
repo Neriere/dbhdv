@@ -27,6 +27,7 @@ import {
   JobConfigDefinition,
 } from "../../services/userJobsService";
 import { useUserJobs } from "../../hooks/useUserJobs";
+import { ModalPortal } from "./ModalPortal";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FlaskConical,
@@ -106,10 +107,11 @@ export const UserJobsModal: React.FC<UserJobsModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto"
-      onClick={onClose}
-    >
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto"
+        onClick={onClose}
+      >
       <div
         className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-slate-900 border border-slate-800/90 rounded-2xl shadow-2xl text-slate-200 overflow-hidden my-auto"
         onClick={(e) => e.stopPropagation()}
@@ -398,5 +400,6 @@ export const UserJobsModal: React.FC<UserJobsModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };

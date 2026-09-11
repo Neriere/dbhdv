@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { downloadBycWorkbook } from "../services/bycExcelExportService";
 import { getStoredSalesVolumeMap } from "../services/salesVolumeService";
+import { ModalPortal } from "./common/ModalPortal";
 
 interface BycExportExcelModalProps {
   isOpen: boolean;
@@ -64,7 +65,8 @@ export const BycExportExcelModal: React.FC<BycExportExcelModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
       <div
         className="bg-slate-900 border border-emerald-500/30 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl relative max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -237,5 +239,6 @@ export const BycExportExcelModal: React.FC<BycExportExcelModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };

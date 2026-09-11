@@ -24,6 +24,7 @@ import {
   analyzeSalesVolume,
   saveItemSalesVolume,
 } from "../../services/salesVolumeService";
+import { ModalPortal } from "../common/ModalPortal";
 
 interface QuickQuoteModalProps {
   item: DofusItem | null;
@@ -117,10 +118,11 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn"
-      onClick={onClose}
-    >
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn"
+        onClick={onClose}
+      >
       <div
         className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 text-slate-200 relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -404,5 +406,6 @@ export const QuickQuoteModal: React.FC<QuickQuoteModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };

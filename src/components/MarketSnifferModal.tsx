@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { PriceProfile } from '../types';
 import { triggerLivePriceSync } from '../services/dofusDbService';
+import { ModalPortal } from './common/ModalPortal';
 
 interface MarketSnifferModalProps {
   isOpen: boolean;
@@ -1024,7 +1025,8 @@ pause
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-950/60">
@@ -1369,5 +1371,6 @@ pause
         </div>
       </div>
     </div>
-  );
+  </ModalPortal>
+);
 };
