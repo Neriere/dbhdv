@@ -204,7 +204,7 @@ class SalesInspectionLogger:
 
             unique_candidates = sorted(list(set([v for v in all_numbers if v > 0])))
             hex_lines = []
-            for i in range(0, min(len(payload), 512), 16):
+            for i in range(0, min(len(payload), 4096), 16):
                 chunk = payload[i:i+16]
                 hex_part = " ".join(f"{b:02X}" for b in chunk)
                 ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
@@ -951,7 +951,13 @@ def parse_quotation_message(payload):
                     break
 
             if date_str and (price > 0 or vol > 0):
-                entry = {"date": date_str, "price": price, "volume": vol, "item_id": iid}
+                ts = 0
+                try:
+                    cleaned = date_str.split(".")[0].replace("Z", "+00:00")
+                    ts = datetime.fromisoformat(cleaned).timestamp()
+                except Exception:
+                    pass
+                entry = {"date": date_str, "price": price, "volume": vol, "item_id": iid, "ts": ts}
                 if fnum_e == 1:
                     entries_24h.append(entry)
                 elif fnum_e == 2:
@@ -967,22 +973,33 @@ def parse_quotation_message(payload):
             entries_30d = entries_24h
             entries_24h = []
 
+        # Ordenar cronológicamente si hay marcas de tiempo
+        if entries_24h:
+            entries_24h.sort(key=lambda e: e.get("ts", 0))
+        if entries_30d:
+            entries_30d.sort(key=lambda e: e.get("ts", 0))
+
         # 1. Métricas 24 Horas
-        sales24h = sum(e["volume"] for e in entries_24h)
-        w_sum_24 = sum(e["price"] * e["volume"] for e in entries_24h)
+        # En la gráfica de 24h de Dofus Unity hay 25 puntos (el primer punto es el anclaje inicial hace 24h).
+        # El total de artículos vendidos del juego corresponde a los 24 intervalos horarios más recientes:
+        calc_24h = entries_24h[-24:] if len(entries_24h) >= 24 else entries_24h
+        sales24h = sum(e["volume"] for e in calc_24h)
+        w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
         price24h = round(w_sum_24 / sales24h) if sales24h > 0 else 0
-        p_list_24 = [e["price"] for e in entries_24h if e["price"] > 0]
+        p_list_24 = [e["price"] for e in calc_24h if e["price"] > 0]
         median24h = round(statistics.median(p_list_24)) if p_list_24 else price24h
 
         # 2. Métricas 30 Días
+        # Toda la serie diaria completa del Campo #2
         sales30d = sum(e["volume"] for e in entries_30d)
         w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
         price30d = round(w_sum_30 / sales30d) if sales30d > 0 else 0
         p_list_30 = [e["price"] for e in entries_30d if e["price"] > 0]
         median30d = round(statistics.median(p_list_30)) if p_list_30 else price30d
 
-        # 3. Métricas 7 Días (últimos 7 registros de la serie diaria)
-        entries_7d = entries_30d[-7:] if len(entries_30d) >= 7 else entries_30d
+        # 3. Métricas 7 Días
+        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
+        entries_7d = entries_30d[-8:] if len(entries_30d) >= 8 else entries_30d
         sales7d = sum(e["volume"] for e in entries_7d)
         w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
         price7d = round(w_sum_7 / sales7d) if sales7d > 0 else 0
