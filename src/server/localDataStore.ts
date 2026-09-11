@@ -1237,6 +1237,26 @@ async function getPricesAndUpdatedAtMaps(profileId: number): Promise<{ prices: M
     prices[itemId] = Number(row.price);
     priceUpdatedAt[itemId] = Number(row.updated_at);
   }
+
+  // Fallback para objetos sin stock / sin precio en mercadillo pero con cotización sugerida
+  try {
+    const volResult = await database.execute({
+      sql: "SELECT item_id, suggested_price, updated_at FROM profile_sales_volume WHERE profile_id = ? AND suggested_price >= 50",
+      args: [profileId],
+    });
+    for (const row of volResult.rows) {
+      const itemId = Number(row.item_id);
+      if ((prices[itemId] === undefined || prices[itemId] <= 0) && row.suggested_price) {
+        prices[itemId] = Number(row.suggested_price);
+        if (!priceUpdatedAt[itemId]) {
+          priceUpdatedAt[itemId] = Number(row.updated_at) || Date.now();
+        }
+      }
+    }
+  } catch {
+    // Si la consulta falla o no está disponible, continuar con los precios directos
+  }
+
   return { prices, priceUpdatedAt };
 }
 
@@ -1946,6 +1966,17 @@ async function buildBootstrapData(): Promise<BootstrapData> {
     }
   }
 
+  // Fallback para objetos sin precio directo pero con cotización sugerida
+  for (const [idStr, vol] of Object.entries(salesVolume)) {
+    const id = Number(idStr);
+    if (id > 0 && (prices[id] === undefined || prices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+      prices[id] = Math.round(vol.suggestedPrice);
+      if (!priceUpdatedAt[id]) {
+        priceUpdatedAt[id] = vol.updatedAt || Date.now();
+      }
+    }
+  }
+
   const resultData: BootstrapData = {
     items,
     recipes,
@@ -2517,6 +2548,8 @@ export async function setItemSalesVolume(
     updatedAt: now,
   });
 
+  await correctPricesAgainstSalesVolume(pid, { [itemId]: fullVol });
+
   return { success: true, volume: fullVol, updatedAt: now };
 }
 
@@ -2613,6 +2646,35 @@ export async function correctPricesAgainstSalesVolume(
             new_price: sug,
           });
         }
+      } else {
+        // Sin precio registrado en mercadillo (actualmente sin stock / 0 ofertas):
+        // Asignar temporalmente el precio sugerido de las cotizaciones
+        await upsertPrice(profileId, sItemId, sug, "cotizacion_sin_stock");
+        invalidateServerBootstrapCache();
+
+        let itemName = "";
+        try {
+          const it = await getOrFetchItemById(sItemId);
+          itemName = it?.name?.es || `Objeto #${sItemId}`;
+        } catch {
+          itemName = `Objeto #${sItemId}`;
+        }
+
+        marketEvents.emit("price_update", {
+          profileId,
+          itemId: sItemId,
+          price: sug,
+          updatedAt: Date.now(),
+          name: itemName,
+          source: "cotizacion_sin_stock",
+        });
+
+        corrected.push({
+          item_id: sItemId,
+          item_name: itemName,
+          old_price: 0,
+          new_price: sug,
+        });
       }
     }
   }
@@ -3100,12 +3162,17 @@ export function calculateItemMarketPrice(
 
   // Salvaguarda de Precios Inflados / Ausencia de Stock contra Cotización Histórica:
   // Si el precio calculado de lotes vivos difiere de forma atípica (>= 3.0x o <= 0.25x)
-  // respecto a la cotización de mercado registrada:
-  if (suggestedPrice && suggestedPrice >= 50 && finalPrice > 0) {
-    const isExaggerated = finalPrice >= suggestedPrice * 3.0;
-    const isExtremeDump = finalPrice <= suggestedPrice * 0.25;
-    if (isExaggerated || isExtremeDump) {
-      antiTrollTriggered = true;
+  // o si no hay ofertas en mercadillo (0 stock), se usa la cotización sugerida disponible:
+  if (suggestedPrice && suggestedPrice >= 50) {
+    if (finalPrice > 0) {
+      const isExaggerated = finalPrice >= suggestedPrice * 3.0;
+      const isExtremeDump = finalPrice <= suggestedPrice * 0.25;
+      if (isExaggerated || isExtremeDump) {
+        antiTrollTriggered = true;
+        finalPrice = Math.round(suggestedPrice);
+      }
+    } else {
+      // Sin ofertas disponibles en mercadillo: asignar temporalmente cotización sugerida
       finalPrice = Math.round(suggestedPrice);
     }
   }

@@ -249,12 +249,17 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
 
   // Salvaguarda de Precios Inflados / Ausencia de Stock / Outliers troll:
   // Si el precio calculado difiere drásticamente (>= 3.0x o <= 0.25x)
-  // respecto al precio de referencia de cotizaciones (o media ponderada de ventas):
-  if (historicalSuggestedPrice >= 50 && finalPrice > 0) {
-    const isExaggerated = finalPrice >= historicalSuggestedPrice * 3.0;
-    const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.25;
-    if (isExaggerated || isExtremeDump) {
-      antiTrollTriggered = true;
+  // o si no hay stock en mercadillo (0 ofertas), se usa la cotización sugerida disponible:
+  if (historicalSuggestedPrice >= 50) {
+    if (finalPrice > 0) {
+      const isExaggerated = finalPrice >= historicalSuggestedPrice * 3.0;
+      const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.25;
+      if (isExaggerated || isExtremeDump) {
+        antiTrollTriggered = true;
+        finalPrice = Math.round(historicalSuggestedPrice);
+      }
+    } else {
+      // Sin ofertas en mercadillo (0 stock): usar cotización sugerida
       finalPrice = Math.round(historicalSuggestedPrice);
     }
   }
@@ -359,14 +364,60 @@ export default async function handler(req: any, res: any) {
           const suggestedPrice = Number(sv.suggestedPrice || sv.suggested_price || 0);
           const currentRef = currentPriceMap.get(sItemId);
           const currentPrice = currentRef?.price || 0;
-          if (suggestedPrice >= 50 && currentPrice > 0) {
-            const isExaggerated = currentPrice >= suggestedPrice * 3.0;
-            const isExtremeDump = currentPrice <= suggestedPrice * 0.25;
-            if (isExaggerated || isExtremeDump) {
+          if (suggestedPrice >= 50) {
+            if (currentPrice > 0) {
+              const isExaggerated = currentPrice >= suggestedPrice * 3.0;
+              const isExtremeDump = currentPrice <= suggestedPrice * 0.25;
+              if (isExaggerated || isExtremeDump) {
+                const newPrice = Math.round(suggestedPrice);
+                correctedPrices.push({
+                  item_id: sItemId,
+                  old_price: currentPrice,
+                  new_price: newPrice,
+                  suggested_price: newPrice,
+                });
+
+                requests.push({
+                  type: "execute",
+                  stmt: {
+                    sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
+                          VALUES (?, ?, ?, ?)
+                          ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+                    args: [
+                      { type: "integer", value: String(profileId) },
+                      { type: "integer", value: String(sItemId) },
+                      { type: "integer", value: String(newPrice) },
+                      { type: "integer", value: String(now) },
+                    ],
+                  },
+                });
+
+                const diff = newPrice - currentPrice;
+                const pct = ((newPrice - currentPrice) / currentPrice) * 100;
+                requests.push({
+                  type: "execute",
+                  stmt: {
+                    sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    args: [
+                      { type: "integer", value: String(profileId) },
+                      { type: "integer", value: String(sItemId) },
+                      { type: "integer", value: String(newPrice) },
+                      { type: "integer", value: String(currentPrice) },
+                      { type: "integer", value: String(diff) },
+                      { type: "float", value: Number(pct.toFixed(2)) },
+                      { type: "text", value: "anti_troll_safeguard" },
+                      { type: "integer", value: String(now) },
+                    ],
+                  },
+                });
+              }
+            } else {
+              // Sin stock actual en mercadillo (currentPrice <= 0): usar temporalmente precio sugerido de cotizaciones
               const newPrice = Math.round(suggestedPrice);
               correctedPrices.push({
                 item_id: sItemId,
-                old_price: currentPrice,
+                old_price: 0,
                 new_price: newPrice,
                 suggested_price: newPrice,
               });
@@ -386,8 +437,6 @@ export default async function handler(req: any, res: any) {
                 },
               });
 
-              const diff = newPrice - currentPrice;
-              const pct = ((newPrice - currentPrice) / currentPrice) * 100;
               requests.push({
                 type: "execute",
                 stmt: {
@@ -397,10 +446,10 @@ export default async function handler(req: any, res: any) {
                     { type: "integer", value: String(profileId) },
                     { type: "integer", value: String(sItemId) },
                     { type: "integer", value: String(newPrice) },
-                    { type: "integer", value: String(currentPrice) },
-                    { type: "integer", value: String(diff) },
-                    { type: "float", value: Number(pct.toFixed(2)) },
-                    { type: "text", value: "anti_troll_safeguard" },
+                    { type: "integer", value: "0" },
+                    { type: "integer", value: String(newPrice) },
+                    { type: "float", value: 100 },
+                    { type: "text", value: "cotizacion_sin_stock" },
                     { type: "integer", value: String(now) },
                   ],
                 },

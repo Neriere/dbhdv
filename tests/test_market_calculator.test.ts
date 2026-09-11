@@ -236,4 +236,37 @@ test('Precio de mercadillo con fluctuación normal (dentro del rango 0.25x a 3.0
   assert.ok(result.finalPrice >= 7300 && result.finalPrice <= 7500, 'Conserva el precio real de HDV');
 });
 
+test('Leyenda de Thanatena (#32133) sin stock en mercadillo (0 ofertas) adopta precio sugerido de cotizaciones', () => {
+  const item = {
+    id: 32133,
+    name: { es: 'Leyenda de Thanatena' },
+    level: 200,
+    typeId: 15,
+  } as unknown as DofusItem;
+
+  // En mercadillo no hay nada a la venta (sin ofertas / vacío)
+  const precios = {};
+  const suggestedQuotationPrice = 94999999;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', suggestedQuotationPrice);
+  assert.equal(result.resolvedType, 'recurso');
+  assert.equal(result.finalPrice, 94999999, 'Debe adoptar el precio sugerido de 94.9M cuando no hay stock');
+});
+
+test('Objeto con lotes en cero [0, 0, 0, 0] adopta cotización sugerida si no hay vendedores', () => {
+  const item = {
+    id: 32133,
+    name: { es: 'Leyenda de Thanatena' },
+    level: 200,
+    typeId: 15,
+  } as unknown as DofusItem;
+
+  const precios = [0, 0, 0, 0];
+  const suggestedQuotationPrice = 94999999;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', suggestedQuotationPrice);
+  assert.equal(result.finalPrice, 94999999, 'Debe adoptar el precio sugerido si todos los lotes son 0');
+});
+
+
 

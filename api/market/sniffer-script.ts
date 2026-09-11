@@ -1149,7 +1149,10 @@ def process_single_message(payload):
                             for c in data.get("corrected_prices", []):
                                 c_old = c.get("old_price") or c.get("oldPrice") or 0
                                 c_new = c.get("new_price") or c.get("newPrice") or 0
-                                print(f"            • [CORRECCIÓN HDV] Precio actualizado a {c_new:,} k (Mercadillo tenía precio atípico de {c_old:,} k)", flush=True)
+                                if c_old > 0:
+                                    print(f"            • [CORRECCIÓN HDV] Precio actualizado a {c_new:,} k (Mercadillo tenía precio atípico de {c_old:,} k)", flush=True)
+                                else:
+                                    print(f"            • [COTIZACIÓN HDV] Precio asignado a {c_new:,} k (Sin stock en mercadillo, usando cotización sugerida)", flush=True)
                     except Exception:
                         pass
 

@@ -113,10 +113,6 @@ export const RecipeCraftingCalculator: React.FC<{
 
   const { marketPrices: basePrices, priceUpdatedAt, updatePrice, refreshPrices, activeProfileId } = useMarketPrices();
   const { isEnabled: isUserJobsEnabled, canCraft: canUserCraft } = useUserJobs();
-  const marketPrices = useMemo(
-    () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
-    [basePrices]
-  );
 
   const [activePresetItem, setActivePresetItem] =
     useState<PresetCraftableItem | null>(PRESET_CRAFTABLE_ITEMS[0]);
@@ -134,6 +130,32 @@ export const RecipeCraftingCalculator: React.FC<{
   const [salesVolumeMap, setSalesVolumeMap] = useState<Record<number, ItemSalesVolume>>(() => {
     return getStoredSalesVolumeMap();
   });
+
+  const marketPrices = useMemo(() => {
+    const merged = { ...DEFAULT_INGREDIENT_PRICES, ...basePrices };
+    if (salesVolumeMap) {
+      for (const [idStr, vol] of Object.entries(salesVolumeMap)) {
+        const id = Number(idStr);
+        if (id > 0 && (!merged[id] || merged[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+          merged[id] = Math.round(vol.suggestedPrice);
+        }
+      }
+    }
+    return merged;
+  }, [basePrices, salesVolumeMap]);
+
+  const effectivePriceUpdatedAt = useMemo(() => {
+    const merged = { ...priceUpdatedAt };
+    if (salesVolumeMap) {
+      for (const [idStr, vol] of Object.entries(salesVolumeMap)) {
+        const id = Number(idStr);
+        if (id > 0 && (!basePrices[id] || basePrices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+          merged[id] = vol.updatedAt || Date.now();
+        }
+      }
+    }
+    return merged;
+  }, [priceUpdatedAt, basePrices, salesVolumeMap]);
 
   const [selectedBycMethods, setSelectedBycMethods] = useState<Record<number, "direct" | "fragments" | "map">>(() => {
     return getStoredBycMethods();
@@ -699,7 +721,7 @@ export const RecipeCraftingCalculator: React.FC<{
           salePriceDraft={salePriceDraft}
           onSalePriceDraftChange={setSalePriceDraft}
           onCommitSalePrice={handleCommitSalePrice}
-          priceUpdatedAt={priceUpdatedAt}
+          priceUpdatedAt={effectivePriceUpdatedAt}
           autoOptimalCost={autoOptimalCost}
           directCraftCost={directCraftCost}
           onSelectForCrushing={onSelectForCrushing}
@@ -765,7 +787,7 @@ export const RecipeCraftingCalculator: React.FC<{
                   key={childNode.itemId}
                   node={childNode}
                   marketPrices={marketPrices}
-                  priceUpdatedAt={priceUpdatedAt}
+                  priceUpdatedAt={effectivePriceUpdatedAt}
                   onPriceChange={handlePriceChange}
                   onOpenHistory={(item) => setItemForHistory(item)}
                   forceExpandTrigger={treeExpandTrigger.trigger}
@@ -1040,10 +1062,10 @@ export const RecipeCraftingCalculator: React.FC<{
                         +{metrics.roi.toFixed(0)}% ROI
                       </span>
                     )}
-                    {priceUpdatedAt[item.id] ? (
+                    {effectivePriceUpdatedAt[item.id] ? (
                       <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1">
                         <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
-                        {formatRelativeTime(priceUpdatedAt[item.id])}
+                        {formatRelativeTime(effectivePriceUpdatedAt[item.id])}
                       </span>
                     ) : null}
                   </div>
