@@ -994,32 +994,43 @@ def parse_quotation_message(payload):
         if entries_30d:
             entries_30d.sort(key=lambda e: e.get("ts", 0))
 
+        def calculate_weighted_median(items):
+            sorted_items = sorted(items, key=lambda x: x[0])
+            total_vol = sum(x[1] for x in sorted_items)
+            half_vol = total_vol / 2.0
+            cum_vol = 0
+            for p, v in sorted_items:
+                cum_vol += v
+                if cum_vol >= half_vol:
+                    return p
+            return sorted_items[-1][0] if sorted_items else 0
+
         # 1. Métricas 24 Horas
-        # En la gráfica de 24h de Dofus Unity hay 25 puntos (el primer punto es el anclaje inicial hace 24h).
-        # El total de artículos vendidos del juego corresponde a los 24 intervalos horarios más recientes:
-        calc_24h = entries_24h[-24:] if len(entries_24h) >= 24 else entries_24h
+        # En la gráfica de 24h de Dofus Unity, la ventana mostrada en la interfaz abarca
+        # las últimas 22 marcas horarias (entries_24h[-22:]):
+        calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
         sales24h = sum(e["volume"] for e in calc_24h)
         w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
-        price24h = round(w_sum_24 / sales24h) if sales24h > 0 else 0
-        p_list_24 = [e["price"] for e in calc_24h if e["price"] > 0]
-        median24h = round(statistics.median(p_list_24)) if p_list_24 else price24h
+        price24h = (w_sum_24 // sales24h) if sales24h > 0 else 0
+        pairs_24 = [(e["price"], e["volume"]) for e in calc_24h if e["price"] > 0 and e["volume"] > 0]
+        median24h = calculate_weighted_median(pairs_24) if pairs_24 else price24h
 
         # 2. Métricas 30 Días
         # Toda la serie diaria completa del Campo #2
         sales30d = sum(e["volume"] for e in entries_30d)
         w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
-        price30d = round(w_sum_30 / sales30d) if sales30d > 0 else 0
-        p_list_30 = [e["price"] for e in entries_30d if e["price"] > 0]
-        median30d = round(statistics.median(p_list_30)) if p_list_30 else price30d
+        price30d = (w_sum_30 // sales30d) if sales30d > 0 else 0
+        pairs_30 = [(e["price"], e["volume"]) for e in entries_30d if e["price"] > 0 and e["volume"] > 0]
+        median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
 
         # 3. Métricas 7 Días
         # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
         entries_7d = entries_30d[-8:] if len(entries_30d) >= 8 else entries_30d
         sales7d = sum(e["volume"] for e in entries_7d)
         w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
-        price7d = round(w_sum_7 / sales7d) if sales7d > 0 else 0
-        p_list_7 = [e["price"] for e in entries_7d if e["price"] > 0]
-        median7d = round(statistics.median(p_list_7)) if p_list_7 else price7d
+        price7d = (w_sum_7 // sales7d) if sales7d > 0 else 0
+        pairs_7 = [(e["price"], e["volume"]) for e in entries_7d if e["price"] > 0 and e["volume"] > 0]
+        median7d = calculate_weighted_median(pairs_7) if pairs_7 else price7d
 
         # Estimación promedio diario
         avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))

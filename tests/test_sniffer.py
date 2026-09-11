@@ -650,6 +650,50 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertEqual(item_type, "equipable")
         self.assertEqual(prices, [140000, 150000, 160000])
 
+    def test_parse_quotation_message_hierro_exact_match(self):
+        """Verifica que las cotizaciones de Hierro (#312) coincidan exactamente con la UI de Dofus Unity (24h, 7d, 30d)"""
+        import os
+        import sys
+        import re
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+        import sniffer_standalone
+
+        log_paths = [
+            os.path.join(os.path.dirname(__file__), '..', 'scripts', 'cotizaciones_inspeccion.txt'),
+            os.path.join(os.path.dirname(__file__), '..', 'cotizaciones_inspeccion.txt'),
+        ]
+        log_path = next((p for p in log_paths if os.path.exists(p) and os.path.getsize(p) > 1000), None)
+        if not log_path:
+            self.skipTest("cotizaciones_inspeccion.txt no encontrado")
+
+        with open(log_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+
+        m = re.search(r'PAQUETE INSPECCIONADO #9.*?VOLCADO HEXADECIMAL:\s*\n(.*?)(?=\n\s*={10,}|\Z)', text, re.DOTALL)
+        if not m:
+            self.skipTest("Paquete #9 no encontrado en el log")
+
+        raw_bytes = bytearray()
+        for line in m.group(1).splitlines():
+            parts = line.strip().split('|')[0].split(':')
+            if len(parts) == 2:
+                raw_bytes.extend(bytes.fromhex(parts[1].strip()))
+
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(raw_bytes))
+        self.assertEqual(iid, 312)
+        # 24 Horas
+        self.assertEqual(sales_data.get('sales24h'), 181827)
+        self.assertEqual(sales_data.get('price24h'), 303)
+        self.assertEqual(sales_data.get('median24h'), 306)
+        # 7 Días
+        self.assertEqual(sales_data.get('sales7d'), 1039718)
+        self.assertEqual(sales_data.get('price7d'), 307)
+        self.assertEqual(sales_data.get('median7d'), 303)
+        # 30 Días
+        self.assertEqual(sales_data.get('sales30d'), 4460129)
+        self.assertEqual(sales_data.get('price30d'), 285)
+        self.assertEqual(sales_data.get('median30d'), 296)
+
 if __name__ == "__main__":
     unittest.main()
 
