@@ -672,8 +672,20 @@ export function clearRecipeTreeCache(): void {
   lowestDetectedPriceMemo.clear();
 }
 
+let liveStreamDisabled = false;
+
 export function connectLivePriceStream(): void {
   if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+  if (liveStreamDisabled) return;
+
+  // En despliegues Vercel Serverless no existe servidor persistente SSE /api/market/live-stream.
+  // La sincronización en tiempo real es provista de forma continua por el motor
+  // de polling adaptativo contra /api/market/latest-prices (HTTP 304 Not Modified).
+  if (window.location?.hostname?.includes("vercel.app")) {
+    liveStreamDisabled = true;
+    return;
+  }
+
   if (liveStreamEventSource && liveStreamEventSource.readyState !== EventSource.CLOSED) {
     return;
   }
@@ -780,16 +792,13 @@ export function connectLivePriceStream(): void {
       }
     };
 
-    let streamErrors = 0;
     es.onerror = () => {
-      streamErrors++;
-      if (streamErrors >= 2) {
-        es.close();
-        liveStreamEventSource = null;
-      }
+      es.close();
+      liveStreamEventSource = null;
+      liveStreamDisabled = true;
     };
-  } catch (err) {
-    console.warn("[Live Price Stream] Connection failed:", err);
+  } catch {
+    liveStreamDisabled = true;
   }
 }
 

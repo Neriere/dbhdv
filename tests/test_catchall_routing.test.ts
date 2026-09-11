@@ -10,15 +10,24 @@ function extractPathSegments(req: any, basePath: string): string[] {
 
   for (const candidate of candidates) {
     if (Array.isArray(candidate) && candidate.length > 0) {
-      return candidate.map((s) => String(s).trim()).filter(Boolean);
+      const segs = candidate
+        .map((s) => decodeURIComponent(String(s)).trim())
+        .filter(Boolean);
+      if (segs[0] === basePath) return segs.slice(1);
+      return segs;
     }
     if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate.split("/").map((s) => s.trim()).filter(Boolean);
+      const segs = decodeURIComponent(candidate)
+        .split("/")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (segs[0] === basePath) return segs.slice(1);
+      return segs;
     }
   }
 
   if (req.url && typeof req.url === "string") {
-    const pathname = req.url.split("?")[0] || "";
+    const pathname = decodeURIComponent(req.url.split("?")[0] || "");
     const segments = pathname.split("/").filter(Boolean);
     const idx = segments.indexOf(basePath);
     if (idx !== -1) {
@@ -40,6 +49,42 @@ test('Vercel catch-all path extraction for bootstrap with ...path in query', () 
   };
   const segments = extractPathSegments(req, 'local-db');
   assert.deepStrictEqual(segments, ['bootstrap']);
+});
+
+test('Vercel rewrite path extraction for items/:id (e.g. items/757)', () => {
+  const req = {
+    url: '/api/local-db?path=items/757',
+    query: { path: 'items/757' }
+  };
+  const segments = extractPathSegments(req, 'local-db');
+  assert.deepStrictEqual(segments, ['items', '757']);
+});
+
+test('Vercel rewrite path extraction for sales-volume/bulk', () => {
+  const req = {
+    url: '/api/local-db?path=sales-volume/bulk',
+    query: { path: 'sales-volume/bulk' }
+  };
+  const segments = extractPathSegments(req, 'local-db');
+  assert.deepStrictEqual(segments, ['sales-volume', 'bulk']);
+});
+
+test('Vercel rewrite path extraction for URL-encoded path segments', () => {
+  const req = {
+    url: '/api/local-db?path=items%2F2436',
+    query: { path: 'items%2F2436' }
+  };
+  const segments = extractPathSegments(req, 'local-db');
+  assert.deepStrictEqual(segments, ['items', '2436']);
+});
+
+test('Vercel rewrite path extraction when basePath is prepended', () => {
+  const req = {
+    url: '/api/local-db?path=local-db/items/757',
+    query: { path: 'local-db/items/757' }
+  };
+  const segments = extractPathSegments(req, 'local-db');
+  assert.deepStrictEqual(segments, ['items', '757']);
 });
 
 test('Vercel catch-all path extraction for price history item with ...path in query', () => {

@@ -15,6 +15,14 @@
       "destination": "/api/market/update"
     },
     {
+      "source": "/api/local-db/:path*",
+      "destination": "/api/local-db?path=:path*"
+    },
+    {
+      "source": "/api/dofocus/:path*",
+      "destination": "/api/dofocus?path=:path*"
+    },
+    {
       "source": "/((?!api/|assets/|favicon|robots\\.txt|.*\\..*).*)$",
       "destination": "/index.html"
     }

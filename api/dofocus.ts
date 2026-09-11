@@ -78,15 +78,24 @@ function extractPathSegments(req: any, basePath: string): string[] {
 
   for (const candidate of candidates) {
     if (Array.isArray(candidate) && candidate.length > 0) {
-      return candidate.map((s) => String(s).trim()).filter(Boolean);
+      const segs = candidate
+        .map((s) => decodeURIComponent(String(s)).trim())
+        .filter(Boolean);
+      if (segs[0] === basePath) return segs.slice(1);
+      return segs;
     }
     if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate.split("/").map((s) => s.trim()).filter(Boolean);
+      const segs = decodeURIComponent(candidate)
+        .split("/")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (segs[0] === basePath) return segs.slice(1);
+      return segs;
     }
   }
 
   if (req.url && typeof req.url === "string") {
-    const pathname = req.url.split("?")[0] || "";
+    const pathname = decodeURIComponent(req.url.split("?")[0] || "");
     const segments = pathname.split("/").filter(Boolean);
     const idx = segments.indexOf(basePath);
     if (idx !== -1) {
@@ -100,6 +109,7 @@ function extractPathSegments(req: any, basePath: string): string[] {
 
   return [];
 }
+
 
 export default async function handler(req: any, res: any) {
   if (req.method === "OPTIONS") {
