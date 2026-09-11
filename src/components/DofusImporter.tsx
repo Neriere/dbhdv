@@ -47,7 +47,7 @@ export const DofusImporter: React.FC<{
     // Immediately fetch real-time sync status from server to show last sync date & metrics accurately
     fetchLiveSyncStatus().then((status) => {
       if (status) {
-        setSyncStatus({ ...status });
+        setSyncStatus((prev) => ({ ...prev, ...status }));
       }
     });
 
@@ -314,7 +314,7 @@ export const DofusImporter: React.FC<{
             
             <div className="flex items-center gap-3 shrink-0 self-end sm:self-center font-mono">
               <span className="text-xs text-slate-400 font-bold">
-                {syncStatus.totalImported.toLocaleString()} ítems
+                {(syncStatus.totalImported ?? 0).toLocaleString()} ítems
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black text-xs">
                 {progress}%
@@ -346,7 +346,7 @@ export const DofusImporter: React.FC<{
           <div className="flex items-center gap-2.5 text-xs text-emerald-300 font-bold">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <span>
-              ¡Sincronización completada con éxito! Se han guardado {itemsCount.toLocaleString()} objetos y {recipesCount.toLocaleString()} recetas en tu base local.
+              ¡Sincronización completada con éxito! Se han guardado {(itemsCount ?? 0).toLocaleString()} objetos y {(recipesCount ?? 0).toLocaleString()} recetas en tu base local.
             </span>
           </div>
           <button
@@ -393,7 +393,7 @@ export const DofusImporter: React.FC<{
             <Layers className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-black font-mono text-white">
-            {(itemsCount > 0 ? itemsCount : syncStatus.totalImported).toLocaleString()}
+            {(itemsCount > 0 ? itemsCount : (syncStatus.totalImported ?? 0)).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-500">En base local</p>
         </div>
@@ -406,7 +406,7 @@ export const DofusImporter: React.FC<{
             <Wrench className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-black font-mono text-amber-400">
-            {(recipesCount > 0 ? recipesCount : syncStatus.recipesCount || 0).toLocaleString()}
+            {(recipesCount > 0 ? recipesCount : (syncStatus.recipesCount ?? 0)).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-500">Recetas indexadas</p>
         </div>
@@ -419,7 +419,7 @@ export const DofusImporter: React.FC<{
             <Filter className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-black font-mono text-emerald-400">
-            {syncStatus.equipablesCount.toLocaleString()}
+            {(syncStatus.equipablesCount ?? 0).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-500">Armas y equipamiento</p>
         </div>
@@ -432,7 +432,7 @@ export const DofusImporter: React.FC<{
             <Sparkles className="w-4 h-4 text-sky-400" />
           </div>
           <div className="text-2xl font-black font-mono text-sky-400">
-            {(syncStatus.consumablesCount + syncStatus.resourcesCount).toLocaleString()}
+            {((syncStatus.consumablesCount ?? 0) + (syncStatus.resourcesCount ?? 0)).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-500">
             Ingredientes y consumibles
@@ -447,7 +447,7 @@ export const DofusImporter: React.FC<{
             <CheckCircle2 className="w-4 h-4 text-slate-500" />
           </div>
           <div className="text-2xl font-black font-mono text-slate-400">
-            {syncStatus.cosmeticsOmittedCount.toLocaleString()}
+            {(syncStatus.cosmeticsOmittedCount ?? 0).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-500">Cosméticos omitidos</p>
         </div>

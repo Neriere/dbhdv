@@ -43,6 +43,7 @@ import { CRAFTABLE_RUNES } from "../data/craftableRunesData";
 import { ALL_DOFUS_RUNES, ALL_DOFUS_RUNES_BY_ID, ALL_DOFUS_RUNES_DICT } from "../data/dofusAllRunesDict";
 import { SUPPLEMENTARY_ITEMS_DICT } from "../data/supplementaryItemsDict";
 import { STATIC_ITEMS_DICT } from "../data/staticItemsDict";
+import { getDofusDbSeedDataAsync } from "../data/dofusDbSeedData";
 import bycGeneratedDb from "../data/bycGeneratedDbData";
 import { isBycResource, getOptimizedIngredientCost } from "./bycCostService";
 
@@ -65,8 +66,8 @@ const ALL_PRESET_ITEMS: PresetCraftableItem[] = [
 ];
 
 const LOCAL_DB_API_BASE = "/api/local-db";
-const CACHE_KEY = "dofus_database_cache_v5";
-const CACHE_TIMESTAMP_KEY = "dofus_database_cache_timestamp_v5";
+const CACHE_KEY = "dofus_database_cache_v6";
+const CACHE_TIMESTAMP_KEY = "dofus_database_cache_timestamp_v6";
 
 // IndexedDB lightweight storage for instant startup
 const IDB_NAME = "DofusDB_ClientCache";
@@ -582,33 +583,59 @@ async function executeBootstrapFetch(): Promise<BootstrapResponse> {
     `${LOCAL_DB_API_BASE}/bootstrap${profileQuery}`,
   );
 
+  let finalItems = bootstrap.items;
+  let finalRecipes = bootstrap.recipes;
+
+  // Si el servidor serverless devolvió un catálogo vacío por limitaciones de tamaño en AWS Lambda/Vercel (4.5MB),
+  // hidratamos el catálogo completo de 9.762 objetos y 4.858 recetas usando el bundle comprimido integrado.
+  if (!finalItems || finalItems.length < 100) {
+    try {
+      const seed = await getDofusDbSeedDataAsync();
+      if (seed.items && seed.items.length > 0) {
+        finalItems = seed.items;
+        finalRecipes = {};
+        for (const r of seed.recipes) {
+          finalRecipes[r.resultId] = r;
+        }
+      }
+    } catch (err) {
+      console.warn("No se pudo cargar el dataset empaquetado de Dofus:", err);
+    }
+  }
+
+  const hydratedBootstrap: BootstrapResponse = {
+    ...bootstrap,
+    items: finalItems || [],
+    recipes: finalRecipes || {},
+  };
+
   updateMemoryCache({
-    items: bootstrap.items,
-    recipes: bootstrap.recipes,
-    prices: bootstrap.prices,
-    priceUpdatedAt: bootstrap.priceUpdatedAt,
-    coefficients: bootstrap.coefficients,
-    coefficientUpdatedAt: bootstrap.coefficientUpdatedAt,
-    manualEdits: bootstrap.manualEdits,
-    syncStatus: bootstrap.syncStatus,
-    syncSettings: bootstrap.syncSettings,
-    priceProfiles: bootstrap.priceProfiles,
-    activePriceProfileId: bootstrap.activePriceProfileId,
+    items: hydratedBootstrap.items,
+    recipes: hydratedBootstrap.recipes,
+    prices: hydratedBootstrap.prices,
+    priceUpdatedAt: hydratedBootstrap.priceUpdatedAt,
+    coefficients: hydratedBootstrap.coefficients,
+    coefficientUpdatedAt: hydratedBootstrap.coefficientUpdatedAt,
+    manualEdits: hydratedBootstrap.manualEdits,
+    syncStatus: hydratedBootstrap.syncStatus,
+    syncSettings: hydratedBootstrap.syncSettings,
+    priceProfiles: hydratedBootstrap.priceProfiles,
+    activePriceProfileId: hydratedBootstrap.activePriceProfileId,
   });
 
-  if (bootstrap.salesVolume) {
-    syncRemoteSalesVolume(bootstrap.salesVolume);
+  if (hydratedBootstrap.salesVolume) {
+    syncRemoteSalesVolume(hydratedBootstrap.salesVolume);
   }
 
   if (typeof window !== "undefined") {
-    void setIdbVal(CACHE_KEY, bootstrap);
+    void setIdbVal(CACHE_KEY, hydratedBootstrap);
     window.dispatchEvent(
       new CustomEvent("dofus_prices_updated", {
         detail: {
-          profileId: bootstrap.activePriceProfileId,
-          updatedPrices: bootstrap.prices,
-          priceUpdatedAt: bootstrap.priceUpdatedAt,
-          count: Object.keys(bootstrap.prices || {}).length,
+          profileId: hydratedBootstrap.activePriceProfileId,
+          updatedPrices: hydratedBootstrap.prices,
+          priceUpdatedAt: hydratedBootstrap.priceUpdatedAt,
+          count: Object.keys(hydratedBootstrap.prices || {}).length,
           timestamp: Date.now(),
         },
       })
@@ -616,7 +643,7 @@ async function executeBootstrapFetch(): Promise<BootstrapResponse> {
     emitDatabaseUpdated();
   }
 
-  return bootstrap;
+  return hydratedBootstrap;
 }
 
 let livePriceSyncTimeout: any = null;

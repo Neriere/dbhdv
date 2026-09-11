@@ -39,6 +39,9 @@ export default defineConfig(() => {
             if (id.includes('/src/data/dofusRuneWeights')) {
               return 'data-rune-weights';
             }
+            if (id.includes('/src/data/dofusDbSeedData')) {
+              return 'data-seed-items';
+            }
           },
         },
       },

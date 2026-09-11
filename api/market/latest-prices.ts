@@ -1,5 +1,19 @@
 const SERVER_MAP: Record<string, number> = {
   draconiros: 1,
+  mikhal: 2,
+  talkasha: 3,
+  "tal-kasha": 3,
+  rafal: 4,
+  dakal: 5,
+  brial: 6,
+  kourial: 7,
+  salar: 8,
+  imagiro: 9,
+  tylezia: 10,
+  hellmina: 11,
+  "hell-mina": 11,
+  orukam: 12,
+  // Compatibilidad legacy
   talok: 2,
   dakart: 3,
   boune: 4,
@@ -7,9 +21,6 @@ const SERVER_MAP: Record<string, number> = {
   eratz: 6,
   galgarion: 7,
   henual: 8,
-  imagiro: 9,
-  orukam: 10,
-  tylezia: 11,
 };
 
 // In-memory short cache for identical poll requests within 1.5s to prevent hammering Turso
