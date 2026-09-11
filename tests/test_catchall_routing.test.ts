@@ -122,3 +122,13 @@ test('Fallback URL parsing for dofocus server coefficients', () => {
   const segments = extractPathSegments(req, 'dofocus');
   assert.deepStrictEqual(segments, ['coefficients', 'Draconiros']);
 });
+
+test('Vercel rewrite path extraction for recipes/:resultId (e.g. recipes/757)', () => {
+  const req = {
+    url: '/api/local-db?path=recipes/757',
+    query: { path: 'recipes/757' }
+  };
+  const segments = extractPathSegments(req, 'local-db');
+  assert.deepStrictEqual(segments, ['recipes', '757']);
+});
+

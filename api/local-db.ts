@@ -751,7 +751,146 @@ export default async function handler(req: any, res: any) {
         // DofusDB unavailable
       }
 
-      return res.status(404).json({ error: "Item not found" });
+      return res.status(200).json(null);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7b. RECIPES BY RESULT ID: GET /api/local-db/recipes/:resultId
+    // -------------------------------------------------------------------------
+    if (route0 === "recipes" && route1) {
+      const resultId = Number(route1);
+      if (!resultId || isNaN(resultId)) {
+        return res.status(400).json({ error: "Invalid result id" });
+      }
+
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+      );
+
+      // Try Turso recipes table first
+      if (endpoint) {
+        try {
+          const data = await queryTurso(endpoint, dbToken, [
+            {
+              type: "execute",
+              stmt: {
+                sql: `SELECT payload_json FROM recipes WHERE result_id = ?`,
+                args: [{ type: "integer", value: String(resultId) }],
+              },
+            },
+          ]);
+          const rows = data?.results?.[0]?.response?.result?.rows || [];
+          if (rows.length > 0) {
+            const rawJson = rows[0][0]?.value ?? rows[0][0];
+            if (rawJson) {
+              const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+              return res.status(200).json(parsed);
+            }
+          }
+        } catch {
+          // fallback to DofusDB
+        }
+      }
+
+      // Fallback to DofusDB external API
+      try {
+        const dofusRes = await fetch(
+          `https://api.dofusdb.fr/recipes?resultId=${resultId}&lang=es`,
+          { headers: { Accept: "application/json" } }
+        );
+        if (dofusRes.ok) {
+          const dofusData = await dofusRes.json();
+          const list = (dofusData as any)?.data || [];
+          if (list.length > 0) {
+            const raw = list[0];
+            const ingredientIds: number[] = [];
+            const quantities: number[] = [];
+
+            if (Array.isArray(raw.ingredientIds) && Array.isArray(raw.quantities)) {
+              for (let i = 0; i < raw.ingredientIds.length; i++) {
+                const ingId = Number(raw.ingredientIds[i]);
+                if (ingId) {
+                  ingredientIds.push(ingId);
+                  quantities.push(Number(raw.quantities[i]) || 1);
+                }
+              }
+            } else if (Array.isArray(raw.ingredients)) {
+              for (const ing of raw.ingredients) {
+                if (ing && typeof ing === "object") {
+                  const ingId = Number(ing.id ?? ing.item_id ?? ing.itemId ?? 0);
+                  if (ingId) {
+                    ingredientIds.push(ingId);
+                    quantities.push(Number(ing.quantity ?? ing.qty ?? ing.amount ?? 1) || 1);
+                  }
+                }
+              }
+            }
+
+            if (ingredientIds.length > 0) {
+              const normalizedRecipe = {
+                id: Number(raw.id) || resultId,
+                resultId,
+                ingredientIds,
+                quantities,
+                jobId: Number(raw.jobId ?? raw.job_id ?? raw.job?.id ?? 0) || undefined,
+              };
+
+              // Cache in Turso in background
+              if (endpoint) {
+                queryTurso(endpoint, dbToken, [
+                  {
+                    type: "execute",
+                    stmt: {
+                      sql: `INSERT INTO recipes (result_id, job_id, payload_json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
+                      args: [
+                        { type: "integer", value: String(resultId) },
+                        { type: "integer", value: String(normalizedRecipe.jobId || 0) },
+                        { type: "text", value: JSON.stringify(normalizedRecipe) },
+                        { type: "integer", value: String(Date.now()) },
+                      ],
+                    },
+                  },
+                ]).catch(() => {});
+              }
+
+              return res.status(200).json(normalizedRecipe);
+            }
+          }
+        }
+      } catch {
+        // DofusDB error
+      }
+
+      // Retornar 200 con null para recursos sin receta (trigo, lino, gelatina, carnes)
+      // para evitar errores 404 en la consola del navegador
+      return res.status(200).json(null);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7c. ITEMS BATCH RESOLVE: POST /api/local-db/items/batch-resolve
+    // -------------------------------------------------------------------------
+    if (route0 === "items" && (route1 === "resolve-names" || route1 === "batch-resolve")) {
+      return res.status(200).json({ updatedItems: [], items: [] });
+    }
+
+    // -------------------------------------------------------------------------
+    // 7d. SYNC STATUS & SETTINGS
+    // -------------------------------------------------------------------------
+    if (route0 === "sync-status" || route0 === "reset-sync-status") {
+      return res.status(200).json({ status: "idle", lastSync: Date.now() });
+    }
+    if (route0 === "sync-settings") {
+      return res.status(200).json({ enabled: true, intervalDays: 30 });
+    }
+    if (route0 === "item-stats" && route1) {
+      return res.status(200).json({});
+    }
+    if (route0 === "search-items") {
+      return res.status(200).json({ items: [] });
+    }
+    if (route0 === "category-items") {
+      return res.status(200).json({ items: [] });
     }
 
     // -------------------------------------------------------------------------
