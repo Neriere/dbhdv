@@ -50,14 +50,14 @@ echo Iniciando sincronizador de paquetes...
 echo.
 
 if exist "dofus_sniffer.py" (
-    python dofus_sniffer.py
+    python dofus_sniffer.py %*
 ) else if exist "..\dofus_sniffer.py" (
-    python ..\dofus_sniffer.py
+    python ..\dofus_sniffer.py %*
 ) else if exist "sniffer_standalone.py" (
-    python sniffer_standalone.py
+    python sniffer_standalone.py %*
 ) else (
     echo [Aviso] Ejecutando scripts\sniffer_standalone.py...
-    python scripts\sniffer_standalone.py
+    python scripts\sniffer_standalone.py %*
 )
 
 echo.

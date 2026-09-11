@@ -304,7 +304,7 @@ except Exception as e:
 
 # Argumentos de línea de comandos para permitir cambiar el servidor y el token dinámicamente
 parser = argparse.ArgumentParser(description="Dofus Unity Market Sniffer")
-parser.add_argument("--server", type=str, default="Tal Kasha", help="Nombre del servidor Dofus")
+parser.add_argument("--server", type=str, default="Draconiros", help="Nombre del servidor Dofus")
 parser.add_argument("--token", type=str, default=None, help="Token calibrado a usar (por defecto jzn o desde keymap.json)")
 cli_args, _ = parser.parse_known_args()
 
@@ -313,7 +313,7 @@ API_BATCH_URL = "https://dbhdv.vercel.app/api/market/batch-update"
 API_UPDATE_URL = "https://dbhdv.vercel.app/api/market/update"
 API_DICT_URL = "https://dbhdv.vercel.app/api/market/items-dictionary"
 API_SECRET_KEY = ""
-SERVER_NAME = (cli_args.server or "Tal Kasha").strip()
+SERVER_NAME = (cli_args.server or "Draconiros").strip()
 DOFUS_PORTS = "tcp port 5555"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
 LOCAL_DB_FILE = os.path.join(SCRIPT_DIR, "items_db.json")
