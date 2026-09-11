@@ -533,7 +533,7 @@ def is_valid_submessage(b):
         off += r
         wtype = v & 7
         fnum = v >> 3
-        if fnum == 0 or wtype not in (0, 1, 2, 5):
+        if fnum == 0 or fnum > 50 or wtype not in (0, 1, 2, 5):
             return False
         if wtype == 0:
             _, r2 = decode_varint(b, off)
@@ -726,7 +726,7 @@ def parse_market_message(buf):
             tok_end = found + len(t_bytes)
             pos = tok_end
 
-            off_12 = buf.find(b"", tok_end, tok_end + 25)
+            off_12 = buf.find(bytes([0x12]), tok_end, tok_end + 25)
             if off_12 == -1:
                 payload = buf[tok_end:]
             else:
@@ -890,12 +890,12 @@ def parse_quotation_message(payload):
     de la ventana de Cotizaciones del Mercado (gráficos de 24h, 7d, 30d y precio medio/mediano).
     """
     if not payload or b"type.ankama.com/iuk" not in payload:
-        return None, None
+        return 0, None, None
 
     try:
         idx = payload.find(b"type.ankama.com/iuk")
         if idx < 2:
-            return None, None
+            return 0, None, None
 
         start = idx - 2
         off = start
@@ -911,6 +911,7 @@ def parse_quotation_message(payload):
 
         p_off = 0
         entries = []
+        item_id_found = 0
         while p_off < len(payload_data):
             tag_e, r_e = decode_varint(payload_data, p_off)
             if r_e == 0:
@@ -922,7 +923,7 @@ def parse_quotation_message(payload):
             p_off += len_e
 
             e_off = 0
-            f1, f2, f3, f4 = 0, "", 0, 0
+            vol, date_str, price, iid = 0, "", 0, 0
             while e_off < len(entry_buf):
                 t_f, r_f = decode_varint(entry_buf, e_off)
                 if r_f == 0:
@@ -934,23 +935,25 @@ def parse_quotation_message(payload):
                     v_val, r_v = decode_varint(entry_buf, e_off)
                     e_off += r_v
                     if f_num == 1:
-                        f1 = v_val
+                        vol = v_val
                     elif f_num == 3:
-                        f3 = v_val
+                        price = v_val
                     elif f_num == 4:
-                        f4 = v_val
+                        iid = v_val
+                        if iid >= 10:
+                            item_id_found = iid
                 elif w_type == 2:
                     l_str, r_s = decode_varint(entry_buf, e_off)
                     e_off += r_s
-                    f2 = entry_buf[e_off:e_off + l_str].decode("utf-8", errors="ignore")
+                    date_str = entry_buf[e_off:e_off + l_str].decode("utf-8", errors="ignore")
                     e_off += l_str
                 else:
                     break
-            if f2 and (f3 > 0 or f4 > 0):
-                entries.append({"date": f2, "price": f3, "volume": f4})
+            if date_str and (price > 0 or vol > 0):
+                entries.append({"date": date_str, "price": price, "volume": vol, "item_id": iid})
 
         if not entries:
-            return None, None
+            return 0, None, None
 
         total_vol = sum(e["volume"] for e in entries)
         weighted_sum = sum(e["price"] * e["volume"] for e in entries)
@@ -970,9 +973,9 @@ def parse_quotation_message(payload):
         else:
             sales_data["sales30d"] = total_vol
 
-        return sales_data, entries
+        return item_id_found, sales_data, entries
     except Exception:
-        return None, None
+        return 0, None, None
 
 def process_packet(pkt):
     global LAST_MARKET_ITEM_ID
@@ -997,16 +1000,16 @@ def process_packet(pkt):
         sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
 
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
-        quotation_data, _ = parse_quotation_message(payload)
-        if quotation_data and LAST_MARKET_ITEM_ID > 0:
-            target_id = LAST_MARKET_ITEM_ID
+        q_item_id, quotation_data, _ = parse_quotation_message(payload)
+        target_id = q_item_id or LAST_MARKET_ITEM_ID
+        if quotation_data and target_id > 0:
             target_name = get_item_name(target_id)
             now_str = datetime.now().strftime("%H:%M:%S")
             s_price = quotation_data.get("suggestedPrice", 0)
             s_vol = quotation_data.get("sales30d") or quotation_data.get("sales24h") or 0
             print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) -> Precio medio: {s_price:,} k | Volumen: {s_vol:,} (Sincronizado)", flush=True)
 
-            def send_quotation():
+            def send_quotation(t_id=target_id, q_data=quotation_data):
                 try:
                     headers = {"Content-Type": "application/json"}
                     if API_SECRET_KEY:
@@ -1014,7 +1017,7 @@ def process_packet(pkt):
                     body = {
                         "server": SERVER_NAME,
                         "salesVolume": {
-                            str(target_id): quotation_data
+                            str(t_id): q_data
                         }
                     }
                     http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
