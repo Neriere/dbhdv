@@ -661,6 +661,253 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    // -------------------------------------------------------------------------
+    // 7. ITEMS BY ID: GET /api/local-db/items/:id
+    //    Fetches item data from DofusDB API (since Vercel has no local SQLite)
+    // -------------------------------------------------------------------------
+    if (route0 === "items" && route1) {
+      const itemId = Number(route1);
+      if (!itemId || isNaN(itemId)) {
+        return res.status(400).json({ error: "Invalid item id" });
+      }
+
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+      );
+
+      // Try Turso items table first
+      if (endpoint) {
+        try {
+          const data = await queryTurso(endpoint, dbToken, [
+            {
+              type: "execute",
+              stmt: {
+                sql: `SELECT id, name_es, name_fr, name_en, level, type_id, icon_id, super_type_id FROM items WHERE id = ?`,
+                args: [{ type: "integer", value: String(itemId) }],
+              },
+            },
+          ]);
+          const rows = data?.results?.[0]?.response?.result?.rows || [];
+          if (rows.length > 0) {
+            const r = rows[0];
+            return res.status(200).json({
+              id: Number(r[0]?.value ?? r[0]),
+              name: {
+                es: String(r[1]?.value ?? r[1] ?? `Objeto #${itemId}`),
+                fr: String(r[2]?.value ?? r[2] ?? ""),
+                en: String(r[3]?.value ?? r[3] ?? ""),
+              },
+              level: Number(r[4]?.value ?? r[4]) || 1,
+              type: {
+                id: Number(r[5]?.value ?? r[5]) || 0,
+                superCategoryId: Number(r[7]?.value ?? r[7]) || 0,
+                name: { es: "", fr: "", en: "" },
+              },
+              iconId: Number(r[6]?.value ?? r[6]) || itemId,
+            });
+          }
+        } catch {
+          // fallback to DofusDB
+        }
+      }
+
+      // Fallback to DofusDB external API
+      try {
+        const dofusRes = await fetch(
+          `https://api.dofusdb.fr/items?id=${itemId}&lang=es`,
+          { headers: { Accept: "application/json" } }
+        );
+        if (dofusRes.ok) {
+          const dofusData = await dofusRes.json();
+          const items = (dofusData as any)?.data || [];
+          if (items.length > 0) {
+            const raw = items[0];
+            return res.status(200).json({
+              id: raw.id || itemId,
+              name: {
+                es: raw.name?.es || raw.name || `Objeto #${itemId}`,
+                fr: raw.name?.fr || "",
+                en: raw.name?.en || "",
+              },
+              level: raw.level || 1,
+              type: raw.type || { id: raw.typeId || 0, superCategoryId: 0, name: { es: "", fr: "", en: "" } },
+              iconId: raw.iconId || raw.icon_id || itemId,
+              img: raw.img || undefined,
+            });
+          }
+        }
+      } catch {
+        // DofusDB unavailable
+      }
+
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. SALES VOLUME: GET /api/local-db/sales-volume
+    // -------------------------------------------------------------------------
+    if (route0 === "sales-volume" && !route1) {
+      if (req.method === "GET") {
+        const profileId = Number(req.query?.profileId) || 1;
+
+        if (!endpoint) {
+          return res.status(200).json({ salesVolume: {} });
+        }
+
+        const data = await queryTurso(endpoint, dbToken, [
+          {
+            type: "execute",
+            stmt: {
+              sql: `SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ?`,
+              args: [{ type: "integer", value: String(profileId) }],
+            },
+          },
+        ]);
+
+        const volumeRows = data?.results?.[0]?.response?.result?.rows || [];
+        const salesVolume: Record<number, any> = {};
+        for (const r of volumeRows) {
+          const id = Number(r[0]?.value ?? r[0]);
+          if (id > 0) {
+            salesVolume[id] = {
+              sales24h: r[1]?.value != null ? Number(r[1]?.value ?? r[1]) : undefined,
+              sales7d: r[2]?.value != null ? Number(r[2]?.value ?? r[2]) : undefined,
+              sales30d: r[3]?.value != null ? Number(r[3]?.value ?? r[3]) : undefined,
+              avgDailySales: r[4]?.value != null ? Number(r[4]?.value ?? r[4]) : undefined,
+              suggestedPrice: r[5]?.value != null ? Number(r[5]?.value ?? r[5]) : undefined,
+              priceStrategy: r[6]?.value ?? r[6] ?? undefined,
+              updatedAt: Number(r[7]?.value ?? r[7]) || Date.now(),
+            };
+          }
+        }
+
+        return res.status(200).json({ salesVolume });
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. SALES VOLUME BULK: POST /api/local-db/sales-volume/bulk
+    // -------------------------------------------------------------------------
+    if (route0 === "sales-volume" && route1 === "bulk") {
+      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+      const volumes = body?.volumes;
+      const profileId = Number(body?.profileId) || 1;
+
+      if (!volumes || typeof volumes !== "object") {
+        return res.status(400).json({ error: "volumes dictionary is required" });
+      }
+
+      if (endpoint) {
+        const requests: any[] = [];
+        const now = Date.now();
+
+        for (const [itemIdStr, vol] of Object.entries(volumes)) {
+          const itemId = Number(itemIdStr);
+          if (itemId <= 0 || !vol || typeof vol !== "object") continue;
+          const v = vol as any;
+          const updatedAt = Number(v.updatedAt) || now;
+
+          requests.push({
+            type: "execute",
+            stmt: {
+              sql: `INSERT INTO profile_sales_volume (profile_id, item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(profile_id, item_id) DO UPDATE SET
+                      sales_24h = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.sales_24h ELSE profile_sales_volume.sales_24h END,
+                      sales_7d = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.sales_7d ELSE profile_sales_volume.sales_7d END,
+                      sales_30d = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.sales_30d ELSE profile_sales_volume.sales_30d END,
+                      avg_daily_sales = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.avg_daily_sales ELSE profile_sales_volume.avg_daily_sales END,
+                      suggested_price = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.suggested_price ELSE profile_sales_volume.suggested_price END,
+                      price_strategy = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.price_strategy ELSE profile_sales_volume.price_strategy END,
+                      updated_at = CASE WHEN excluded.updated_at >= profile_sales_volume.updated_at THEN excluded.updated_at ELSE profile_sales_volume.updated_at END`,
+              args: [
+                { type: "integer", value: String(profileId) },
+                { type: "integer", value: String(itemId) },
+                { type: "integer", value: String(v.sales24h ?? 0) },
+                { type: "integer", value: String(v.sales7d ?? 0) },
+                { type: "integer", value: String(v.sales30d ?? 0) },
+                { type: "float", value: Number(v.avgDailySales ?? 0) },
+                { type: "integer", value: String(v.suggestedPrice ?? 0) },
+                { type: "text", value: String(v.priceStrategy || "") },
+                { type: "integer", value: String(updatedAt) },
+              ],
+            },
+          });
+        }
+
+        if (requests.length > 0) {
+          const CHUNK_SIZE = 80;
+          for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
+            const chunk = requests.slice(i, i + CHUNK_SIZE);
+            await queryTurso(endpoint, dbToken, chunk).catch((err: any) =>
+              console.warn("[Turso Bulk Volume Error]:", err)
+            );
+          }
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        profileId,
+        updatedCount: Object.keys(volumes).length,
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. SALES VOLUME SINGLE: PUT /api/local-db/sales-volume/:itemId
+    // -------------------------------------------------------------------------
+    if (route0 === "sales-volume" && route1 && route1 !== "bulk") {
+      const itemId = Number(route1);
+      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+      const volume = body?.volume;
+      const profileId = Number(body?.profileId) || 1;
+      const updatedAt = Number(body?.updatedAt) || Date.now();
+
+      if (!itemId || !volume || typeof volume !== "object") {
+        return res.status(400).json({ error: "Valid itemId and volume object are required" });
+      }
+
+      if (endpoint) {
+        const v = volume as any;
+        await queryTurso(endpoint, dbToken, [
+          {
+            type: "execute",
+            stmt: {
+              sql: `INSERT INTO profile_sales_volume (profile_id, item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(profile_id, item_id) DO UPDATE SET
+                      sales_24h = excluded.sales_24h,
+                      sales_7d = excluded.sales_7d,
+                      sales_30d = excluded.sales_30d,
+                      avg_daily_sales = excluded.avg_daily_sales,
+                      suggested_price = excluded.suggested_price,
+                      price_strategy = excluded.price_strategy,
+                      updated_at = excluded.updated_at`,
+              args: [
+                { type: "integer", value: String(profileId) },
+                { type: "integer", value: String(itemId) },
+                { type: "integer", value: String(v.sales24h ?? 0) },
+                { type: "integer", value: String(v.sales7d ?? 0) },
+                { type: "integer", value: String(v.sales30d ?? 0) },
+                { type: "float", value: Number(v.avgDailySales ?? 0) },
+                { type: "integer", value: String(v.suggestedPrice ?? 0) },
+                { type: "text", value: String(v.priceStrategy || "") },
+                { type: "integer", value: String(updatedAt) },
+              ],
+            },
+          },
+        ]);
+      }
+
+      return res.status(200).json({
+        success: true,
+        itemId,
+        profileId,
+        updatedAt,
+      });
+    }
+
     return res.status(404).json({ error: `Ruta no encontrada: /api/local-db/${pathSegments.join("/")}` });
   } catch (error: any) {
     console.error("[Local DB Serverless Router Error]:", error);
