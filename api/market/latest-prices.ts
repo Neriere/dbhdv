@@ -59,6 +59,7 @@ export default async function handler(req: any, res: any) {
 
     const prices: Record<number, number> = {};
     const priceUpdatedAt: Record<number, number> = {};
+    const salesVolume: Record<number, any> = {};
     let totalUpdated = 0;
     const serverTime = now;
 
@@ -82,16 +83,22 @@ export default async function handler(req: any, res: any) {
         ? dbUrl
         : `${dbUrl}/v2/pipeline`;
 
-      const querySql = sinceParam > 0
+      const queryPricesSql = sinceParam > 0
         ? "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC LIMIT 1000"
         : "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? ORDER BY updated_at DESC LIMIT 2000";
 
-      const queryArgs = sinceParam > 0
+      const queryPricesArgs = sinceParam > 0
         ? [
             { type: "integer", value: String(targetProfileId) },
             { type: "integer", value: String(sinceParam) },
           ]
         : [{ type: "integer", value: String(targetProfileId) }];
+
+      const queryVolumeSql = sinceParam > 0
+        ? "SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC LIMIT 1000"
+        : "SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ? ORDER BY updated_at DESC LIMIT 2000";
+
+      const queryVolumeArgs = queryPricesArgs;
 
       const tursoRes = await fetch(endpoint, {
         method: "POST",
@@ -104,8 +111,15 @@ export default async function handler(req: any, res: any) {
             {
               type: "execute",
               stmt: {
-                sql: querySql,
-                args: queryArgs,
+                sql: queryPricesSql,
+                args: queryPricesArgs,
+              },
+            },
+            {
+              type: "execute",
+              stmt: {
+                sql: queryVolumeSql,
+                args: queryVolumeArgs,
               },
             },
             { type: "close" },
@@ -115,10 +129,8 @@ export default async function handler(req: any, res: any) {
 
       if (tursoRes.ok) {
         const data = await tursoRes.json();
-        const executeResult = data?.results?.[0]?.response?.result;
-        const rows = executeResult?.rows || [];
-
-        for (const row of rows) {
+        const priceRows = data?.results?.[0]?.response?.result?.rows || [];
+        for (const row of priceRows) {
           if (Array.isArray(row) && row.length >= 3) {
             const itemId = Number(row[0]?.value ?? row[0]);
             const price = Number(row[1]?.value ?? row[1]);
@@ -131,6 +143,33 @@ export default async function handler(req: any, res: any) {
             }
           }
         }
+
+        const volumeRows = data?.results?.[1]?.response?.result?.rows || [];
+        for (const row of volumeRows) {
+          if (Array.isArray(row) && row.length >= 8) {
+            const itemId = Number(row[0]?.value ?? row[0]);
+            const s24 = row[1]?.value != null ? Number(row[1]?.value) : (row[1] != null ? Number(row[1]) : undefined);
+            const s7 = row[2]?.value != null ? Number(row[2]?.value) : (row[2] != null ? Number(row[2]) : undefined);
+            const s30 = row[3]?.value != null ? Number(row[3]?.value) : (row[3] != null ? Number(row[3]) : undefined);
+            const avg = row[4]?.value != null ? Number(row[4]?.value) : (row[4] != null ? Number(row[4]) : undefined);
+            const sug = row[5]?.value != null ? Number(row[5]?.value) : (row[5] != null ? Number(row[5]) : undefined);
+            const strat = row[6]?.value != null ? String(row[6]?.value) : (row[6] != null ? String(row[6]) : undefined);
+            const updatedAt = Number(row[7]?.value ?? row[7]) || now;
+
+            if (itemId > 0) {
+              salesVolume[itemId] = {
+                sales24h: s24,
+                sales7d: s7,
+                sales30d: s30,
+                avgDailySales: avg,
+                suggestedPrice: sug,
+                priceStrategy: strat,
+                updatedAt,
+              };
+              totalUpdated++;
+            }
+          }
+        }
       }
     }
 
@@ -139,6 +178,7 @@ export default async function handler(req: any, res: any) {
       profile_id: targetProfileId,
       prices,
       priceUpdatedAt,
+      salesVolume,
       serverTime,
       totalUpdated,
     };

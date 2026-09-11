@@ -3530,6 +3530,7 @@ export async function getLatestMarketPricesDelta(
 ): Promise<{
   prices: MarketPriceMap;
   priceUpdatedAt: PriceUpdatedAtMap;
+  salesVolume: SalesVolumeMap;
   serverTime: number;
   totalUpdated: number;
 }> {
@@ -3537,31 +3538,55 @@ export async function getLatestMarketPricesDelta(
   const safeSince = Number(sinceTimestamp) || 0;
 
   try {
-    const result = await database.execute({
-      sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC",
-      args: [profileId, safeSince],
-    });
+    const [priceResult, volumeResult] = await Promise.all([
+      database.execute({
+        sql: "SELECT item_id, price, updated_at FROM profile_prices WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC",
+        args: [profileId, safeSince],
+      }),
+      database.execute({
+        sql: "SELECT item_id, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy, updated_at FROM profile_sales_volume WHERE profile_id = ? AND updated_at >= ? ORDER BY updated_at ASC",
+        args: [profileId, safeSince],
+      }).catch(() => ({ rows: [] as any[] })),
+    ]);
 
     const prices: MarketPriceMap = {};
     const priceUpdatedAt: PriceUpdatedAtMap = {};
+    const salesVolume: SalesVolumeMap = {};
 
-    for (const row of result.rows) {
+    for (const row of priceResult.rows) {
       const itemId = Number(row.item_id);
       prices[itemId] = Number(row.price);
       priceUpdatedAt[itemId] = Number(row.updated_at);
     }
 
+    for (const row of volumeResult.rows) {
+      const itemId = Number(row.item_id);
+      if (itemId > 0) {
+        salesVolume[itemId] = {
+          sales24h: row.sales_24h != null ? Number(row.sales_24h) : undefined,
+          sales7d: row.sales_7d != null ? Number(row.sales_7d) : undefined,
+          sales30d: row.sales_30d != null ? Number(row.sales_30d) : undefined,
+          avgDailySales: row.avg_daily_sales != null ? Number(row.avg_daily_sales) : undefined,
+          suggestedPrice: row.suggested_price != null ? Number(row.suggested_price) : undefined,
+          priceStrategy: (row.price_strategy as any) || undefined,
+          updatedAt: Number(row.updated_at) || Date.now(),
+        };
+      }
+    }
+
     return {
       prices,
       priceUpdatedAt,
+      salesVolume,
       serverTime,
-      totalUpdated: Object.keys(prices).length,
+      totalUpdated: Object.keys(prices).length + Object.keys(salesVolume).length,
     };
   } catch (err) {
     console.error("[getLatestMarketPricesDelta Error]:", err);
     return {
       prices: {},
       priceUpdatedAt: {},
+      salesVolume: {},
       serverTime,
       totalUpdated: 0,
     };

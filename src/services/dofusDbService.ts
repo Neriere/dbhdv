@@ -661,28 +661,32 @@ function getMarketBroadcastChannel(): BroadcastChannel | null {
       marketBroadcastChannel = new BroadcastChannel("dofus_live_market_prices");
       marketBroadcastChannel.onmessage = (event) => {
         const msg = event.data;
-        if (!msg || msg.type !== "PRICE_SYNC") return;
-        const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
-        if (msg.profileId === activePid && msg.prices) {
-          Object.assign(pricesMemoryCache, msg.prices);
-          if (msg.priceUpdatedAt) Object.assign(priceUpdatedAtMemoryCache, msg.priceUpdatedAt);
-          if (msg.serverTime && msg.serverTime > lastPriceSyncTimestamp) {
-            lastPriceSyncTimestamp = msg.serverTime;
+        if (!msg) return;
+        if (msg.type === "PRICE_SYNC") {
+          const activePid = activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+          if (msg.profileId === activePid && msg.prices) {
+            Object.assign(pricesMemoryCache, msg.prices);
+            if (msg.priceUpdatedAt) Object.assign(priceUpdatedAtMemoryCache, msg.priceUpdatedAt);
+            if (msg.serverTime && msg.serverTime > lastPriceSyncTimestamp) {
+              lastPriceSyncTimestamp = msg.serverTime;
+            }
+            lastPriceUpdateTime = Date.now();
+            clearRecipeTreeCache();
+            window.dispatchEvent(
+              new CustomEvent("dofus_prices_updated", {
+                detail: {
+                  profileId: msg.profileId,
+                  updatedPrices: msg.prices,
+                  priceUpdatedAt: msg.priceUpdatedAt || {},
+                  count: Object.keys(msg.prices).length,
+                  timestamp: msg.serverTime || Date.now(),
+                },
+              })
+            );
+            emitDatabaseUpdated();
           }
-          lastPriceUpdateTime = Date.now();
-          clearRecipeTreeCache();
-          window.dispatchEvent(
-            new CustomEvent("dofus_prices_updated", {
-              detail: {
-                profileId: msg.profileId,
-                updatedPrices: msg.prices,
-                priceUpdatedAt: msg.priceUpdatedAt || {},
-                count: Object.keys(msg.prices).length,
-                timestamp: msg.serverTime || Date.now(),
-              },
-            })
-          );
-          emitDatabaseUpdated();
+        } else if (msg.type === "VOLUME_SYNC" && msg.salesVolume) {
+          syncRemoteSalesVolume(msg.salesVolume);
         }
       };
     } catch {
@@ -810,9 +814,26 @@ export function connectLivePriceStream(): void {
             }
           }
         } else if (data.type === "volume_update" && data.itemId && data.volume) {
+          const pid = Number(data.profileId);
+          lastPriceUpdateTime = Date.now();
           handleRemoteVolumeUpdate(Number(data.itemId), data.volume);
+          getMarketBroadcastChannel()?.postMessage({
+            type: "VOLUME_SYNC",
+            profileId: pid,
+            salesVolume: { [data.itemId]: data.volume },
+            serverTime: data.updatedAt || Date.now(),
+          });
         } else if (data.type === "batch_volume_updated") {
-          void fetchAndSyncSalesVolume();
+          const pid = Number(data.profileId);
+          lastPriceUpdateTime = Date.now();
+          void fetchAndSyncSalesVolume().then((vols) => {
+            getMarketBroadcastChannel()?.postMessage({
+              type: "VOLUME_SYNC",
+              profileId: pid,
+              salesVolume: vols,
+              serverTime: Date.now(),
+            });
+          });
         }
       } catch (err) {
         console.warn("[Live Price Stream] Parse error:", err);
@@ -887,6 +908,7 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
       profile_id: number;
       prices: MarketPriceMap;
       priceUpdatedAt: PriceUpdatedAtMap;
+      salesVolume?: SalesVolumeMap;
       serverTime: number;
       totalUpdated: number;
     }>(`/api/market/latest-prices?profileId=${pid}&since=${since}`);
@@ -894,6 +916,17 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
     if (res && res.success) {
       if (res.profile_id && !activePriceProfileIdMemoryCache) {
         activePriceProfileIdMemoryCache = res.profile_id;
+      }
+
+      if (res.salesVolume && Object.keys(res.salesVolume).length > 0) {
+        lastPriceUpdateTime = Date.now();
+        syncRemoteSalesVolume(res.salesVolume);
+        getMarketBroadcastChannel()?.postMessage({
+          type: "VOLUME_SYNC",
+          profileId: res.profile_id,
+          salesVolume: res.salesVolume,
+          serverTime: res.serverTime || Date.now(),
+        });
       }
 
       if (
@@ -955,18 +988,22 @@ export async function executeLivePricePoll(forceCatchup = false): Promise<number
         lastPriceSyncTimestamp = Math.max(lastPriceSyncTimestamp, res.serverTime - 1000);
       }
     }
-    return 0;
   } catch (err) {
-    console.warn("[Live Price Sync] Error polling prices:", err);
-    return 0;
+    console.warn("[executeLivePricePoll] Error checking latest prices:", err);
   } finally {
     isPollingPrices = false;
   }
+
+  return 0;
 }
 
 export const triggerLivePriceSync = (forceCatchup: boolean = false): Promise<number> => {
   lastPriceUpdateTime = Date.now();
   scheduleNextAdaptivePoll();
+  return executeLivePricePoll(forceCatchup);
+};
+
+export const executeLivePriceCatchup = async (forceCatchup = false): Promise<number> => {
   return executeLivePricePoll(forceCatchup);
 };
 
@@ -979,6 +1016,9 @@ export function startLivePriceAutoSync(): void {
   // Always initialize SSE stream for real-time <10ms push updates where available
   connectLivePriceStream();
 
+  // Initial load of sales volume map
+  void fetchAndSyncSalesVolume();
+
   // Register Visibility, Focus, and Online listeners once
   if (!visibilityListenerRegistered && typeof document !== "undefined" && typeof window !== "undefined") {
     visibilityListenerRegistered = true;
@@ -987,6 +1027,7 @@ export function startLivePriceAutoSync(): void {
       if (!document.hidden) {
         lastPriceUpdateTime = Date.now();
         connectLivePriceStream();
+        void fetchAndSyncSalesVolume();
         void executeLivePricePoll();
         scheduleNextAdaptivePoll();
       }
@@ -995,6 +1036,7 @@ export function startLivePriceAutoSync(): void {
     window.addEventListener("focus", () => {
       lastPriceUpdateTime = Date.now();
       connectLivePriceStream();
+      void fetchAndSyncSalesVolume();
       void executeLivePricePoll();
       scheduleNextAdaptivePoll();
     });
@@ -1002,6 +1044,7 @@ export function startLivePriceAutoSync(): void {
     window.addEventListener("online", () => {
       lastPriceUpdateTime = Date.now();
       connectLivePriceStream();
+      void fetchAndSyncSalesVolume();
       void executeLivePricePoll();
       scheduleNextAdaptivePoll();
     });
