@@ -30,6 +30,9 @@ import {
   SlidersHorizontal,
   Info,
   Layers,
+  ChevronDown,
+  ChevronUp,
+  ListFilter,
 } from "lucide-react";
 import {
   SUPPORTED_JOBS,
@@ -37,6 +40,11 @@ import {
   SelectedCraftEntry,
   ConsolidatedMaterial,
   JobPlanState,
+  JobPlanPhase,
+  LevelTier,
+  calculateLevelTiers,
+  generateOptimizedPhases,
+  appendNextPhaseToPlan,
   levelToXp,
   xpToLevel,
   getNextMilestoneLevel,
@@ -123,6 +131,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     return userSavedLevel;
   });
 
+  const [targetLevel, setTargetLevel] = useState<number>(() => {
+    const saved = getStoredJobPlanV2();
+    if (saved?.targetLevel && saved.jobId === jobId) return saved.targetLevel;
+    return userSavedLevel < 200 ? getNextMilestoneLevel(userSavedLevel) : 200;
+  });
+
   const [startingXp, setStartingXp] = useState<number>(() => {
     const saved = getStoredJobPlanV2();
     if (saved && saved.jobId === jobId) return saved.startingXp;
@@ -152,7 +166,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
   const [excludeByc, setExcludeByc] = useState<boolean>(() => {
     const saved = getStoredJobPlanV2();
-    return saved?.excludeByc ?? true; // Excluir ByC por defecto para evitar costes de criminales
+    return saved?.excludeByc ?? true;
   });
 
   const [excludePebbles, setExcludePebbles] = useState<boolean>(() => {
@@ -167,12 +181,21 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
-  // ── 3. Lista de Crafteos Seleccionados (Selected Crafts) ───
+  // ── 3. Fases Estructuradas y Crafteos ───────────────────────
+  const [phases, setPhases] = useState<JobPlanPhase[]>(() => {
+    const saved = getStoredJobPlanV2();
+    if (saved?.phases && saved.jobId === jobId) return saved.phases;
+    return [];
+  });
+
   const [selectedCrafts, setSelectedCrafts] = useState<SelectedCraftEntry[]>(() => {
     const saved = getStoredJobPlanV2();
     if (saved && saved.jobId === jobId) return saved.selectedCrafts || [];
     return [];
   });
+
+  const [viewMode, setViewMode] = useState<"phases" | "unified">("phases");
+  const [expandedPhases, setExpandedPhases] = useState<Record<number, boolean>>({});
 
   // ── 4. Estado de UI y Búsqueda ─────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -222,6 +245,8 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       jobNameEs: selectedJob.nameEs,
       startingLevel,
       startingXp,
+      targetLevel,
+      targetXp: levelToXp(targetLevel),
       actualLevel,
       actualXp,
       totalXpGained,
@@ -232,6 +257,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       excludeByc,
       excludePebbles,
       maxCostPerCraft,
+      phases,
       selectedCrafts: updatedSelectedCrafts,
       materialsNeeded,
       summary: planSummary,
@@ -243,6 +269,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     selectedJob.nameEs,
     startingLevel,
     startingXp,
+    targetLevel,
     actualLevel,
     actualXp,
     totalXpGained,
@@ -253,23 +280,53 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     excludeByc,
     excludePebbles,
     maxCostPerCraft,
+    phases,
     updatedSelectedCrafts,
     materialsNeeded,
     planSummary,
   ]);
 
-  // Cambiar nivel inicial (sincroniza XP)
+  // Cambiar nivel inicial (sincroniza XP y targetLevel si es necesario)
   const handleStartingLevelChange = (lvl: number) => {
     const cleanLvl = Math.max(1, Math.min(200, lvl));
     setStartingLevel(cleanLvl);
     setStartingXp(levelToXp(cleanLvl));
+    if (cleanLvl >= targetLevel) {
+      setTargetLevel(cleanLvl < 200 ? getNextMilestoneLevel(cleanLvl) : 200);
+    }
+  };
+
+  // Cambiar Nivel Objetivo
+  const handleTargetLevelChange = (lvl: number) => {
+    const cleanLvl = Math.max(startingLevel + 1, Math.min(200, lvl));
+    setTargetLevel(cleanLvl);
+  };
+
+  const handleSetTargetNextMilestone = () => {
+    setTargetLevel(getNextMilestoneLevel(startingLevel));
+  };
+
+  const handleSetTargetPlusTen = () => {
+    setTargetLevel(Math.min(200, targetLevel + 10));
+  };
+
+  const handleSetTarget100 = () => {
+    setTargetLevel(100);
+  };
+
+  const handleSetTarget200 = () => {
+    setTargetLevel(200);
   };
 
   // Cambiar XP inicial (sincroniza Nivel)
   const handleStartingXpChange = (xp: number) => {
     const cleanXp = Math.max(0, xp);
     setStartingXp(cleanXp);
-    setStartingLevel(xpToLevel(cleanXp));
+    const derivedLevel = xpToLevel(cleanXp);
+    setStartingLevel(derivedLevel);
+    if (derivedLevel >= targetLevel) {
+      setTargetLevel(derivedLevel < 200 ? getNextMilestoneLevel(derivedLevel) : 200);
+    }
   };
 
   // Cambiar de oficio
@@ -281,60 +338,187 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     if (saved && saved.jobId === newJobId) {
       setStartingLevel(saved.startingLevel);
       setStartingXp(saved.startingXp);
+      setTargetLevel(saved.targetLevel || (userLvl < 200 ? getNextMilestoneLevel(userLvl) : 200));
       setXpMultiplier(saved.xpMultiplier);
       setIsBoostedServer(saved.isBoostedServer);
       setStrategy(saved.strategy);
-      setSelectedCrafts(saved.selectedCrafts);
+      setPhases(saved.phases || []);
+      setSelectedCrafts(saved.selectedCrafts || []);
     } else {
       setStartingLevel(userLvl);
       setStartingXp(levelToXp(userLvl));
+      setTargetLevel(userLvl < 200 ? getNextMilestoneLevel(userLvl) : 200);
+      setPhases([]);
       setSelectedCrafts([]);
     }
   };
 
-  // ── Acciones de Crafteo (Idénticas a DofusDB) ──────────────
+  // ── Auto-Optimización Inteligente con Fases ────────────────
+  const handleAutoOptimize = (customTarget?: number) => {
+    const goal = customTarget ?? targetLevel;
+    if (startingLevel >= goal) return;
 
-  // Añadir +1 unidad de una receta
-  const handleAddOne = (recipe: DofusRecipe, item: CraftableItem) => {
-    setSelectedCrafts((prev) => {
-      const existingIdx = prev.findIndex((c) => c.item.id === item.id);
-      if (existingIdx >= 0) {
-        const copy = [...prev];
-        copy[existingIdx] = {
-          ...copy[existingIdx],
-          amount: copy[existingIdx].amount + 1,
+    const newPhases = generateOptimizedPhases({
+      jobId,
+      startingLevel,
+      targetLevel: goal,
+      strategy,
+      xpMultiplier,
+      isBoostedServer,
+      maxDailyAbsorptionRatio,
+      excludeByc,
+      excludePebbles,
+      maxCostPerCraft,
+    });
+
+    setPhases(newPhases);
+    setSelectedCrafts(newPhases.flatMap((p) => p.crafts));
+  };
+
+  // Apilar siguiente fase decadal (+10 niveles)
+  const handleAppendNextPhase = () => {
+    if (actualLevel >= 200) return;
+    const res = appendNextPhaseToPlan(phases, {
+      jobId,
+      strategy,
+      xpMultiplier,
+      isBoostedServer,
+      maxDailyAbsorptionRatio,
+      excludeByc,
+      excludePebbles,
+      maxCostPerCraft,
+    });
+
+    setPhases(res.updatedPhases);
+    setTargetLevel(res.nextTargetLevel);
+    setSelectedCrafts(res.updatedPhases.flatMap((p) => p.crafts));
+  };
+
+  // ── Manejo de crafteos dentro de una fase específica ────────
+  const handlePhaseQuantityChange = (phaseIndex: number, itemId: number, newAmount: number) => {
+    const cleanAmount = Math.max(0, Math.min(99999, Math.floor(newAmount)));
+
+    setPhases((prevPhases) => {
+      const nextPhases = prevPhases.map((phase) => {
+        if (phase.phaseIndex !== phaseIndex) return phase;
+
+        const updatedCrafts = phase.crafts
+          .map((c) => (c.item.id === itemId ? { ...c, amount: cleanAmount } : c))
+          .filter((c) => c.amount > 0);
+
+        const recalculated = recalculateSelectedCraftsSequence(
+          phase.startXp,
+          updatedCrafts.map((c) => ({ recipe: c.recipe, item: c.item, amount: c.amount })),
+          xpMultiplier,
+          isBoostedServer
+        );
+
+        const craftsWithPhase = recalculated.updatedEntries.map((c) => ({
+          ...c,
+          phaseIndex: phase.phaseIndex,
+        }));
+
+        let inv = 0;
+        let rev = 0;
+        let xpG = 0;
+        for (const c of craftsWithPhase) {
+          inv += c.totalCraftCost;
+          rev += c.totalNetSale;
+          xpG += c.xpGained;
+        }
+
+        return {
+          ...phase,
+          crafts: craftsWithPhase,
+          totalInvestment: inv,
+          totalNetRevenue: rev,
+          netProfitOrLoss: rev - inv,
+          xpGained: xpG,
         };
-        return copy;
-      }
-      return [
-        {
-          recipe,
-          item,
-          amount: 1,
-          xpGained: 0,
-          craftCostUnit: 0,
-          totalCraftCost: 0,
-          marketPriceUnit: 0,
-          netSaleUnit: 0,
-          totalNetSale: 0,
-          profitUnit: 0,
-          totalProfit: 0,
-          avgDailySales: 0,
-          turnoverRating: null,
-          daysToSell: null,
-          requiresByc: false,
-          requiresPebbles: false,
-        },
-        ...prev,
-      ];
+      });
+
+      setSelectedCrafts(nextPhases.flatMap((p) => p.crafts));
+      return nextPhases;
     });
   };
 
-  // Añadir crafteos hasta alcanzar un nivel objetivo (ej. -> 190 o -> 200)
+  const handlePhaseRemoveCraft = (phaseIndex: number, itemId: number) => {
+    handlePhaseQuantityChange(phaseIndex, itemId, 0);
+  };
+
+  const handleRemovePhase = (phaseIndex: number) => {
+    setPhases((prevPhases) => {
+      const filtered = prevPhases
+        .filter((p) => p.phaseIndex !== phaseIndex)
+        .map((p, idx) => ({
+          ...p,
+          phaseIndex: idx + 1,
+          crafts: p.crafts.map((c) => ({ ...c, phaseIndex: idx + 1 })),
+        }));
+      setSelectedCrafts(filtered.flatMap((p) => p.crafts));
+      return filtered;
+    });
+  };
+
+  const togglePhaseAccordion = (phaseIndex: number) => {
+    setExpandedPhases((prev) => ({
+      ...prev,
+      [phaseIndex]: prev[phaseIndex] === false ? true : false,
+    }));
+  };
+
+  // ── Acciones de Crafteo Rápidas desde el Catálogo ───────────
+
+  // Añadir +1 unidad de una receta
+  const handleAddOne = (recipe: DofusRecipe, item: CraftableItem) => {
+    if (phases.length === 0) {
+      const nextM = getNextMilestoneLevel(actualLevel);
+      const phaseStartXp = actualXp;
+      const phaseTargetXp = levelToXp(nextM);
+
+      const sim = simulateCraftBatch(phaseStartXp, item.level || 1, 1, xpMultiplier, isBoostedServer);
+      const recalculated = recalculateSelectedCraftsSequence(
+        phaseStartXp,
+        [{ recipe, item, amount: 1 }],
+        xpMultiplier,
+        isBoostedServer
+      );
+
+      const entry = recalculated.updatedEntries[0];
+      const newPhase: JobPlanPhase = {
+        phaseIndex: 1,
+        fromLevel: actualLevel,
+        toLevel: nextM,
+        startXp: phaseStartXp,
+        targetXp: phaseTargetXp,
+        requiredXp: phaseTargetXp - phaseStartXp,
+        xpGained: entry?.xpGained || sim.totalXpEarned,
+        crafts: recalculated.updatedEntries.map((c) => ({ ...c, phaseIndex: 1 })),
+        totalInvestment: entry?.totalCraftCost || 0,
+        totalNetRevenue: entry?.totalNetSale || 0,
+        netProfitOrLoss: (entry?.totalNetSale || 0) - (entry?.totalCraftCost || 0),
+      };
+
+      setPhases([newPhase]);
+      setSelectedCrafts(newPhase.crafts);
+      return;
+    }
+
+    const lastPhase = phases[phases.length - 1];
+    const existingAmount = lastPhase.crafts.find((c) => c.item.id === item.id)?.amount || 0;
+    handlePhaseQuantityChange(lastPhase.phaseIndex, item.id, existingAmount + 1);
+  };
+
+  // Añadir crafteos hasta alcanzar un nivel objetivo
   const handleAddUntilLevel = (recipe: DofusRecipe, item: CraftableItem, targetLvl: number) => {
     if (actualLevel >= targetLvl) return;
 
-    // Simular exactamente cuántos se necesitan a partir del actualXp
+    if (targetLvl === 200) {
+      setTargetLevel(200);
+      handleAutoOptimize(200);
+      return;
+    }
+
     const sim = simulateCraftsUntilLevel(
       actualXp,
       item.level || 1,
@@ -345,41 +529,42 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
     if (sim.amountNeeded <= 0) return;
 
-    setSelectedCrafts((prev) => {
-      const existingIdx = prev.findIndex((c) => c.item.id === item.id);
-      if (existingIdx >= 0) {
-        const copy = [...prev];
-        copy[existingIdx] = {
-          ...copy[existingIdx],
-          amount: copy[existingIdx].amount + sim.amountNeeded,
-        };
-        return copy;
-      }
-      return [
-        {
-          recipe,
-          item,
-          amount: sim.amountNeeded,
-          xpGained: 0,
-          craftCostUnit: 0,
-          totalCraftCost: 0,
-          marketPriceUnit: 0,
-          netSaleUnit: 0,
-          totalNetSale: 0,
-          profitUnit: 0,
-          totalProfit: 0,
-          avgDailySales: 0,
-          turnoverRating: null,
-          daysToSell: null,
-          requiresByc: false,
-          requiresPebbles: false,
-        },
-        ...prev,
-      ];
-    });
+    if (phases.length === 0) {
+      const phaseStartXp = actualXp;
+      const phaseTargetXp = levelToXp(targetLvl);
+      const recalculated = recalculateSelectedCraftsSequence(
+        phaseStartXp,
+        [{ recipe, item, amount: sim.amountNeeded }],
+        xpMultiplier,
+        isBoostedServer
+      );
+
+      const entry = recalculated.updatedEntries[0];
+      const newPhase: JobPlanPhase = {
+        phaseIndex: 1,
+        fromLevel: actualLevel,
+        toLevel: targetLvl,
+        startXp: phaseStartXp,
+        targetXp: phaseTargetXp,
+        requiredXp: phaseTargetXp - phaseStartXp,
+        xpGained: entry?.xpGained || sim.totalXpEarned,
+        crafts: recalculated.updatedEntries.map((c) => ({ ...c, phaseIndex: 1 })),
+        totalInvestment: entry?.totalCraftCost || 0,
+        totalNetRevenue: entry?.totalNetSale || 0,
+        netProfitOrLoss: (entry?.totalNetSale || 0) - (entry?.totalCraftCost || 0),
+      };
+
+      setPhases([newPhase]);
+      setSelectedCrafts(newPhase.crafts);
+      return;
+    }
+
+    const lastPhase = phases[phases.length - 1];
+    const existingAmount = lastPhase.crafts.find((c) => c.item.id === item.id)?.amount || 0;
+    handlePhaseQuantityChange(lastPhase.phaseIndex, item.id, existingAmount + sim.amountNeeded);
   };
 
-  // Cambiar cantidad de un crafteo seleccionado
+  // Cambiar cantidad en modo vista unificada
   const handleQuantityChange = (itemId: number, newAmount: number) => {
     const cleanAmount = Math.max(0, Math.min(99999, Math.floor(newAmount)));
     if (cleanAmount === 0) {
@@ -391,43 +576,31 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     );
   };
 
-  // Eliminar un crafteo del plan
+  // Eliminar un crafteo en modo unificado
   const handleRemoveCraft = (itemId: number) => {
     setSelectedCrafts((prev) => prev.filter((c) => c.item.id !== itemId));
+    setPhases((prevPhases) =>
+      prevPhases.map((p) => ({
+        ...p,
+        crafts: p.crafts.filter((c) => c.item.id !== itemId),
+      }))
+    );
   };
 
   // Limpiar todo el plan
   const handleClearPlan = () => {
+    setPhases([]);
     setSelectedCrafts([]);
     clearStoredJobPlanV2();
   };
 
-  // Guardar plan actual como punto de partida (startingXp = actualXp)
+  // Guardar plan actual como punto de partida
   const handleSaveAsStarting = () => {
     setStartingXp(actualXp);
     setStartingLevel(actualLevel);
+    setTargetLevel(actualLevel < 200 ? getNextMilestoneLevel(actualLevel) : 200);
+    setPhases([]);
     setSelectedCrafts([]);
-  };
-
-  // ── Auto-Optimización Inteligente ──────────────────────────
-  const handleAutoOptimize = () => {
-    const nextTarget = actualLevel < 200 ? getNextMilestoneLevel(actualLevel) : 200;
-    const optimized = generateAutoOptimizedCrafts({
-      jobId,
-      startingLevel: actualLevel,
-      targetLevel: nextTarget,
-      strategy,
-      xpMultiplier,
-      isBoostedServer,
-      maxDailyAbsorptionRatio,
-      excludeByc,
-      excludePebbles,
-      maxCostPerCraft,
-    });
-
-    if (optimized.length > 0) {
-      setSelectedCrafts((prev) => [...prev, ...optimized]);
-    }
   };
 
   // Añadir todos los materiales necesarios a la Lista de Compras
@@ -446,22 +619,31 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     setTimeout(() => setShoppingNotification(null), 4000);
   };
 
-  // Copiar resumen de texto al portapapeles
+  // Copiar resumen con fases al portapapeles
   const handleCopySummary = () => {
     if (updatedSelectedCrafts.length === 0) return;
 
-    let text = `📦 PLAN DE SUBIDA DE OFICIO: ${selectedJob.nameEs.toUpperCase()} (${startingLevel} -> ${actualLevel})\n`;
+    let text = `📦 PLAN DE SUBIDA DE OFICIO: ${selectedJob.nameEs.toUpperCase()} (${startingLevel} -> ${actualLevel} [Meta: ${targetLevel}])\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `• Inversión Total : ${planSummary.totalInvestment.toLocaleString()} k\n`;
     text += `• Retorno HDV     : ${planSummary.totalNetRevenue.toLocaleString()} k\n`;
     text += `• Balance Neto    : ${planSummary.netProfitOrLoss >= 0 ? "+" : ""}${planSummary.netProfitOrLoss.toLocaleString()} k\n`;
     text += `• Total Crafteos  : ${planSummary.totalCrafts} objetos\n`;
     text += `• Eficiencia      : ${planSummary.globalKamasPerXp.toFixed(2)} k/xp\n\n`;
-    text += `CRAFTEOS:\n`;
 
-    updatedSelectedCrafts.forEach((c) => {
-      text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | Coste: ${c.totalCraftCost.toLocaleString()} k\n`;
-    });
+    if (phases.length > 0) {
+      phases.forEach((p) => {
+        text += `[Fase ${p.phaseIndex}: Niveles ${p.fromLevel} -> ${p.toLevel}] (+${p.xpGained.toLocaleString()} XP | Coste: ${p.totalInvestment.toLocaleString()} k)\n`;
+        p.crafts.forEach((c) => {
+          text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k\n`;
+        });
+        text += `\n`;
+      });
+    } else {
+      updatedSelectedCrafts.forEach((c) => {
+        text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k\n`;
+      });
+    }
 
     navigator.clipboard.writeText(text).then(() => {
       setCopiedNotification(true);
@@ -509,7 +691,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           name: typeof item.name === "object" ? item.name.es : String(item.name || `Objeto #${item.id}`),
         };
       })
-      .sort((a, b) => b.level - a.level); // Mayor nivel a menor por defecto (igual que DofusDB)
+      .sort((a, b) => b.level - a.level);
   }, [jobId, actualLevel, xpMultiplier, isBoostedServer]);
 
   // Filtrado del catálogo
@@ -536,10 +718,10 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
   return (
     <div className="space-y-5 pb-16">
       {/* ══════════════════════════════════════════════════════ */}
-      {/* 1. BARRA SUPERIOR DE PARÁMETROS (ESTILO DOFUSDB)      */}
+      {/* 1. BARRA SUPERIOR DE PARÁMETROS (CON NIVEL OBJETIVO)   */}
       {/* ══════════════════════════════════════════════════════ */}
       <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-start">
           {/* Job Select */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
@@ -558,7 +740,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
             </select>
           </div>
 
-          {/* Level Input */}
+          {/* Level Start Input */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
               Nivel de Inicio
@@ -575,9 +757,57 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
               <button
                 onClick={() => handleStartingLevelChange(userSavedLevel)}
                 title="Cargar nivel guardado de mi perfil"
-                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition"
+                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition shrink-0"
               >
                 <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Target Level Input (NIVEL OBJETIVO CON BOTONES RÁPIDOS) */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-amber-400">
+                Nivel Objetivo
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">Meta</span>
+            </div>
+            <input
+              type="number"
+              min={startingLevel + 1}
+              max={200}
+              value={targetLevel}
+              onChange={(e) => handleTargetLevelChange(Number(e.target.value) || (startingLevel + 1))}
+              className="w-full bg-slate-950 border border-amber-500/50 rounded-lg px-3 py-2 text-sm font-bold text-amber-300 focus:outline-none focus:border-amber-400 font-mono"
+            />
+            <div className="flex items-center gap-1 mt-1.5">
+              <button
+                onClick={handleSetTargetNextMilestone}
+                className="flex-1 py-0.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[10px] font-bold font-mono transition"
+                title="Fijar siguiente hito decadal"
+              >
+                +Hito
+              </button>
+              <button
+                onClick={handleSetTargetPlusTen}
+                className="flex-1 py-0.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[10px] font-bold font-mono transition"
+                title="+10 niveles"
+              >
+                +10
+              </button>
+              <button
+                onClick={handleSetTarget100}
+                className="flex-1 py-0.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[10px] font-bold font-mono transition"
+                title="Fijar nivel 100"
+              >
+                100
+              </button>
+              <button
+                onClick={handleSetTarget200}
+                className="flex-1 py-0.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[10px] font-bold font-mono transition"
+                title="Fijar nivel 200"
+              >
+                200
               </button>
             </div>
           </div>
@@ -632,7 +862,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         {/* Barra de Filtros y Estrategias */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-400 font-medium">Estrategia de Auto-Optimizar:</span>
+            <span className="text-slate-400 font-medium">Estrategia:</span>
             <select
               value={strategy}
               onChange={(e) => setStrategy(e.target.value as JobOptimizerStrategy)}
@@ -655,13 +885,13 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
             </button>
           </div>
 
-          {/* Botón Destacado Auto-Optimizar */}
+          {/* Botón Destacado Auto-Optimizar hacia Nivel Objetivo */}
           <button
-            onClick={handleAutoOptimize}
+            onClick={() => handleAutoOptimize()}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition"
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>Auto-Optimizar Ruta ({strategy === "low_budget" ? "Mínimo Gasto" : "Rentable"})</span>
+            <span>Auto-Optimizar Ruta ({startingLevel} &rarr; {targetLevel})</span>
           </button>
         </div>
 
@@ -707,12 +937,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       </div>
 
       {/* ══════════════════════════════════════════════════════ */}
-      {/* 2. BARRA DE PROGRESO Y ACCIONES (ESTILO DOFUSDB)       */}
+      {/* 2. BARRA DE PROGRESO Y ACCIONES                       */}
       {/* ══════════════════════════════════════════════════════ */}
       <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
         {/* Nivel y XP Ganada */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-center sm:text-left">
-          <div className="text-base sm:text-lg font-bold text-white flex items-center justify-center sm:justify-start gap-2">
+          <div className="text-base sm:text-lg font-bold text-white flex flex-wrap items-center justify-center sm:justify-start gap-2">
             <span>Level: {startingLevel}</span>
             {startingLevel !== actualLevel && (
               <>
@@ -722,6 +952,9 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                 </span>
               </>
             )}
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 font-mono">
+              Meta: Nvl {targetLevel}
+            </span>
           </div>
 
           {/* Acciones de la barra */}
@@ -736,7 +969,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
             <button
               onClick={handleClearPlan}
               className="px-3 py-1 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-slate-800 rounded-md transition"
-              title="Limpiar crafteos seleccionados"
+              title="Limpiar crafteos seleccionados y fases"
             >
               DELETE
             </button>
@@ -750,7 +983,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           </div>
         </div>
 
-        {/* Barra azul de progreso (exacta a DofusDB) */}
+        {/* Barra azul de progreso */}
         <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800">
           <div
             className="bg-sky-500 h-full rounded-full transition-all duration-300"
@@ -759,7 +992,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           />
         </div>
 
-        {/* Mini KPIs Económicos añadidos por DBHDV */}
+        {/* Mini KPIs Económicos */}
         {updatedSelectedCrafts.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-800 text-xs font-mono">
             <div className="p-2 bg-slate-950/60 rounded-lg">
@@ -803,142 +1036,388 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       )}
 
       {/* ══════════════════════════════════════════════════════ */}
-      {/* 3. TABLA DE CRAFTEOS SELECCIONADOS (SELECTED CRAFTS)   */}
+      {/* 3. CRAFTEOS SELECCIONADOS CON FASES Y TABS DE VISTA    */}
       {/* ══════════════════════════════════════════════════════ */}
-      {updatedSelectedCrafts.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/50">
-                  <th className="py-3 px-4 font-medium">Item</th>
-                  <th className="py-3 px-3 font-medium text-center">Level</th>
-                  <th className="py-3 px-3 font-medium text-center">Quantity</th>
-                  <th className="py-3 px-3 font-medium text-right">XP earned</th>
-                  <th className="py-3 px-4 font-medium">Ingredients</th>
-                  <th className="py-3 px-3 font-medium text-right">Inversión</th>
-                  <th className="py-3 px-3 font-medium text-right">Balance</th>
-                  <th className="py-3 px-3 font-medium text-center"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
-                {updatedSelectedCrafts.map((c) => {
-                  const resolvedName = typeof c.item.name === "object" ? c.item.name?.es || "" : String(c.item.name || `Objeto #${c.item.id}`);
+      {(phases.length > 0 || updatedSelectedCrafts.length > 0) && (
+        <div className="space-y-3">
+          {/* Selector de Vistas y Botón de Apilar Fase */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-900 border border-slate-800 rounded-xl">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode("phases")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  viewMode === "phases"
+                    ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Plan por Fases ({phases.length})</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode("unified")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  viewMode === "unified"
+                    ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                }`}
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+                <span>Vista Unificada ({updatedSelectedCrafts.length})</span>
+              </button>
+            </div>
+
+            {actualLevel < 200 && (
+              <button
+                onClick={handleAppendNextPhase}
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow transition"
+                title="Apilar siguiente fase (+10 niveles)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Apilar Siguiente Fase ({actualLevel} &rarr; {getNextMilestoneLevel(actualLevel)})</span>
+              </button>
+            )}
+          </div>
+
+          {/* VISTA 1: PLAN POR FASES ESTRUCTURADAS */}
+          {viewMode === "phases" ? (
+            <div className="space-y-3">
+              {phases.length === 0 ? (
+                <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl">
+                  <Layers className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-slate-300 font-semibold text-sm">No hay fases generadas aún.</p>
+                  <p className="text-slate-500 text-xs mt-1">
+                    Haz clic en &quot;Auto-Optimizar Ruta ({startingLevel} &rarr; {targetLevel})&quot; o añade recetas desde el catálogo inferior.
+                  </p>
+                </div>
+              ) : (
+                phases.map((phase) => {
+                  const isExpanded = expandedPhases[phase.phaseIndex] !== false;
+                  const isComplete = phase.xpGained >= phase.requiredXp;
 
                   return (
-                    <tr key={c.item.id} className="hover:bg-slate-850/50 transition">
-                      {/* Item con badge de cantidad encima del icono (igual que DofusDB) */}
-                      <td className="py-3 px-4 font-sans">
+                    <div
+                      key={phase.phaseIndex}
+                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm"
+                    >
+                      {/* Cabecera de la Fase */}
+                      <div
+                        onClick={() => togglePhaseAccordion(phase.phaseIndex)}
+                        className="p-3.5 bg-slate-950/70 hover:bg-slate-850 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800/80 transition select-none"
+                      >
                         <div className="flex items-center gap-3">
-                          <div className="relative shrink-0">
-                            <img
-                              src={getItemIconUrl({ id: c.item.id, iconId: c.item.iconId })}
-                              alt={resolvedName}
-                              className="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 object-contain p-0.5"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = getItemFallbackIconUrl(c.item);
-                              }}
-                            />
-                            <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 bg-slate-900/90 border border-slate-700 text-white font-bold text-[10px] rounded font-mono shadow">
-                              {c.amount}
-                            </span>
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs flex items-center justify-center font-mono">
+                            #{phase.phaseIndex}
                           </div>
                           <div>
-                            <div className="font-bold text-white text-sm">
-                              {resolvedName}
+                            <div className="font-bold text-white text-sm flex items-center gap-2">
+                              <span>Fase {phase.phaseIndex}: Niveles {phase.fromLevel} &rarr; {phase.toLevel}</span>
+                              {isComplete ? (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-400 text-[10px] font-semibold flex items-center gap-1 font-sans">
+                                  <Check className="w-3 h-3" />
+                                  Alcanzado
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-950 border border-amber-500/40 text-amber-400 text-[10px] font-semibold font-sans">
+                                  En progreso
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              ID #{c.item.id}
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">
+                              XP: +{phase.xpGained.toLocaleString()} / {phase.requiredXp.toLocaleString()} XP
                             </div>
                           </div>
                         </div>
-                      </td>
 
-                    {/* Level */}
-                    <td className="py-3 px-3 text-center text-slate-300 font-bold">
-                      {c.item.level}
-                    </td>
-
-                    {/* Quantity editable */}
-                    <td className="py-3 px-3 text-center font-sans">
-                      <input
-                        type="number"
-                        min={1}
-                        value={c.amount}
-                        onChange={(e) => handleQuantityChange(c.item.id, Number(e.target.value) || 1)}
-                        className="w-16 text-center bg-slate-950 border border-slate-700 rounded py-1 px-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
-                      />
-                    </td>
-
-                    {/* XP earned (con decaimiento exacto acumulado) */}
-                    <td className="py-3 px-3 text-right font-bold text-sky-400">
-                      +{c.xpGained.toLocaleString()}
-                    </td>
-
-                    {/* Ingredients (miniaturas con cantidades multiplicadas) */}
-                    <td className="py-3 px-4 font-sans">
-                      <div className="flex flex-wrap items-center gap-1.5 max-w-sm">
-                        {c.recipe?.ingredientIds?.map((ingId, idx) => {
-                          const qty = (c.recipe?.quantities?.[idx] || 1) * c.amount;
-                          return (
-                            <div
-                              key={ingId}
-                              className="relative group shrink-0"
-                              title={`Ingrediente #${ingId} x${qty}`}
-                            >
-                              <img
-                                src={getItemIconUrl(ingId)}
-                                alt={`Ing #${ingId}`}
-                                className="w-8 h-8 rounded bg-slate-950 border border-slate-800 object-contain p-0.5"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = getItemFallbackIconUrl({ id: ingId });
-                                }}
-                              />
-                              <span className="absolute -top-1 -right-1 px-1 bg-black/85 text-[9px] font-bold text-amber-300 rounded font-mono shadow">
-                                {qty}
-                              </span>
-                            </div>
-                          );
-                        })}
+                        <div className="flex items-center gap-4 text-xs font-mono">
+                          <div className="text-right">
+                            <span className="text-slate-500 block text-[10px]">INVERSIÓN</span>
+                            <span className="text-slate-200 font-semibold">{phase.totalInvestment.toLocaleString()} k</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-500 block text-[10px]">BALANCE</span>
+                            <span className={`font-semibold ${phase.netProfitOrLoss >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                              {phase.netProfitOrLoss >= 0 ? "+" : ""}{phase.netProfitOrLoss.toLocaleString()} k
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemovePhase(phase.phaseIndex);
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                            title="Eliminar esta fase"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          {isExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
                       </div>
-                    </td>
 
-                    {/* Inversión en Kamas */}
-                    <td className="py-3 px-3 text-right text-slate-300">
-                      {c.totalCraftCost.toLocaleString()} k
-                    </td>
+                      {/* Contenido de la Fase (Tabla de Crafteos) */}
+                      {isExpanded && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/40">
+                                <th className="py-2.5 px-4 font-medium">Item</th>
+                                <th className="py-2.5 px-3 font-medium text-center">Level</th>
+                                <th className="py-2.5 px-3 font-medium text-center">Quantity</th>
+                                <th className="py-2.5 px-3 font-medium text-right">XP earned</th>
+                                <th className="py-2.5 px-4 font-medium">Ingredients</th>
+                                <th className="py-2.5 px-3 font-medium text-right">Inversión</th>
+                                <th className="py-2.5 px-3 font-medium text-right">Balance</th>
+                                <th className="py-2.5 px-3 font-medium text-center"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 font-mono">
+                              {phase.crafts.map((c) => {
+                                const resolvedName = typeof c.item.name === "object" ? c.item.name?.es || "" : String(c.item.name || `Objeto #${c.item.id}`);
 
-                    {/* Balance Neto */}
-                    <td
-                      className={`py-3 px-3 text-right font-semibold ${
-                        c.totalProfit >= 0 ? "text-emerald-400" : "text-amber-400"
-                      }`}
-                    >
-                      {c.totalProfit >= 0 ? "+" : ""}
-                      {c.totalProfit.toLocaleString()} k
-                    </td>
+                                return (
+                                  <tr key={c.item.id} className="hover:bg-slate-850/50 transition">
+                                    <td className="py-2.5 px-4 font-sans">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="relative shrink-0">
+                                          <img
+                                            src={getItemIconUrl({ id: c.item.id, iconId: c.item.iconId })}
+                                            alt={resolvedName}
+                                            className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-800 object-contain p-0.5"
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).src = getItemFallbackIconUrl(c.item);
+                                            }}
+                                          />
+                                          <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 bg-slate-900 border border-slate-700 text-white font-bold text-[10px] rounded font-mono shadow">
+                                            {c.amount}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <div className="font-bold text-white text-xs">
+                                            {resolvedName}
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 font-mono">
+                                            ID #{c.item.id}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
 
-                    {/* Trash Button */}
-                    <td className="py-3 px-3 text-center">
-                      <button
-                        onClick={() => handleRemoveCraft(c.item.id)}
-                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
-                        title="Eliminar este crafteo"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              </tbody>
-            </table>
-          </div>
+                                    <td className="py-2.5 px-3 text-center text-slate-300 font-bold">
+                                      {c.item.level}
+                                    </td>
+
+                                    <td className="py-2.5 px-3 text-center font-sans">
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={c.amount}
+                                        onChange={(e) => handlePhaseQuantityChange(phase.phaseIndex, c.item.id, Number(e.target.value) || 1)}
+                                        className="w-16 text-center bg-slate-950 border border-slate-700 rounded py-1 px-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
+                                      />
+                                    </td>
+
+                                    <td className="py-2.5 px-3 text-right font-bold text-sky-400">
+                                      +{c.xpGained.toLocaleString()}
+                                    </td>
+
+                                    <td className="py-2.5 px-4 font-sans">
+                                      <div className="flex flex-wrap items-center gap-1 max-w-sm">
+                                        {c.recipe?.ingredientIds?.map((ingId, idx) => {
+                                          const qty = (c.recipe?.quantities?.[idx] || 1) * c.amount;
+                                          return (
+                                            <div
+                                              key={ingId}
+                                              className="relative group shrink-0"
+                                              title={`Ingrediente #${ingId} x${qty}`}
+                                            >
+                                              <img
+                                                src={getItemIconUrl(ingId)}
+                                                alt={`Ing #${ingId}`}
+                                                className="w-7 h-7 rounded bg-slate-950 border border-slate-800 object-contain p-0.5"
+                                                onError={(e) => {
+                                                  (e.target as HTMLImageElement).src = getItemFallbackIconUrl({ id: ingId });
+                                                }}
+                                              />
+                                              <span className="absolute -top-1 -right-1 px-1 bg-black/85 text-[8px] font-bold text-amber-300 rounded font-mono shadow">
+                                                {qty}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </td>
+
+                                    <td className="py-2.5 px-3 text-right text-slate-300">
+                                      {c.totalCraftCost.toLocaleString()} k
+                                    </td>
+
+                                    <td className={`py-2.5 px-3 text-right font-semibold ${c.totalProfit >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                                      {c.totalProfit >= 0 ? "+" : ""}
+                                      {c.totalProfit.toLocaleString()} k
+                                    </td>
+
+                                    <td className="py-2.5 px-3 text-center">
+                                      <button
+                                        onClick={() => handlePhaseRemoveCraft(phase.phaseIndex, c.item.id)}
+                                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                                        title="Eliminar este crafteo de la fase"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            /* VISTA 2: VISTA UNIFICADA (ESTILO DOFUSDB CON BADGE DE FASE) */
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/50">
+                      <th className="py-3 px-4 font-medium">Item</th>
+                      <th className="py-3 px-3 font-medium text-center">Level</th>
+                      <th className="py-3 px-3 font-medium text-center">Quantity</th>
+                      <th className="py-3 px-3 font-medium text-right">XP earned</th>
+                      <th className="py-3 px-4 font-medium">Ingredients</th>
+                      <th className="py-3 px-3 font-medium text-right">Inversión</th>
+                      <th className="py-3 px-3 font-medium text-right">Balance</th>
+                      <th className="py-3 px-3 font-medium text-center">Fase</th>
+                      <th className="py-3 px-3 font-medium text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {updatedSelectedCrafts.map((c) => {
+                      const resolvedName = typeof c.item.name === "object" ? c.item.name?.es || "" : String(c.item.name || `Objeto #${c.item.id}`);
+
+                      return (
+                        <tr key={`${c.phaseIndex || 1}-${c.item.id}`} className="hover:bg-slate-850/50 transition">
+                          <td className="py-3 px-4 font-sans">
+                            <div className="flex items-center gap-3">
+                              <div className="relative shrink-0">
+                                <img
+                                  src={getItemIconUrl({ id: c.item.id, iconId: c.item.iconId })}
+                                  alt={resolvedName}
+                                  className="w-10 h-10 rounded-lg bg-slate-950 border border-slate-800 object-contain p-0.5"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = getItemFallbackIconUrl(c.item);
+                                  }}
+                                />
+                                <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 bg-slate-900/90 border border-slate-700 text-white font-bold text-[10px] rounded font-mono shadow">
+                                  {c.amount}
+                                </span>
+                              </div>
+                              <div>
+                                <div className="font-bold text-white text-sm">
+                                  {resolvedName}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  ID #{c.item.id}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-center text-slate-300 font-bold">
+                            {c.item.level}
+                          </td>
+
+                          <td className="py-3 px-3 text-center font-sans">
+                            <input
+                              type="number"
+                              min={1}
+                              value={c.amount}
+                              onChange={(e) => handleQuantityChange(c.item.id, Number(e.target.value) || 1)}
+                              className="w-16 text-center bg-slate-950 border border-slate-700 rounded py-1 px-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
+                            />
+                          </td>
+
+                          <td className="py-3 px-3 text-right font-bold text-sky-400">
+                            +{c.xpGained.toLocaleString()}
+                          </td>
+
+                          <td className="py-3 px-4 font-sans">
+                            <div className="flex flex-wrap items-center gap-1.5 max-w-sm">
+                              {c.recipe?.ingredientIds?.map((ingId, idx) => {
+                                const qty = (c.recipe?.quantities?.[idx] || 1) * c.amount;
+                                return (
+                                  <div
+                                    key={ingId}
+                                    className="relative group shrink-0"
+                                    title={`Ingrediente #${ingId} x${qty}`}
+                                  >
+                                    <img
+                                      src={getItemIconUrl(ingId)}
+                                      alt={`Ing #${ingId}`}
+                                      className="w-8 h-8 rounded bg-slate-950 border border-slate-800 object-contain p-0.5"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = getItemFallbackIconUrl({ id: ingId });
+                                      }}
+                                    />
+                                    <span className="absolute -top-1 -right-1 px-1 bg-black/85 text-[9px] font-bold text-amber-300 rounded font-mono shadow">
+                                      {qty}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-right text-slate-300">
+                            {c.totalCraftCost.toLocaleString()} k
+                          </td>
+
+                          <td
+                            className={`py-3 px-3 text-right font-semibold ${
+                              c.totalProfit >= 0 ? "text-emerald-400" : "text-amber-400"
+                            }`}
+                          >
+                            {c.totalProfit >= 0 ? "+" : ""}
+                            {c.totalProfit.toLocaleString()} k
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-300 text-[10px] font-bold font-mono">
+                              Fase {c.phaseIndex || 1}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            <button
+                              onClick={() => handleRemoveCraft(c.item.id)}
+                              className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                              title="Eliminar este crafteo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ══════════════════════════════════════════════════════ */}
           {/* LIST OF ALL NECESSARY OBJECTS (DIRECTAMENTE DEBAJO)    */}
           {/* ══════════════════════════════════════════════════════ */}
-          <div className="p-4 bg-slate-950/80 border-t border-slate-800 space-y-3">
+          <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                 List of all necessary objects ({materialsNeeded.length} ingredientes requeridos):
@@ -953,7 +1432,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
               </button>
             </div>
 
-            {/* Cuadrícula de iconos con cantidades totales (idéntica a DofusDB) */}
+            {/* Cuadrícula de iconos con cantidades totales */}
             <div className="flex flex-wrap gap-2 pt-1">
               {materialsNeeded.map((mat) => (
                 <div

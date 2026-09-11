@@ -5,6 +5,7 @@ import {
   xpToLevel,
   getCraftXpByJobLevel,
   getNextMilestoneLevel,
+  calculateLevelTiers,
   simulateCraftBatch,
   simulateCraftsUntilLevel,
   SUPPORTED_JOB_IDS,
@@ -119,6 +120,41 @@ test("Cálculo del siguiente hito decadal (getNextMilestoneLevel)", () => {
   assert.equal(getNextMilestoneLevel(200), 200);
 });
 
+test("Segmentación en tramos de niveles decadales (calculateLevelTiers)", () => {
+  // De nivel intermedio a siguiente hito (43 -> 50): 1 tramo
+  const tiers43to50 = calculateLevelTiers(43, 50);
+  assert.equal(tiers43to50.length, 1);
+  assert.equal(tiers43to50[0].fromLevel, 43);
+  assert.equal(tiers43to50[0].toLevel, 50);
+  assert.equal(tiers43to50[0].requiredXp, levelToXp(50) - levelToXp(43));
+
+  // De 43 a 75: 4 tramos (43->50, 50->60, 60->70, 70->75)
+  const tiers43to75 = calculateLevelTiers(43, 75);
+  assert.equal(tiers43to75.length, 4);
+  assert.equal(tiers43to75[0].fromLevel, 43);
+  assert.equal(tiers43to75[0].toLevel, 50);
+  assert.equal(tiers43to75[1].fromLevel, 50);
+  assert.equal(tiers43to75[1].toLevel, 60);
+  assert.equal(tiers43to75[2].fromLevel, 60);
+  assert.equal(tiers43to75[2].toLevel, 70);
+  assert.equal(tiers43to75[3].fromLevel, 70);
+  assert.equal(tiers43to75[3].toLevel, 75);
+
+  // De 188 a 190: 1 tramo
+  const tiers188to190 = calculateLevelTiers(188, 190);
+  assert.equal(tiers188to190.length, 1);
+  assert.equal(tiers188to190[0].fromLevel, 188);
+  assert.equal(tiers188to190[0].toLevel, 190);
+
+  // De 188 a 200: 2 tramos (188->190, 190->200)
+  const tiers188to200 = calculateLevelTiers(188, 200);
+  assert.equal(tiers188to200.length, 2);
+  assert.equal(tiers188to200[0].fromLevel, 188);
+  assert.equal(tiers188to200[0].toLevel, 190);
+  assert.equal(tiers188to200[1].fromLevel, 190);
+  assert.equal(tiers188to200[1].toLevel, 200);
+});
+
 test("Verifica que los 14 oficios (incluido Ganadero 101) estén en SUPPORTED_JOB_IDS", () => {
   assert.ok(SUPPORTED_JOB_IDS.includes(101)); // Ganadero
   assert.ok(SUPPORTED_JOB_IDS.includes(26));  // Alquimista
@@ -136,3 +172,4 @@ test("Verifica que los 14 oficios (incluido Ganadero 101) estén en SUPPORTED_JO
   assert.ok(SUPPORTED_JOB_IDS.includes(65));  // Manitas
   assert.equal(SUPPORTED_JOB_IDS.length, 14);
 });
+

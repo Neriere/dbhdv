@@ -52,6 +52,28 @@ export interface SelectedCraftEntry {
   daysToSell: number | null;
   requiresByc: boolean;
   requiresPebbles: boolean;
+  phaseIndex?: number; // Fase o tramo al que pertenece el crafteo
+}
+
+export interface LevelTier {
+  tierIndex: number;
+  fromLevel: number;
+  toLevel: number;
+  requiredXp: number;
+}
+
+export interface JobPlanPhase {
+  phaseIndex: number;
+  fromLevel: number;
+  toLevel: number;
+  startXp: number;
+  targetXp: number;
+  requiredXp: number;
+  xpGained: number;
+  crafts: SelectedCraftEntry[];
+  totalInvestment: number;
+  totalNetRevenue: number;
+  netProfitOrLoss: number;
 }
 
 export interface ConsolidatedMaterial {
@@ -69,6 +91,8 @@ export interface JobPlanState {
   jobNameEs: string;
   startingLevel: number;
   startingXp: number;
+  targetLevel: number;
+  targetXp: number;
   actualLevel: number;
   actualXp: number;
   totalXpGained: number;
@@ -79,6 +103,7 @@ export interface JobPlanState {
   excludeByc: boolean;
   excludePebbles: boolean;
   maxCostPerCraft: number; // 0 = ilimitado
+  phases: JobPlanPhase[];
   selectedCrafts: SelectedCraftEntry[];
   materialsNeeded: ConsolidatedMaterial[];
   summary: {
@@ -170,6 +195,38 @@ export function getNextMilestoneLevel(currentLevel: number, step = 10, offset = 
     e -= 1;
   }
   return Math.min(200, Math.max(lvl + 1, s));
+}
+
+/**
+ * Divide el rango de niveles en tramos decadales (ej. 43 -> 50, 50 -> 60, etc.)
+ */
+export function calculateLevelTiers(fromLevel: number, toLevel: number): LevelTier[] {
+  const start = Math.max(1, Math.min(200, Math.floor(fromLevel)));
+  const end = Math.max(start, Math.min(200, Math.floor(toLevel)));
+  if (start >= end) return [];
+
+  const tiers: LevelTier[] = [];
+  let curr = start;
+  let idx = 1;
+
+  while (curr < end) {
+    let nextMilestone = Math.ceil((curr + 1) / 10) * 10;
+    if (nextMilestone <= curr) nextMilestone = curr + 10;
+    const tierEnd = Math.min(end, nextMilestone);
+
+    const startXp = levelToXp(curr);
+    const endXp = levelToXp(tierEnd);
+    tiers.push({
+      tierIndex: idx++,
+      fromLevel: curr,
+      toLevel: tierEnd,
+      requiredXp: endXp - startXp,
+    });
+
+    curr = tierEnd;
+  }
+
+  return tiers;
 }
 
 /**
@@ -492,12 +549,11 @@ export interface AutoOptimizeOptions {
 }
 
 /**
- * Genera automáticamente la lista óptima de SelectedCrafts para alcanzar el nivel objetivo
- * según la estrategia de juego elegida.
+ * Genera crafteos optimizados organizados en FASES estructuradas según tramos de niveles.
  */
-export function generateAutoOptimizedCrafts(
+export function generateOptimizedPhases(
   options: AutoOptimizeOptions
-): SelectedCraftEntry[] {
+): JobPlanPhase[] {
   const {
     jobId,
     startingLevel,
@@ -517,8 +573,8 @@ export function generateAutoOptimizedCrafts(
 
   const cleanStart = Math.max(1, Math.min(200, Math.floor(startingLevel)));
   const cleanTarget = Math.max(cleanStart, Math.min(200, Math.floor(targetLevel)));
-  const baseStartingXp = levelToXp(cleanStart);
-  const targetXp = levelToXp(cleanTarget);
+  const tiers = calculateLevelTiers(cleanStart, cleanTarget);
+  if (tiers.length === 0) return [];
 
   // Filtrar recetas válidas para este oficio
   const jobRecipes = snapshot
@@ -526,13 +582,9 @@ export function generateAutoOptimizedCrafts(
       if (item.jobId !== jobId) return false;
       if (!item.recipeData || !item.recipeData.ingredientIds?.length) return false;
 
-      // Filtro de consumibles/componentes si la estrategia lo requiere
       if (strategy === "consumables_only") {
-        // En Dofus: equipables tienen typeId de armas/armaduras (sombreros, capas, etc.)
-        // Si el objeto tiene efectos de equipo o superCategory de equipo, se omite
         const isEquip =
-          item.type?.superCategoryId === 1 || // Equipamiento
-          item.type?.superCategoryId === 2;   // Armas
+          item.type?.superCategoryId === 1 || item.type?.superCategoryId === 2;
         if (isEquip) return false;
       }
 
@@ -550,12 +602,11 @@ export function generateAutoOptimizedCrafts(
       const salesAnalysis = analyzeSalesVolume(marketPrice, volumeData);
       const avgDailySales = salesAnalysis.avgDailySales || 0;
 
-      // Límite de absorción
       let maxAllowed: number;
       if (avgDailySales > 0) {
         maxAllowed = Math.max(1, Math.round(avgDailySales * maxDailyAbsorptionRatio));
       } else {
-        maxAllowed = 2; // Objeto sin ventas: permitir prueba pequeña
+        maxAllowed = 2;
       }
 
       const runesEstimate =
@@ -588,122 +639,196 @@ export function generateAutoOptimizedCrafts(
 
   if (jobRecipes.length === 0) return [];
 
-  let runningXp = baseStartingXp;
-  const craftUsageMap = new Map<number, number>();
-  const craftSequence: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }> = [];
+  const phases: JobPlanPhase[] = [];
+  let runningXp = levelToXp(cleanStart);
+  const cumulativeUsage = new Map<number, number>();
 
-  let iteration = 0;
-  const maxIterations = 5000;
+  for (const tier of tiers) {
+    const tierStartLvl = xpToLevel(runningXp);
+    const tierTargetLvl = tier.toLevel;
+    const tierStartXp = runningXp;
+    const tierTargetXp = levelToXp(tierTargetLvl);
+    const requiredXp = Math.max(0, tierTargetXp - tierStartXp);
 
-  while (xpToLevel(runningXp) < cleanTarget && runningXp < targetXp && iteration < maxIterations) {
-    iteration++;
-    const currentJobLevel = xpToLevel(runningXp);
+    const tierSequence: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }> = [];
+    let tierIteration = 0;
+    const maxTierIterations = 500;
 
-    // Filtrar recetas disponibles para el nivel actual
-    const available = jobRecipes.filter(
-      (r) => r.level <= currentJobLevel && currentJobLevel <= r.level + 100
-    );
-    if (available.length === 0) break;
+    while (
+      xpToLevel(runningXp) < tierTargetLvl &&
+      runningXp < tierTargetXp &&
+      tierIteration < maxTierIterations
+    ) {
+      tierIteration++;
+      const currentJobLevel = xpToLevel(runningXp);
 
-    // Calcular XP dinámico y score según estrategia
-    const scored = available
-      .map((r) => {
-        const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, 1.0, isBoostedServer);
-        if (xp <= 0) return null;
+      const available = jobRecipes.filter(
+        (r) => r.level <= currentJobLevel && currentJobLevel <= r.level + 100
+      );
+      if (available.length === 0) break;
 
-        const used = craftUsageMap.get(r.item.id) || 0;
-        const capacity = Math.max(0, r.maxAllowed - used);
+      const scored = available
+        .map((r) => {
+          const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, 1.0, isBoostedServer);
+          if (xp <= 0) return null;
 
-        let score = 0;
-        switch (strategy) {
-          case "low_budget":
-            // 💸 Minimizar gasto bruto de ingredientes por XP
-            score = r.craftCost / xp;
-            break;
-          case "profit":
-            // 💰 Maximizar beneficio neto por XP (menor netCost/xp o más negativo)
-            score = r.netCost / xp;
-            break;
-          case "high_turnover":
-            // 🌊 Priorizar rotación alta
-            score = r.netCost / xp - r.avgDailySales * 100;
-            break;
-          case "fastest":
-            // ⚡ Maximizar XP por crafteo (menos clics)
-            score = -xp;
-            break;
-          case "consumables_only":
-            score = r.craftCost / xp;
-            break;
-          case "crush_runes":
-            // ♻️ Maximizar valor de runas frente a coste
-            const runeProfit = r.runesEstimate - r.craftCost;
-            score = -runeProfit / xp;
-            break;
-        }
+          const used = cumulativeUsage.get(r.item.id) || 0;
+          const capacity = Math.max(0, r.maxAllowed - used);
 
-        return {
-          ...r,
-          xpPerCraft: xp,
-          score,
-          capacity,
-        };
-      })
-      .filter((s): s is NonNullable<typeof s> => s !== null);
+          let score = 0;
+          switch (strategy) {
+            case "low_budget":
+              score = r.craftCost / xp;
+              break;
+            case "profit":
+              score = r.netCost / xp;
+              break;
+            case "high_turnover":
+              score = r.netCost / xp - r.avgDailySales * 100;
+              break;
+            case "fastest":
+              score = -xp;
+              break;
+            case "consumables_only":
+              score = r.craftCost / xp;
+              break;
+            case "crush_runes":
+              const runeProfit = r.runesEstimate - r.craftCost;
+              score = -runeProfit / xp;
+              break;
+          }
 
-    if (scored.length === 0) break;
+          return {
+            ...r,
+            xpPerCraft: xp,
+            score,
+            capacity,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
 
-    // Priorizar recetas con capacidad de rotación disponible
-    let candidates = scored.filter((s) => s.capacity > 0);
-    if (candidates.length === 0) {
-      // Si todas alcanzaron el cupo, flexibilizar para no trancar
-      candidates = scored;
+      if (scored.length === 0) break;
+
+      let candidates = scored.filter((s) => s.capacity > 0);
+      if (candidates.length === 0) {
+        candidates = scored;
+      }
+
+      candidates.sort((a, b) => a.score - b.score);
+      const chosen = candidates[0];
+
+      const xpRemaining = tierTargetXp - runningXp;
+      const craftsForMilestone = Math.max(1, Math.ceil(xpRemaining / chosen.xpPerCraft));
+      const batchSize = Math.max(
+        1,
+        Math.min(craftsForMilestone, chosen.capacity || craftsForMilestone, 10)
+      );
+
+      const sim = simulateCraftBatch(
+        runningXp,
+        chosen.level,
+        batchSize,
+        xpMultiplier,
+        isBoostedServer
+      );
+
+      runningXp = sim.finalXp;
+      cumulativeUsage.set(chosen.item.id, (cumulativeUsage.get(chosen.item.id) || 0) + batchSize);
+
+      const existingSeq = tierSequence.find((s) => s.item.id === chosen.item.id);
+      if (existingSeq) {
+        existingSeq.amount += batchSize;
+      } else {
+        tierSequence.push({
+          recipe: chosen.recipe,
+          item: chosen.item,
+          amount: batchSize,
+        });
+      }
     }
 
-    // Ordenar por score ascendente (menor coste o mejor métrica)
-    candidates.sort((a, b) => a.score - b.score);
-
-    const chosen = candidates[0];
-    const xpRemaining = targetXp - runningXp;
-    const craftsForLevel = Math.max(1, Math.ceil(xpRemaining / chosen.xpPerCraft));
-    const batchSize = Math.max(
-      1,
-      Math.min(craftsForLevel, chosen.capacity || craftsForLevel, 10)
-    );
-
-    // Simular el lote craft a craft
-    const sim = simulateCraftBatch(
-      runningXp,
-      chosen.level,
-      batchSize,
+    const { updatedEntries } = recalculateSelectedCraftsSequence(
+      tierStartXp,
+      tierSequence,
       xpMultiplier,
       isBoostedServer
     );
 
-    runningXp = sim.finalXp;
-    craftUsageMap.set(chosen.item.id, (craftUsageMap.get(chosen.item.id) || 0) + batchSize);
+    const phaseCrafts = updatedEntries.map((c) => ({
+      ...c,
+      phaseIndex: tier.tierIndex,
+    }));
 
-    const existingSeq = craftSequence.find((s) => s.item.id === chosen.item.id);
-    if (existingSeq) {
-      existingSeq.amount += batchSize;
-    } else {
-      craftSequence.push({
-        recipe: chosen.recipe,
-        item: chosen.item,
-        amount: batchSize,
-      });
+    let phaseInvestment = 0;
+    let phaseNetRevenue = 0;
+    let phaseXpGained = 0;
+
+    for (const c of phaseCrafts) {
+      phaseInvestment += c.totalCraftCost;
+      phaseNetRevenue += c.totalNetSale;
+      phaseXpGained += c.xpGained;
     }
+
+    phases.push({
+      phaseIndex: tier.tierIndex,
+      fromLevel: tierStartLvl,
+      toLevel: tierTargetLvl,
+      startXp: tierStartXp,
+      targetXp: tierTargetXp,
+      requiredXp,
+      xpGained: phaseXpGained,
+      crafts: phaseCrafts,
+      totalInvestment: phaseInvestment,
+      totalNetRevenue: phaseNetRevenue,
+      netProfitOrLoss: phaseNetRevenue - phaseInvestment,
+    });
   }
 
-  // Recalcular secuencia completa con trazabilidad de XP
-  const { updatedEntries } = recalculateSelectedCraftsSequence(
-    baseStartingXp,
-    craftSequence,
-    xpMultiplier,
-    isBoostedServer
-  );
+  return phases;
+}
 
-  return updatedEntries;
+/**
+ * Genera automáticamente la lista óptima de SelectedCrafts para alcanzar el nivel objetivo
+ * según la estrategia de juego elegida, derivada de las fases optimizadas.
+ */
+export function generateAutoOptimizedCrafts(
+  options: AutoOptimizeOptions
+): SelectedCraftEntry[] {
+  const phases = generateOptimizedPhases(options);
+  return phases.flatMap((p) => p.crafts);
+}
+
+/**
+ * Apila la siguiente fase decadal a un plan existente (ej: si está en 50, añade 50 -> 60).
+ */
+export function appendNextPhaseToPlan(
+  currentPhases: JobPlanPhase[],
+  options: Omit<AutoOptimizeOptions, "startingLevel" | "targetLevel">
+): { updatedPhases: JobPlanPhase[]; nextTargetLevel: number } {
+  const lastPhase = currentPhases[currentPhases.length - 1];
+  const lastLevel = lastPhase ? lastPhase.toLevel : 1;
+  if (lastLevel >= 200) {
+    return { updatedPhases: currentPhases, nextTargetLevel: 200 };
+  }
+
+  const nextMilestone = getNextMilestoneLevel(lastLevel);
+  const newPhases = generateOptimizedPhases({
+    ...options,
+    startingLevel: lastLevel,
+    targetLevel: nextMilestone,
+  });
+
+  const offset = currentPhases.length;
+  const reindexed = newPhases.map((p, idx) => ({
+    ...p,
+    phaseIndex: offset + idx + 1,
+    crafts: p.crafts.map((c) => ({ ...c, phaseIndex: offset + idx + 1 })),
+  }));
+
+  return {
+    updatedPhases: [...currentPhases, ...reindexed],
+    nextTargetLevel: nextMilestone,
+  };
 }
 
 // ----------------------------------------------------
