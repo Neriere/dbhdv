@@ -12,7 +12,6 @@ import {
   Package,
   Tag,
   Check,
-  RotateCcw,
   Sparkles,
   ExternalLink,
   Download,
@@ -299,10 +298,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
     const currentPrice = Number(marketPrices[itemId]) || 0;
     const newPrice = currentPrice + addAmount;
     handlePriceUpdate(itemId, String(newPrice));
-  };
-
-  const handleClearPrice = (itemId: number) => {
-    handlePriceUpdate(itemId, '0');
   };
 
   const handleExportPricesJSON = () => {
@@ -1087,16 +1082,6 @@ export const PriceManager: React.FC<PriceManagerProps> = ({ onSelectItemForRecip
                       >
                         <History className="w-3.5 h-3.5" />
                       </button>
-
-                      {currentPrice > 0 && !isSaved && (
-                        <button
-                          onClick={() => handleClearPrice(item.id)}
-                          className="p-2 rounded-xl bg-slate-950 hover:bg-red-950/40 border border-slate-800 hover:border-red-900/50 text-slate-400 hover:text-red-300 transition-all shrink-0"
-                          title="Reiniciar precio a 0"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                     </div>
 
                     {/* Footer Info: Relative Timestamp & Recipe Link */}
