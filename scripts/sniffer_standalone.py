@@ -1026,23 +1026,34 @@ def parse_quotation_message(payload):
         # Estimación promedio diario
         avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))
 
-        # Cálculo de precio de referencia combinando la media de los volúmenes de venta disponibles
+        def get_robust_period_price(price, median):
+            if median > 0 and price > 0:
+                # Si la media supera 1.8x la mediana, hay contaminación por exomagueo/venta única
+                if price > median * 1.8:
+                    return median
+                # Si la media cae por debajo del 50% de la mediana, hay dump anómalo
+                if price < median * 0.5:
+                    return median
+                return price
+            return median if median > 0 else price
+
+        # Cálculo de precio de referencia combinando la media/mediana robusta de ventas
         vol_periods = []
         if sales24h > 0 and (price24h > 0 or median24h > 0):
-            p24_rep = price24h if price24h > 0 else median24h
+            p24_rep = get_robust_period_price(price24h, median24h)
             vol_periods.append({"w": 0.45, "p": p24_rep})
         if sales7d > 0 and (price7d > 0 or median7d > 0):
-            p7_rep = price7d if price7d > 0 else median7d
+            p7_rep = get_robust_period_price(price7d, median7d)
             vol_periods.append({"w": 0.35, "p": p7_rep})
         if sales30d > 0 and (price30d > 0 or median30d > 0):
-            p30_rep = price30d if price30d > 0 else median30d
+            p30_rep = get_robust_period_price(price30d, median30d)
             vol_periods.append({"w": 0.20, "p": p30_rep})
 
         if vol_periods:
             tot_w = sum(vp["w"] for vp in vol_periods)
             suggested_price = int(round(sum(vp["p"] * vp["w"] for vp in vol_periods) / tot_w))
         else:
-            suggested_price = price24h or price7d or price30d or median24h or median7d or median30d
+            suggested_price = get_robust_period_price(price24h, median24h) or get_robust_period_price(price7d, median7d) or get_robust_period_price(price30d, median30d)
 
         sales_data = {
             "avgDailySales": avg_daily,
@@ -1110,9 +1121,11 @@ def process_single_message(payload):
             if s24 > 0:
                 print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
             if s7 > 0:
-                print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k", flush=True)
+                exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
+                print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
             if s30 > 0:
-                print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado)", flush=True)
+                exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
+                print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
 
             def send_quotation(t_id=target_id, s_data=quotation_data):
                 try:

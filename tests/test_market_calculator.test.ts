@@ -268,5 +268,50 @@ test('Objeto con lotes en cero [0, 0, 0, 0] adopta cotización sugerida si no ha
   assert.equal(result.finalPrice, 94999999, 'Debe adoptar el precio sugerido si todos los lotes son 0');
 });
 
+test('Máscara de Tortacia (#15524) con 13 ofertas reales en mercadillo (~26k) conserva precio real y NO activa falso dump', () => {
+  const item = {
+    id: 15524,
+    name: { es: 'Máscara de Tortacia' },
+    level: 130,
+    typeId: 16, // Sombrero / equipable
+  } as unknown as DofusItem;
+
+  // 13 ofertas reales de mercadillo capturadas por el sniffer
+  const preciosMercadillo = [
+    25899, 26499, 27000, 28000, 28999, 29999,
+    34999, 36500, 37500, 38500, 55555, 59999, 110000
+  ];
+
+  // Supongamos que llegara una cotización distorsionada o residual
+  const suggestedPrice = 645135;
+
+  const result = calculateItemMarketPrice(item, preciosMercadillo, 'equipable', suggestedPrice);
+  assert.equal(result.resolvedType, 'equipable');
+  assert.equal(result.antiTrollTriggered, false, 'No debe activar anti-troll por dump cuando hay 13 ofertas reales compitiendo');
+  assert.ok(result.finalPrice >= 25800 && result.finalPrice <= 28500, `El precio final ${result.finalPrice} debe ser ~26k-27k y no 645k`);
+});
+
+test('Inflación legítima de mercado (subida x3 con múltiples ofertas) es aceptada y no catalogada como troll', () => {
+  const item = {
+    id: 12345,
+    name: { es: 'Gemas de Cristal' },
+    level: 150,
+    typeId: 15, // Recurso
+  } as unknown as DofusItem;
+
+  // El precio subió legítimamente x3 (de 25k a 75k) y hay varios vendedores ofertando
+  const precios = {
+    '1': 75000,
+    '10': 740000,
+    '100': 7300000,
+  };
+  const cotizacionMesAnterior = 25000;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', cotizacionMesAnterior);
+  // Al haber lotes en 1, 10 y 100 (múltiples ofertas y profundidad), representa el mercado actual
+  assert.ok(result.finalPrice >= 70000, `Precio debe aceptar la inflación legítima de 75k, actual: ${result.finalPrice}`);
+});
+
+
 
 

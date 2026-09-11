@@ -153,3 +153,30 @@ test('analyzeSalesVolume: Precio sugerido de venta refleja la media de cotizacio
   assert.equal(analysisPeriods.suggestedPrice, 13459, 'Debe computar la media ponderada a partir de las medias de período');
 });
 
+test('analyzeSalesVolume: Neutraliza exomagueos en cotizaciones (Máscara de Tortacia)', () => {
+  // 24h: 1 venta (26,666 k)
+  // 7d: 13 ventas (media 1,561,444 k por un exo, mediana 26,500 k)
+  // 30d: 49 ventas (media 433,149 k, mediana 26,449 k)
+  const volumeMascaraTortacia: ItemSalesVolume = {
+    sales24h: 1,
+    price24h: 26666,
+    median24h: 26666,
+    sales7d: 13,
+    price7d: 1561444,
+    median7d: 26500,
+    sales30d: 49,
+    price30d: 433149,
+    median30d: 26449,
+    updatedAt: Date.now(),
+  };
+
+  const analysis = analyzeSalesVolume(26500, volumeMascaraTortacia);
+  assert.equal(analysis.hasData, true);
+  // Debe detectar que 1.56M > 26.5k * 1.8 y usar medianas, dando ~26.5k
+  assert.ok(
+    analysis.suggestedPrice! >= 26400 && analysis.suggestedPrice! <= 26700,
+    `Precio sugerido ${analysis.suggestedPrice} debe ser ~26.5k y no 645k`
+  );
+});
+
+

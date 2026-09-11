@@ -288,32 +288,63 @@ export function analyzeSalesVolume(
     }
   }
 
-  // Precio sugerido de venta: prioridad a la cotización histórica capturada (media de cotizaciones)
+function getRobustPeriodPrice(price?: number, median?: number): number {
+  if (price && median && price > 0 && median > 0) {
+    if (price > median * 1.8) return median;
+    if (price < median * 0.5) return median;
+    return price;
+  }
+  return (median && median > 0 ? median : price) || 0;
+}
+
+  // Precio sugerido de venta: prioridad a la cotización histórica capturada (robusta ante exomagueos)
   let suggestedPrice: number | null = null;
-  if (volume?.suggestedPrice && volume.suggestedPrice > 0) {
+  const hasOutlierSuggestedPrice =
+    Boolean(volume?.suggestedPrice &&
+    volume?.median7d &&
+    volume.suggestedPrice > volume.median7d * 1.8);
+
+  if (volume?.suggestedPrice && volume.suggestedPrice > 0 && !hasOutlierSuggestedPrice) {
     suggestedPrice = Math.round(volume.suggestedPrice);
   } else if (
     (volume?.price24h && volume.price24h > 0) ||
     (volume?.price7d && volume.price7d > 0) ||
-    (volume?.price30d && volume.price30d > 0)
+    (volume?.price30d && volume.price30d > 0) ||
+    (volume?.median24h && volume.median24h > 0) ||
+    (volume?.median7d && volume.median7d > 0) ||
+    (volume?.median30d && volume.median30d > 0)
   ) {
     let wSum = 0;
     let wTot = 0;
-    if (volume.price24h && volume.price24h > 0 && s24h > 0) {
-      wSum += (volume.price24h || volume.median24h!) * 0.45;
-      wTot += 0.45;
+    if ((volume?.price24h || volume?.median24h) && s24h > 0) {
+      const p = getRobustPeriodPrice(volume.price24h, volume.median24h);
+      if (p > 0) {
+        wSum += p * 0.45;
+        wTot += 0.45;
+      }
     }
-    if (volume.price7d && volume.price7d > 0 && s7d > 0) {
-      wSum += (volume.price7d || volume.median7d!) * 0.35;
-      wTot += 0.35;
+    if ((volume?.price7d || volume?.median7d) && s7d > 0) {
+      const p = getRobustPeriodPrice(volume.price7d, volume.median7d);
+      if (p > 0) {
+        wSum += p * 0.35;
+        wTot += 0.35;
+      }
     }
-    if (volume.price30d && volume.price30d > 0 && s30d > 0) {
-      wSum += (volume.price30d || volume.median30d!) * 0.20;
-      wTot += 0.20;
+    if ((volume?.price30d || volume?.median30d) && s30d > 0) {
+      const p = getRobustPeriodPrice(volume.price30d, volume.median30d);
+      if (p > 0) {
+        wSum += p * 0.20;
+        wTot += 0.20;
+      }
     }
     if (wTot > 0) {
       suggestedPrice = Math.round(wSum / wTot);
     }
+  }
+
+  // Si volume.suggestedPrice existía pero fue descartado por outlier y no hubo wTot
+  if (!suggestedPrice && volume?.suggestedPrice && volume.suggestedPrice > 0) {
+    suggestedPrice = Math.round(volume.median7d || volume.median30d || volume.suggestedPrice);
   }
 
   // Fallback: estimación según rotación y precio actual de mercadillo si no hay cotización

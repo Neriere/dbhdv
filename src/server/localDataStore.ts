@@ -2617,8 +2617,7 @@ export async function correctPricesAgainstSalesVolume(
       const currentPrice = await getPrice(profileId, sItemId);
       if (currentPrice > 0) {
         const isExaggerated = currentPrice >= sug * 3.0;
-        const isExtremeDump = currentPrice <= sug * 0.25;
-        if (isExaggerated || isExtremeDump) {
+        if (isExaggerated) {
           await upsertPrice(profileId, sItemId, sug, "cotizacion_safeguard");
           invalidateServerBootstrapCache();
 
@@ -3161,12 +3160,18 @@ export function calculateItemMarketPrice(
   }
 
   // Salvaguarda de Precios Inflados / Ausencia de Stock contra Cotización Histórica:
-  // Si el precio calculado de lotes vivos difiere de forma atípica (>= 3.0x o <= 0.25x)
-  // o si no hay ofertas en mercadillo (0 stock), se usa la cotización sugerida disponible:
+  // 1. Si no hay ofertas en mercadillo (0 stock), se usa la cotización sugerida disponible.
+  // 2. Si el precio en mercadillo está inflado (>= 3.0x de cotización), se protege contra troll inflado.
+  // 3. Falso dump: si hay 2 o más ofertas en mercadillo o es equipable, el precio de mercadillo es real.
+  //    Solo se considera dump anómalo si hay exactamente 1 oferta solitaria de recurso por debajo del 25%.
   if (suggestedPrice && suggestedPrice >= 50) {
     if (finalPrice > 0) {
       const isExaggerated = finalPrice >= suggestedPrice * 3.0;
-      const isExtremeDump = finalPrice <= suggestedPrice * 0.25;
+      const isExtremeDump =
+        offersCount === 1 &&
+        resolvedType === "recurso" &&
+        finalPrice <= suggestedPrice * 0.25;
+
       if (isExaggerated || isExtremeDump) {
         antiTrollTriggered = true;
         finalPrice = Math.round(suggestedPrice);

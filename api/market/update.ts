@@ -248,12 +248,17 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
   }
 
   // Salvaguarda de Precios Inflados / Ausencia de Stock / Outliers troll:
-  // Si el precio calculado difiere drásticamente (>= 3.0x o <= 0.25x)
-  // o si no hay stock en mercadillo (0 ofertas), se usa la cotización sugerida disponible:
+  // 1. Si no hay stock en mercadillo (0 ofertas), se usa la cotización sugerida disponible.
+  // 2. Si el precio en mercadillo está inflado (>= 3.0x de cotización), se protege contra troll inflado.
+  // 3. Falso dump: si hay 2 o más ofertas en mercadillo o es equipable, el precio de mercadillo es real.
+  //    Solo se considera dump anómalo si hay exactamente 1 oferta solitaria de recurso por debajo del 25%.
   if (historicalSuggestedPrice >= 50) {
     if (finalPrice > 0) {
       const isExaggerated = finalPrice >= historicalSuggestedPrice * 3.0;
-      const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.25;
+      const isExtremeDump =
+        offersCount === 1 &&
+        resolvedType === "recurso" &&
+        finalPrice <= historicalSuggestedPrice * 0.25;
       if (isExaggerated || isExtremeDump) {
         antiTrollTriggered = true;
         finalPrice = Math.round(historicalSuggestedPrice);

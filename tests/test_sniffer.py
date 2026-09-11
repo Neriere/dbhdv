@@ -790,6 +790,52 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertIsNotNone(suggested)
         self.assertTrue(6000 <= suggested <= 6400, f"Precio sugerido {suggested} debe estar en el rango de ~6.1k - 6.2k")
 
+    def test_quotation_mascara_tortacia_exomage_neutralization(self):
+        """
+        Caso Máscara de Tortacia (#15524):
+        24h: 1 venta a 26,666 k
+        7d: 13 ventas con 1 exo de 20,000,000 k -> Media = 1,561,444 k | Mediana = 26,500 k
+        30d: 49 ventas con ese exo -> Media = 433,149 k | Mediana = 26,449 k
+        El algoritmo robusto debe neutralizar el exomagueo y sugerir ~26,500 k (NO 645,000 k).
+        """
+        base_d = datetime(2026, 8, 12, 23, 59, 0)
+        # 30d: 22 puntos anteriores con 36 ventas normales (~26.4k)
+        vols_30d = [1] * 21 + [15] + [1] * 6 + [6, 1] # total 49 ventas
+        # En los ultimos 8 dias (7d): 12 ventas a 26500 y 1 venta atipica a 20,000,000
+        prices_30d = [26449] * 22 + [26500] * 6 + [26500, 20000000]
+        dates_30d = [(base_d + timedelta(days=i)).isoformat() + 'Z' for i in range(30)]
+
+        inner = bytearray()
+        # 24h: 1 venta a 26666 k
+        b_24 = make_quotation_entry(1, (base_d + timedelta(days=29, hours=20)).isoformat() + 'Z', 26666, 15524)
+        inner.append(0x0a)
+        inner.extend(encode_varint(len(b_24)))
+        inner.extend(b_24)
+
+        for v, p, d in zip(vols_30d, prices_30d, dates_30d):
+            b = make_quotation_entry(v, d, p, 15524)
+            inner.append(0x12)
+            inner.extend(encode_varint(len(b)))
+            inner.extend(b)
+
+        header = b'type.ankama.com/iuk'
+        payload = bytearray(header)
+        payload.append(0x12)
+        payload.extend(encode_varint(len(inner)))
+        payload.extend(inner)
+
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(payload))
+        self.assertEqual(iid, 15524)
+        self.assertEqual(sales_data.get('sales24h'), 1)
+        self.assertEqual(sales_data.get('sales7d'), 13) # 6 + 6 + 1
+        self.assertEqual(sales_data.get('median7d'), 26500)
+        self.assertGreater(sales_data.get('price7d'), 1000000, "La media matemática sin filtro supera 1M por el exo")
+
+        suggested = sales_data.get('suggestedPrice')
+        self.assertIsNotNone(suggested)
+        self.assertTrue(25000 <= suggested <= 28000, f"Precio sugerido {suggested} debe ser ~26.5k y no 645k")
+
 if __name__ == "__main__":
     unittest.main()
+
 
