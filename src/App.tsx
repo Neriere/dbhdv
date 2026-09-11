@@ -20,6 +20,11 @@ const CrushingCalculator = lazy(() =>
     default: m.CrushingCalculator,
   }))
 );
+const JobLevelingOptimizer = lazy(() =>
+  import('./components/jobs/JobLevelingOptimizer').then((m) => ({
+    default: m.JobLevelingOptimizer,
+  }))
+);
 const GlobalProfitRanking = lazy(() =>
   import('./components/GlobalProfitRanking').then((m) => ({
     default: m.GlobalProfitRanking,
@@ -134,6 +139,12 @@ export default function App() {
             <RecipeCraftingCalculator
               initialSelectedItem={selectedItem}
               onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
+
+          {activeTab === 'job_optimizer' && (
+            <JobLevelingOptimizer
+              onNavigateToShopping={() => handleSetActiveTab('shopping')}
             />
           )}
 

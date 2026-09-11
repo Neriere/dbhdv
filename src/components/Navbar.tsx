@@ -12,6 +12,7 @@ import {
   Map as MapIcon,
   Scroll,
   Briefcase,
+  Hammer,
 } from 'lucide-react';
 import {
   getActivePriceProfileId,
@@ -31,6 +32,7 @@ import { UserJobsModal } from './common/UserJobsModal';
 
 export type ActiveTab =
   | 'recipes'
+  | 'job_optimizer'
   | 'bank'
   | 'treasure_maps'
   | 'dofusbook'
@@ -60,6 +62,7 @@ const TAB_GROUPS = [
     label: 'Calcular',
     tabs: [
       { id: 'recipes'       as ActiveTab, label: 'Recetas',      icon: Wrench },
+      { id: 'job_optimizer' as ActiveTab, label: 'Subir Oficio', icon: Hammer },
       { id: 'rompedora'     as ActiveTab, label: 'Rompedora',    icon: Zap },
       { id: 'dofusbook'     as ActiveTab, label: 'Set Dofusbook', icon: Sparkles },
     ],
@@ -323,6 +326,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
       <UserJobsModal
         isOpen={isJobsModalOpen}
         onClose={() => setIsJobsModalOpen(false)}
+        onSelectJobForOptimizer={(jobId) => {
+          try {
+            const raw = localStorage.getItem("dofus_job_leveling_plan_v1");
+            const plan = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(
+              "dofus_job_leveling_plan_v1",
+              JSON.stringify({ ...plan, jobId })
+            );
+          } catch {
+            // ignore
+          }
+          setActiveTab('job_optimizer');
+        }}
       />
     </>
   );

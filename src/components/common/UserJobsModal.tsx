@@ -20,12 +20,14 @@ import {
   Heart,
   Wand2,
   Zap,
+  Hammer,
 } from "lucide-react";
 import {
   USER_JOBS_DEFINITIONS,
   JobCategory,
   JobConfigDefinition,
 } from "../../services/userJobsService";
+import { SUPPORTED_JOB_IDS } from "../../services/jobLevelingService";
 import { useUserJobs } from "../../hooks/useUserJobs";
 import { ModalPortal } from "./ModalPortal";
 
@@ -50,11 +52,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
 interface UserJobsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSelectJobForOptimizer?: (jobId: number) => void;
 }
 
 export const UserJobsModal: React.FC<UserJobsModalProps> = ({
   isOpen,
   onClose,
+  onSelectJobForOptimizer,
 }) => {
   const {
     isEnabled,
@@ -368,6 +372,21 @@ export const UserJobsModal: React.FC<UserJobsModalProps> = ({
                       >
                         Max (200)
                       </button>
+
+                      {SUPPORTED_JOB_IDS.includes(job.id) && onSelectJobForOptimizer && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onSelectJobForOptimizer(job.id);
+                          }}
+                          title="Optimizar ruta más barata para subir este oficio"
+                          className="px-2 py-1 text-[10px] font-bold rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Hammer className="w-3 h-3" />
+                          <span>Subir Oficio</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* Progress indicator */}
