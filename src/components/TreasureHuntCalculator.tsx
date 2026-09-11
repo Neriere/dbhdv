@@ -1126,7 +1126,7 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
       {/* Modal: Edit Global Currency Rates */}
       {isRatesModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center py-8 px-4 overflow-y-auto">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">

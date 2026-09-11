@@ -994,6 +994,9 @@ def parse_quotation_message(payload):
         if entries_30d:
             entries_30d.sort(key=lambda e: e.get("ts", 0))
 
+        all_ts = [e["ts"] for e in entries_24h + entries_30d if e.get("ts")]
+        current_ts = max(all_ts) if all_ts else time.time()
+
         def calculate_weighted_median(items):
             sorted_items = sorted(items, key=lambda x: x[0])
             total_vol = sum(x[1] for x in sorted_items)
@@ -1006,9 +1009,7 @@ def parse_quotation_message(payload):
             return sorted_items[-1][0] if sorted_items else 0
 
         # 1. Métricas 24 Horas
-        # En la gráfica de 24h de Dofus Unity, la ventana mostrada en la interfaz abarca
-        # las últimas 22 marcas horarias (entries_24h[-22:]):
-        calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
+        calc_24h = [e for e in entries_24h if e.get("ts", 0) >= current_ts - 86400]
         sales24h = sum(e["volume"] for e in calc_24h)
         w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
         price24h = (w_sum_24 // sales24h) if sales24h > 0 else 0
@@ -1016,7 +1017,6 @@ def parse_quotation_message(payload):
         median24h = calculate_weighted_median(pairs_24) if pairs_24 else price24h
 
         # 2. Métricas 30 Días
-        # Toda la serie diaria completa del Campo #2
         sales30d = sum(e["volume"] for e in entries_30d)
         w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
         price30d = (w_sum_30 // sales30d) if sales30d > 0 else 0
@@ -1024,8 +1024,7 @@ def parse_quotation_message(payload):
         median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
 
         # 3. Métricas 7 Días
-        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
-        entries_7d = entries_30d[-8:] if len(entries_30d) >= 8 else entries_30d
+        entries_7d = [e for e in entries_30d if e.get("ts", 0) >= current_ts - 7 * 86400]
         sales7d = sum(e["volume"] for e in entries_7d)
         w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
         price7d = (w_sum_7 // sales7d) if sales7d > 0 else 0
@@ -1037,20 +1036,26 @@ def parse_quotation_message(payload):
         suggested_price = price24h or price7d or price30d or median24h or median7d or median30d
 
         sales_data = {
-            "sales24h": sales24h,
-            "sales7d": sales7d,
-            "sales30d": sales30d,
             "avgDailySales": avg_daily,
             "suggestedPrice": suggested_price,
             "medianPrice": median24h or median7d or median30d,
-            "price24h": price24h,
-            "price7d": price7d,
-            "price30d": price30d,
-            "median24h": median24h,
-            "median7d": median7d,
-            "median30d": median30d,
             "updatedAt": int(time.time() * 1000)
         }
+        
+        if sales24h > 0:
+            sales_data["sales24h"] = sales24h
+            sales_data["price24h"] = price24h
+            sales_data["median24h"] = median24h
+            
+        if sales7d > 0:
+            sales_data["sales7d"] = sales7d
+            sales_data["price7d"] = price7d
+            sales_data["median7d"] = median7d
+            
+        if sales30d > 0:
+            sales_data["sales30d"] = sales30d
+            sales_data["price30d"] = price30d
+            sales_data["median30d"] = median30d
 
         return item_id_found, sales_data, entries_30d or entries_24h, "all"
     except Exception:
@@ -1092,30 +1097,34 @@ def process_single_message(payload):
             p30 = quotation_data.get("price30d", 0)
             m30 = quotation_data.get("median30d", 0)
 
-            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id})", flush=True)
-            if s24 > 0:
-                print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
-            if s7 > 0:
-                print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k", flush=True)
-            if s30 > 0:
-                print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado)", flush=True)
+            if s24 == 0 and s7 == 0 and s30 == 0:
+                print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id}) ignorada (Sin ventas en ningún periodo)", flush=True)
+                # No enviamos datos si todos los periodos están en 0
+            else:
+                print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id})", flush=True)
+                if s24 > 0:
+                    print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
+                if s7 > 0:
+                    print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k", flush=True)
+                if s30 > 0:
+                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado)", flush=True)
 
-            def send_quotation(t_id=target_id, s_data=quotation_data):
-                try:
-                    headers = {"Content-Type": "application/json"}
-                    if API_SECRET_KEY:
-                        headers["x-api-key"] = API_SECRET_KEY
-                    body = {
-                        "server": SERVER_NAME,
-                        "salesVolume": {
-                            str(t_id): s_data
+                def send_quotation(t_id=target_id, s_data=quotation_data):
+                    try:
+                        headers = {"Content-Type": "application/json"}
+                        if API_SECRET_KEY:
+                            headers["x-api-key"] = API_SECRET_KEY
+                        body = {
+                            "server": SERVER_NAME,
+                            "salesVolume": {
+                                str(t_id): s_data
+                            }
                         }
-                    }
-                    http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
-                except Exception:
-                    pass
+                        http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
+                    except Exception:
+                        pass
 
-            threading.Thread(target=send_quotation, daemon=True).start()
+                threading.Thread(target=send_quotation, daemon=True).start()
 
         # 2. Si es paquete de mercadillo normal con lotes/precios
         if item_id and prices:

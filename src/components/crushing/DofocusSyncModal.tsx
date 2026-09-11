@@ -290,7 +290,7 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+      <div className="fixed inset-0 z-50 flex items-start justify-center py-8 px-4 overflow-y-auto bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
       <div
         className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 text-slate-200 relative overflow-hidden max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
