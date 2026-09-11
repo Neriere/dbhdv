@@ -1042,14 +1042,14 @@ def parse_quotation_message(payload):
 
         # Cálculo de precio de referencia combinando la media de los volúmenes de venta disponibles
         vol_periods = []
-        if sales24h > 0 and (median24h > 0 or price24h > 0):
-            p24_rep = median24h if median24h > 0 else price24h
+        if sales24h > 0 and (price24h > 0 or median24h > 0):
+            p24_rep = price24h if price24h > 0 else median24h
             vol_periods.append({"w": 0.45, "p": p24_rep})
-        if sales7d > 0 and (median7d > 0 or price7d > 0):
-            p7_rep = median7d if median7d > 0 else price7d
+        if sales7d > 0 and (price7d > 0 or median7d > 0):
+            p7_rep = price7d if price7d > 0 else median7d
             vol_periods.append({"w": 0.35, "p": p7_rep})
-        if sales30d > 0 and (median30d > 0 or price30d > 0):
-            p30_rep = median30d if median30d > 0 else price30d
+        if sales30d > 0 and (price30d > 0 or median30d > 0):
+            p30_rep = price30d if price30d > 0 else median30d
             vol_periods.append({"w": 0.20, "p": p30_rep})
 
         if vol_periods:

@@ -288,9 +288,36 @@ export function analyzeSalesVolume(
     }
   }
 
-  // Precio sugerido de venta según liquidez y precio actual
+  // Precio sugerido de venta: prioridad a la cotización histórica capturada (media de cotizaciones)
   let suggestedPrice: number | null = null;
-  if (currentPrice > 0) {
+  if (volume?.suggestedPrice && volume.suggestedPrice > 0) {
+    suggestedPrice = Math.round(volume.suggestedPrice);
+  } else if (
+    (volume?.price24h && volume.price24h > 0) ||
+    (volume?.price7d && volume.price7d > 0) ||
+    (volume?.price30d && volume.price30d > 0)
+  ) {
+    let wSum = 0;
+    let wTot = 0;
+    if (volume.price24h && volume.price24h > 0 && s24h > 0) {
+      wSum += (volume.price24h || volume.median24h!) * 0.45;
+      wTot += 0.45;
+    }
+    if (volume.price7d && volume.price7d > 0 && s7d > 0) {
+      wSum += (volume.price7d || volume.median7d!) * 0.35;
+      wTot += 0.35;
+    }
+    if (volume.price30d && volume.price30d > 0 && s30d > 0) {
+      wSum += (volume.price30d || volume.median30d!) * 0.20;
+      wTot += 0.20;
+    }
+    if (wTot > 0) {
+      suggestedPrice = Math.round(wSum / wTot);
+    }
+  }
+
+  // Fallback: estimación según rotación y precio actual de mercadillo si no hay cotización
+  if (!suggestedPrice && currentPrice > 0) {
     if (turnoverRating === "alta") {
       // Precio competitivo inmediato (0.5% a 1% bajo precio actual)
       suggestedPrice = Math.round(currentPrice * 0.99);

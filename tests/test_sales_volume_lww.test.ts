@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   syncRemoteSalesVolume,
   handleRemoteVolumeUpdate,
+  analyzeSalesVolume,
   ItemSalesVolume,
   SalesVolumeMap,
 } from '../src/services/salesVolumeService.js';
@@ -120,3 +121,35 @@ test('LWW: syncRemoteSalesVolume combina ítems conservando siempre los más rec
   assert.equal(merged[103].sales24h, 30, 'Item 103 debe agregarse con 30 ventas');
   assert.equal(merged[103].updatedAt, 2500);
 });
+
+test('analyzeSalesVolume: Precio sugerido de venta refleja la media de cotizaciones históricas', () => {
+  // Caso El Etreuma (#699):
+  // HDV Precio actual = 19,642 k
+  // Cotización: 7d (5 ventas, medio 14,555 k), 30d (23 ventas, medio 11,542 k)
+  // Media ponderada calculada por sniffer o proporcionada en suggestedPrice: 13,459 k
+  const volumeWithQuotation: ItemSalesVolume = {
+    sales7d: 5,
+    price7d: 14555,
+    sales30d: 23,
+    price30d: 11542,
+    suggestedPrice: 13459,
+    updatedAt: Date.now(),
+  };
+
+  const analysis = analyzeSalesVolume(19642, volumeWithQuotation);
+  assert.equal(analysis.hasData, true);
+  assert.equal(analysis.suggestedPrice, 13459, 'Debe mostrar el precio de la cotización histórica y no 19,642 * 0.98');
+
+  // Si no viene suggestedPrice explícito pero vienen las medias por período:
+  const volumeWithoutExplicitSug: ItemSalesVolume = {
+    sales7d: 5,
+    price7d: 14555,
+    sales30d: 23,
+    price30d: 11542,
+    updatedAt: Date.now(),
+  };
+  const analysisPeriods = analyzeSalesVolume(19642, volumeWithoutExplicitSug);
+  // (14555 * 0.35 + 11542 * 0.20) / (0.55) = (5094.25 + 2308.4) / 0.55 = 7402.65 / 0.55 = 13459
+  assert.equal(analysisPeriods.suggestedPrice, 13459, 'Debe computar la media ponderada a partir de las medias de período');
+});
+

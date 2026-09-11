@@ -343,6 +343,12 @@ export interface ItemSalesVolume {
   sales24h?: number;
   sales7d?: number;
   sales30d?: number;
+  price24h?: number;
+  price7d?: number;
+  price30d?: number;
+  median24h?: number;
+  median7d?: number;
+  median30d?: number;
   avgDailySales?: number;
   estimatedDaysToSell?: number;
   suggestedPrice?: number;
