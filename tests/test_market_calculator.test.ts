@@ -171,3 +171,69 @@ test('Recurso con lotes en orden descendente (x1000 a x1) se invierte automátic
   assert.ok(result.minPrice <= 30000, `Precio mínimo ${result.minPrice} debe ser ~30k`);
 });
 
+test('Fritada amakneana reconstituyente (#17178) precio troll HDV de 1,116,245k corregido a media de cotización ~6,170k', () => {
+  const item = {
+    id: 17178,
+    name: { es: 'Fritada amakneana reconstituyente' },
+    level: 140,
+    typeId: 6, // Consumible
+  } as unknown as DofusItem;
+
+  // Precio desorbitado / troll capturado en mercadillo
+  const precios = {
+    '1': 1116245,
+  };
+
+  // Cotización calculada a partir de los 3 periodos:
+  // 24h: 28 ventas (media 6,284 k, mediano 6,499 k)
+  // 7d: 571 ventas (media 6,049 k, mediano 5,996 k)
+  // 30d: 2,063 ventas (media 6,201 k, mediano 5,996 k)
+  // Ponderada: 0.45 * 6499 + 0.35 * 5996 + 0.20 * 5996 = ~6,172 k
+  const suggestedQuotationPrice = 6172;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', suggestedQuotationPrice);
+  assert.equal(result.resolvedType, 'recurso');
+  assert.equal(result.antiTrollTriggered, true, 'Debe activar la salvaguarda anti-troll');
+  assert.equal(result.finalPrice, suggestedQuotationPrice, 'El precio final debe ser la media de las cotizaciones');
+  assert.notEqual(result.finalPrice, 1116245, 'Nunca debe permanecer el precio troll de 1.1M');
+});
+
+test('Precio troll por dump extremo (< 0.25x) se corrige con la cotización de mercado', () => {
+  const item = {
+    id: 20000,
+    name: { es: 'Recurso Valioso' },
+    level: 200,
+    typeId: 15,
+  } as unknown as DofusItem;
+
+  const precios = {
+    '1': 1500, // Menor al 25% de la cotización real
+  };
+  const suggestedPrice = 25000;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', suggestedPrice);
+  assert.equal(result.antiTrollTriggered, true, 'Debe activarse ante dump extremo');
+  assert.equal(result.finalPrice, suggestedPrice);
+});
+
+test('Precio de mercadillo con fluctuación normal (dentro del rango 0.25x a 3.0x) conserva prioridad de HDV', () => {
+  const item = {
+    id: 17178,
+    name: { es: 'Fritada amakneana reconstituyente' },
+    level: 140,
+    typeId: 6,
+  } as unknown as DofusItem;
+
+  const precios = {
+    '1': 7500,
+    '10': 74000,
+    '100': 730000,
+  };
+  const suggestedQuotationPrice = 6172;
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', suggestedQuotationPrice);
+  assert.equal(result.antiTrollTriggered, false, 'No debe activar anti-troll para precios normales');
+  assert.ok(result.finalPrice >= 7300 && result.finalPrice <= 7500, 'Conserva el precio real de HDV');
+});
+
+

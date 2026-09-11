@@ -114,8 +114,12 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
   if (!itemId || Number.isNaN(itemId) || itemId <= 0) return null;
 
   const previousPrice = typeof previousRef === "number" ? previousRef : (previousRef?.price || 0);
-  const historicalSuggestedPrice = typeof previousRef === "object" ? (previousRef.suggestedPrice || 0) : Number(payload?.suggested_price ?? payload?.suggestedPrice ?? 0);
-  const sales30d = typeof previousRef === "object" ? (previousRef.sales30d || 0) : Number(payload?.sales_30d ?? payload?.sales30d ?? 0);
+  const historicalSuggestedPrice = (typeof previousRef === "object" && previousRef?.suggestedPrice)
+    ? previousRef.suggestedPrice
+    : Number(payload?.suggested_price ?? payload?.suggestedPrice ?? 0);
+  const sales30d = (typeof previousRef === "object" && previousRef?.sales30d)
+    ? previousRef.sales30d
+    : Number(payload?.sales_30d ?? payload?.sales30d ?? 0);
 
   const directPrice = Number(payload?.price ?? payload?.precio ?? payload?.calculated_price);
   const precios = payload.precios || payload.prices;
@@ -243,12 +247,12 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
     }
   }
 
-  // Salvaguarda de Precios Inflados / Ausencia de Stock:
-  // Si el precio calculado de lotes vivos es absurdamente lejano (>= 4x o <= 0.15x)
-  // respecto al precio medio histórico real (cuando existe historial de cotizaciones):
+  // Salvaguarda de Precios Inflados / Ausencia de Stock / Outliers troll:
+  // Si el precio calculado difiere drásticamente (>= 3.0x o <= 0.25x)
+  // respecto al precio de referencia de cotizaciones (o media ponderada de ventas):
   if (historicalSuggestedPrice >= 50 && finalPrice > 0) {
-    const isExaggerated = finalPrice >= historicalSuggestedPrice * 4.0;
-    const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.15;
+    const isExaggerated = finalPrice >= historicalSuggestedPrice * 3.0;
+    const isExtremeDump = finalPrice <= historicalSuggestedPrice * 0.25;
     if (isExaggerated || isExtremeDump) {
       antiTrollTriggered = true;
       finalPrice = Math.round(historicalSuggestedPrice);
@@ -308,6 +312,18 @@ export default async function handler(req: any, res: any) {
       const requests: any[] = [];
       const entries = Object.entries(rawSalesVolume);
 
+      const sItemIds = Object.keys(rawSalesVolume).map(Number).filter((id) => id > 0);
+      const currentPriceMap = sItemIds.length > 0 && dbUrl
+        ? await getPreviousPrices(dbUrl, dbToken, profileId, sItemIds)
+        : new Map<number, ItemMarketRef>();
+
+      const correctedPrices: Array<{
+        item_id: number;
+        old_price: number;
+        new_price: number;
+        suggested_price: number;
+      }> = [];
+
       for (const [sId, svRaw] of entries) {
         const sItemId = Number(sId);
         const sv = svRaw as any;
@@ -338,6 +354,59 @@ export default async function handler(req: any, res: any) {
               ],
             },
           });
+
+          // Verificación retroactiva de precios troll / atípicos ya guardados en HDV
+          const suggestedPrice = Number(sv.suggestedPrice || sv.suggested_price || 0);
+          const currentRef = currentPriceMap.get(sItemId);
+          const currentPrice = currentRef?.price || 0;
+          if (suggestedPrice >= 50 && currentPrice > 0) {
+            const isExaggerated = currentPrice >= suggestedPrice * 3.0;
+            const isExtremeDump = currentPrice <= suggestedPrice * 0.25;
+            if (isExaggerated || isExtremeDump) {
+              const newPrice = Math.round(suggestedPrice);
+              correctedPrices.push({
+                item_id: sItemId,
+                old_price: currentPrice,
+                new_price: newPrice,
+                suggested_price: newPrice,
+              });
+
+              requests.push({
+                type: "execute",
+                stmt: {
+                  sql: `INSERT INTO profile_prices (profile_id, item_id, price, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(profile_id, item_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at`,
+                  args: [
+                    { type: "integer", value: String(profileId) },
+                    { type: "integer", value: String(sItemId) },
+                    { type: "integer", value: String(newPrice) },
+                    { type: "integer", value: String(now) },
+                  ],
+                },
+              });
+
+              const diff = newPrice - currentPrice;
+              const pct = ((newPrice - currentPrice) / currentPrice) * 100;
+              requests.push({
+                type: "execute",
+                stmt: {
+                  sql: `INSERT INTO price_history (profile_id, item_id, price, old_price, difference, percentage_change, source, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                  args: [
+                    { type: "integer", value: String(profileId) },
+                    { type: "integer", value: String(sItemId) },
+                    { type: "integer", value: String(newPrice) },
+                    { type: "integer", value: String(currentPrice) },
+                    { type: "integer", value: String(diff) },
+                    { type: "float", value: Number(pct.toFixed(2)) },
+                    { type: "text", value: "anti_troll_safeguard" },
+                    { type: "integer", value: String(now) },
+                  ],
+                },
+              });
+            }
+          }
         }
       }
 
@@ -359,6 +428,7 @@ export default async function handler(req: any, res: any) {
         success: true,
         updated_sales_volume: entries.length,
         profile_id: profileId,
+        corrected_prices: correctedPrices,
       });
     }
 

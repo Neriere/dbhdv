@@ -1,5 +1,11 @@
 import unittest
 import struct
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import sniffer_standalone
 
 def encode_varint(val):
     out = bytearray()
@@ -39,6 +45,20 @@ def decode_packed_varints(buf):
         off += r
         vals.append(v)
     return vals
+
+def make_quotation_entry(vol, date_str, price, item_id):
+    buf = bytearray()
+    buf.append(0x08)
+    buf.extend(encode_varint(vol))
+    buf.append(0x12)
+    s_bytes = date_str.encode('utf-8')
+    buf.extend(encode_varint(len(s_bytes)))
+    buf.extend(s_bytes)
+    buf.append(0x18)
+    buf.extend(encode_varint(price))
+    buf.append(0x20)
+    buf.extend(encode_varint(item_id))
+    return bytes(buf)
 
 def clean_ladder(raw_list):
     cl = [int(p) for p in raw_list if p is not None]
@@ -721,6 +741,54 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertEqual(sales_data.get('median7d'), 303)
         # 30 Días
         self.assertGreater(sales_data.get('sales30d'), 4000000)
+        self.assertIn('suggestedPrice', sales_data)
+        self.assertGreater(sales_data['suggestedPrice'], 0)
+
+    def test_quotation_fritada_amakneana_volume_blended_media(self):
+        """
+        Simula el caso reportado por el usuario con Fritada amakneana reconstituyente:
+        24h: 28 ventas (mediana 6,499k, media 6,284k)
+        7d: 571 ventas (mediana 5,996k, media 6,049k)
+        30d: 2,063 ventas (mediana 5,996k, media 6,201k)
+        Debe producir una media ponderada sugerida representativa (~6,172k)
+        y no enviar claves de periodos vacíos si no hubiera ventas.
+        """
+        base_d = datetime(2026, 8, 12, 23, 59, 0)
+        vols_30d = [67] * 22 + [71] * 7 + [74] # total 2045, ultimos 8 dias = 571
+        prices_30d = [5996] * 30
+        dates_30d = [(base_d + timedelta(days=i)).isoformat() + 'Z' for i in range(30)]
+
+        inner = bytearray()
+        # Entrada 24h: 28 ventas a 6499 k
+        b_24 = make_quotation_entry(28, (base_d + timedelta(days=29, hours=20)).isoformat() + 'Z', 6499, 17178)
+        inner.append(0x0a)
+        inner.extend(encode_varint(len(b_24)))
+        inner.extend(b_24)
+
+        # Entrada 30d: 30 puntos diarios (ultimos 8 = 571 ventas)
+        for v, p, d in zip(vols_30d, prices_30d, dates_30d):
+            b = make_quotation_entry(v, d, p, 17178)
+            inner.append(0x12)
+            inner.extend(encode_varint(len(b)))
+            inner.extend(b)
+
+        header = b'type.ankama.com/iuk'
+        payload = bytearray(header)
+        payload.append(0x12)
+        payload.extend(encode_varint(len(inner)))
+        payload.extend(inner)
+
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(payload))
+        self.assertEqual(iid, 17178)
+        self.assertEqual(sales_data.get('sales24h'), 28)
+        self.assertEqual(sales_data.get('sales7d'), 571)
+        self.assertEqual(sales_data.get('sales30d'), 2045)
+
+        # Ponderada calculada con 0.45 * 24h + 0.35 * 7d + 0.20 * 30d:
+        # 0.45 * 6499 + 0.35 * 5996 + 0.20 * 5996 = 6172
+        suggested = sales_data.get('suggestedPrice')
+        self.assertIsNotNone(suggested)
+        self.assertTrue(6000 <= suggested <= 6400, f"Precio sugerido {suggested} debe estar en el rango de ~6.1k - 6.2k")
 
 if __name__ == "__main__":
     unittest.main()

@@ -827,6 +827,12 @@ def async_worker():
                     "100": int(p100),
                     "1000": int(p1000),
                 }
+
+            if iid in ITEM_SALES_VOLUME:
+                s_sug = ITEM_SALES_VOLUME[iid].get("suggestedPrice")
+                if s_sug and s_sug >= 50:
+                    body["suggested_price"] = s_sug
+
             prepared_items.append((body, raw))
 
         try:
@@ -1033,7 +1039,24 @@ def parse_quotation_message(payload):
 
         # Estimación promedio diario
         avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))
-        suggested_price = price24h or price7d or price30d or median24h or median7d or median30d
+
+        # Cálculo de precio de referencia combinando la media de los volúmenes de venta disponibles
+        vol_periods = []
+        if sales24h > 0 and (median24h > 0 or price24h > 0):
+            p24_rep = median24h if median24h > 0 else price24h
+            vol_periods.append({"w": 0.45, "p": p24_rep})
+        if sales7d > 0 and (median7d > 0 or price7d > 0):
+            p7_rep = median7d if median7d > 0 else price7d
+            vol_periods.append({"w": 0.35, "p": p7_rep})
+        if sales30d > 0 and (median30d > 0 or price30d > 0):
+            p30_rep = median30d if median30d > 0 else price30d
+            vol_periods.append({"w": 0.20, "p": p30_rep})
+
+        if vol_periods:
+            tot_w = sum(vp["w"] for vp in vol_periods)
+            suggested_price = int(round(sum(vp["p"] * vp["w"] for vp in vol_periods) / tot_w))
+        else:
+            suggested_price = price24h or price7d or price30d or median24h or median7d or median30d
 
         sales_data = {
             "avgDailySales": avg_daily,
@@ -1120,7 +1143,13 @@ def process_single_message(payload):
                                 str(t_id): s_data
                             }
                         }
-                        http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
+                        res = http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
+                        if res.status_code == 200:
+                            data = res.json()
+                            for c in data.get("corrected_prices", []):
+                                c_old = c.get("old_price") or c.get("oldPrice") or 0
+                                c_new = c.get("new_price") or c.get("newPrice") or 0
+                                print(f"            • [CORRECCIÓN HDV] Precio actualizado a {c_new:,} k (Mercadillo tenía precio atípico de {c_old:,} k)", flush=True)
                     except Exception:
                         pass
 

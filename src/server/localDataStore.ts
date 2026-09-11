@@ -1198,7 +1198,7 @@ async function setSyncSettings(settings: SyncSettings): Promise<SyncSettings> {
   return normalizedSettings;
 }
 
-async function getActivePriceProfileId(): Promise<number> {
+export async function getActivePriceProfileId(): Promise<number> {
   if (cachedActivePriceProfileId !== null) {
     return cachedActivePriceProfileId;
   }
@@ -1379,7 +1379,22 @@ async function replaceAllRecipes(recipes: DofusRecipe[]): Promise<void> {
   await database.execute("UPDATE items SET has_recipe = 0 WHERE id NOT IN (SELECT result_id FROM recipes)");
 }
 
-async function upsertPrice(
+export async function getPrice(profileId: number, itemId: number): Promise<number> {
+  try {
+    const res = await database.execute({
+      sql: "SELECT price FROM profile_prices WHERE profile_id = ? AND item_id = ?",
+      args: [profileId, itemId],
+    });
+    if (res.rows.length > 0) {
+      return Number(res.rows[0].price) || 0;
+    }
+  } catch (err) {
+    console.warn(`[getPrice] Error:`, err);
+  }
+  return 0;
+}
+
+export async function upsertPrice(
   profileId: number,
   itemId: number,
   price: number,
@@ -2398,6 +2413,30 @@ export async function getProfileSalesVolume(profileId?: number): Promise<SalesVo
   }
 }
 
+export async function getProfileSalesVolumeForItem(profileId: number, itemId: number): Promise<ItemSalesVolume | null> {
+  try {
+    const res = await database.execute({
+      sql: "SELECT updated_at, sales_24h, sales_7d, sales_30d, avg_daily_sales, suggested_price, price_strategy FROM profile_sales_volume WHERE profile_id = ? AND item_id = ?",
+      args: [profileId, itemId],
+    });
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      return {
+        sales24h: row.sales_24h != null ? Number(row.sales_24h) : undefined,
+        sales7d: row.sales_7d != null ? Number(row.sales_7d) : undefined,
+        sales30d: row.sales_30d != null ? Number(row.sales_30d) : undefined,
+        avgDailySales: row.avg_daily_sales != null ? Number(row.avg_daily_sales) : undefined,
+        suggestedPrice: row.suggested_price != null ? Number(row.suggested_price) : undefined,
+        priceStrategy: (row.price_strategy as any) || undefined,
+        updatedAt: Number(row.updated_at) || 0,
+      };
+    }
+  } catch (err) {
+    console.warn(`[getProfileSalesVolumeForItem] Error:`, err);
+  }
+  return null;
+}
+
 export async function setItemSalesVolume(
   itemId: number,
   volume: Partial<ItemSalesVolume>,
@@ -2528,6 +2567,57 @@ export async function bulkSetItemSalesVolume(
   }
 
   return { success: true, count: statements.length };
+}
+
+export async function correctPricesAgainstSalesVolume(
+  profileId: number,
+  volumes: Record<number, any>
+): Promise<Array<{ item_id: number; item_name: string; old_price: number; new_price: number }>> {
+  const corrected: Array<{ item_id: number; item_name: string; old_price: number; new_price: number }> = [];
+  const entries = Object.entries(volumes);
+
+  for (const [idStr, svRaw] of entries) {
+    const sItemId = Number(idStr);
+    const sv = svRaw as any;
+    const sug = Number(sv?.suggestedPrice || sv?.suggested_price || 0);
+    if (sItemId > 0 && sug >= 50) {
+      const currentPrice = await getPrice(profileId, sItemId);
+      if (currentPrice > 0) {
+        const isExaggerated = currentPrice >= sug * 3.0;
+        const isExtremeDump = currentPrice <= sug * 0.25;
+        if (isExaggerated || isExtremeDump) {
+          await upsertPrice(profileId, sItemId, sug, "cotizacion_safeguard");
+          invalidateServerBootstrapCache();
+
+          let itemName = "";
+          try {
+            const it = await getOrFetchItemById(sItemId);
+            itemName = it?.name?.es || `Objeto #${sItemId}`;
+          } catch {
+            itemName = `Objeto #${sItemId}`;
+          }
+
+          marketEvents.emit("price_update", {
+            profileId,
+            itemId: sItemId,
+            price: sug,
+            updatedAt: Date.now(),
+            name: itemName,
+            source: "cotizacion_safeguard",
+          });
+
+          corrected.push({
+            item_id: sItemId,
+            item_name: itemName,
+            old_price: currentPrice,
+            new_price: sug,
+          });
+        }
+      }
+    }
+  }
+
+  return corrected;
 }
 
 export async function overwritePrices(
@@ -2757,6 +2847,8 @@ export interface IngestMarketPricePayload {
   precios: Record<string, number | string> | Array<number | string>;
   server?: string;
   source?: string;
+  suggested_price?: number;
+  suggestedPrice?: number;
 }
 
 export interface IngestMarketPriceResult {
@@ -2769,6 +2861,8 @@ export interface IngestMarketPriceResult {
   max_price: number;
   raw_average: number;
   offers_count: number;
+  filtered_outliers?: number;
+  anti_troll_triggered?: boolean;
   server: string;
   profile_id: number;
   updated_at: number;
@@ -2820,7 +2914,8 @@ export interface CalculatedMarketPriceResult {
 export function calculateItemMarketPrice(
   item: DofusItem | null | undefined,
   precios: any,
-  fallbackType?: string
+  fallbackType?: string,
+  suggestedPrice?: number
 ): CalculatedMarketPriceResult {
   const typeId = Number(item?.typeId || item?.type?.id || 0);
   const superCategoryId = Number((item as any)?.superCategoryId || item?.type?.superCategoryId || 0);
@@ -3003,6 +3098,18 @@ export function calculateItemMarketPrice(
     }
   }
 
+  // Salvaguarda de Precios Inflados / Ausencia de Stock contra Cotización Histórica:
+  // Si el precio calculado de lotes vivos difiere de forma atípica (>= 3.0x o <= 0.25x)
+  // respecto a la cotización de mercado registrada:
+  if (suggestedPrice && suggestedPrice >= 50 && finalPrice > 0) {
+    const isExaggerated = finalPrice >= suggestedPrice * 3.0;
+    const isExtremeDump = finalPrice <= suggestedPrice * 0.25;
+    if (isExaggerated || isExtremeDump) {
+      antiTrollTriggered = true;
+      finalPrice = Math.round(suggestedPrice);
+    }
+  }
+
   return {
     resolvedType,
     finalPrice,
@@ -3060,6 +3167,8 @@ export async function processAndIngestMarketPrice(
       max_price: 0,
       raw_average: 0,
       offers_count: 0,
+      filtered_outliers: 0,
+      anti_troll_triggered: false,
       server: payload.server || "Draconiros",
       profile_id: 1,
       updated_at: Date.now(),
@@ -3069,8 +3178,15 @@ export async function processAndIngestMarketPrice(
   const cleanServer = typeof payload.server === "string" ? payload.server.slice(0, 60) : "";
   const { profileId, profileName } = await getProfileIdByServerNameOrSlug(cleanServer);
 
-  // 2. Calcular precio de mercado respetando la categoría canónica
-  const calc = calculateItemMarketPrice(itemRecord, payload.precios, (payload.type || '').toLowerCase());
+  // Obtener precio sugerido de referencia si existe
+  let refSuggestedPrice = Number(payload.suggested_price || payload.suggestedPrice || 0);
+  if (!refSuggestedPrice) {
+    const vol = await getProfileSalesVolumeForItem(profileId, itemId);
+    refSuggestedPrice = vol?.suggestedPrice || 0;
+  }
+
+  // 2. Calcular precio de mercado respetando la categoría canónica y salvaguarda
+  const calc = calculateItemMarketPrice(itemRecord, payload.precios, (payload.type || '').toLowerCase(), refSuggestedPrice);
 
   const now = Date.now();
   if (calc.finalPrice > 0) {
@@ -3096,6 +3212,8 @@ export async function processAndIngestMarketPrice(
     max_price: calc.maxPrice,
     raw_average: calc.rawAvg,
     offers_count: calc.offersCount,
+    filtered_outliers: calc.filteredOutliers,
+    anti_troll_triggered: calc.antiTrollTriggered,
     server: profileName,
     profile_id: profileId,
     updated_at: now,
@@ -3112,6 +3230,37 @@ export async function processAndIngestMarketPricesBatch(
   const results: IngestMarketPriceResult[] = [];
   const profileMap = new Map<string, { profileId: number; profileName: string }>();
 
+  // Pre-fetch suggested prices for the batch if needed
+  const suggestedPriceMap = new Map<string, number>();
+  const idsNeedingSuggested = items
+    .filter(p => !p.suggested_price && !p.suggestedPrice)
+    .map(p => Number(p.item_id))
+    .filter(id => id > 0);
+
+  if (idsNeedingSuggested.length > 0) {
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < idsNeedingSuggested.length; i += CHUNK_SIZE) {
+      const chunk = idsNeedingSuggested.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      try {
+        const queryRes = await database.execute({
+          sql: `SELECT profile_id, item_id, suggested_price FROM profile_sales_volume WHERE item_id IN (${placeholders})`,
+          args: chunk,
+        });
+        for (const row of queryRes.rows) {
+          const pid = Number(row.profile_id);
+          const iid = Number(row.item_id);
+          const sug = Number(row.suggested_price) || 0;
+          if (sug > 0) {
+            suggestedPriceMap.set(`${pid}:${iid}`, sug);
+          }
+        }
+      } catch (err) {
+        console.warn("[processAndIngestMarketPricesBatch] Error querying suggested prices:", err);
+      }
+    }
+  }
+
   // 1. In-memory parsing and calculation
   const parsedItems: Array<{
     payload: IngestMarketPricePayload;
@@ -3124,6 +3273,8 @@ export async function processAndIngestMarketPricesBatch(
     maxPrice: number;
     rawAvg: number;
     offersCount: number;
+    filteredOutliers: number;
+    antiTrollTriggered: boolean;
     resolvedName: string;
   }> = [];
 
@@ -3165,7 +3316,8 @@ export async function processAndIngestMarketPricesBatch(
       continue; // Ignorar paquetes corruptos con IDs que no existen en Dofus o colisiones falsas
     }
 
-    const calc = calculateItemMarketPrice(itemRecord, payload.precios, (payload.type || '').toLowerCase());
+    const refSuggestedPrice = Number(payload.suggested_price || payload.suggestedPrice || suggestedPriceMap.get(`${profileId}:${itemId}`) || 0);
+    const calc = calculateItemMarketPrice(itemRecord, payload.precios, (payload.type || '').toLowerCase(), refSuggestedPrice);
 
     parsedItems.push({
       payload,
@@ -3178,6 +3330,8 @@ export async function processAndIngestMarketPricesBatch(
       maxPrice: calc.maxPrice,
       rawAvg: calc.rawAvg,
       offersCount: calc.offersCount,
+      filteredOutliers: calc.filteredOutliers,
+      antiTrollTriggered: calc.antiTrollTriggered,
       resolvedName,
     });
   }
@@ -3217,7 +3371,7 @@ export async function processAndIngestMarketPricesBatch(
   const statements: Array<{ sql: string; args: any[] }> = [];
 
   for (const item of parsedItems) {
-    const { profileId, profileName, itemId, finalPrice, minPrice, maxPrice, rawAvg, offersCount, resolvedName, resolvedType, payload } = item;
+    const { profileId, profileName, itemId, finalPrice, minPrice, maxPrice, rawAvg, offersCount, filteredOutliers, antiTrollTriggered, resolvedName, resolvedType, payload } = item;
     const key = `${profileId}:${itemId}`;
     const oldPrice = oldPricesMap.get(key) || 0;
 
@@ -3261,6 +3415,8 @@ export async function processAndIngestMarketPricesBatch(
       max_price: maxPrice,
       raw_average: rawAvg,
       offers_count: offersCount,
+      filtered_outliers: filteredOutliers,
+      anti_troll_triggered: antiTrollTriggered,
       server: profileName,
       profile_id: profileId,
       updated_at: now,
