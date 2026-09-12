@@ -157,7 +157,8 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
   // ── 2. Estado de Estrategia de Auto-Optimización ───────────
   const [strategy, setStrategy] = useState<JobOptimizerStrategy>(() => {
     const saved = getStoredJobPlanV2();
-    return saved?.strategy ?? "low_budget";
+    if (saved?.strategy === "mixed") return "mixed_budget";
+    return saved?.strategy ?? "mixed_budget";
   });
 
   const [maxDailyAbsorptionRatio, setMaxDailyAbsorptionRatio] = useState<number>(() => {
@@ -1001,13 +1002,14 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
               onChange={(e) => setStrategy(e.target.value as JobOptimizerStrategy)}
               className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-medium focus:outline-none"
             >
-              <option value="mixed">🔀 Mixto Inteligente (Venta HDV + Romper máx 3x)</option>
-              <option value="low_budget">💸 Mínimo Gasto de Bolsillo (Low Cost)</option>
-              <option value="profit">💰 Máxima Rentabilidad (Reventa HDV)</option>
-              <option value="high_turnover">🌊 Alta Rotación y Liquidez</option>
-              <option value="fastest">⚡ Ultrarrápido (Menos Crafteos)</option>
+              <option value="mixed_budget">🔀 Mixto: Menor Inversión (Venta HDV + Romper máx 3x)</option>
+              <option value="mixed_profit">🔀 Mixto: Máxima Rentabilidad (Venta HDV + Romper máx 3x)</option>
+              <option value="low_budget">💸 Mínimo Gasto de Bolsillo (Solo Crafteo Barato)</option>
+              <option value="profit">💰 Máxima Rentabilidad (Solo Reventa HDV)</option>
+              <option value="high_turnover">🌊 Alta Rotación y Liquidez (Venta Rápida)</option>
+              <option value="fastest">⚡ Ultrarrápido (Menos Crafteos / Más XP)</option>
               <option value="consumables_only">🌿 Solo Consumibles / Componentes</option>
-              <option value="crush_runes">♻️ Rompe-Runas (Machacado)</option>
+              <option value="crush_runes">♻️ Rompe-Runas (Solo Machacado)</option>
             </select>
 
             <button

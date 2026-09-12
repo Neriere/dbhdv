@@ -649,7 +649,49 @@ test("generateOptimizedPhases consolida objetos idénticos por destino en cada f
   }
 });
 
+test("Estrategias Mixtas: mixed_budget (menor inversión) vs mixed_profit (máxima rentabilidad)", () => {
+  const phasesBudget = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 60,
+    targetLevel: 100,
+    strategy: "mixed_budget",
+  });
+
+  const phasesProfit = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 60,
+    targetLevel: 100,
+    strategy: "mixed_profit",
+  });
+
+  assert.ok(phasesBudget.length > 0, "mixed_budget debe generar fases");
+  assert.ok(phasesProfit.length > 0, "mixed_profit debe generar fases");
+
+  // Verificar cap estricto <= 3 para crush en ambas estrategias
+  for (const [name, phases] of [["mixed_budget", phasesBudget], ["mixed_profit", phasesProfit]] as const) {
+    const crushCounts = new Map<number, number>();
+    for (const c of phases.flatMap((p) => p.crafts)) {
+      if (c.destination === "crush") {
+        const prev = crushCounts.get(c.item.id) || 0;
+        crushCounts.set(c.item.id, prev + c.amount);
+      }
+    }
+    for (const [itemId, count] of crushCounts.entries()) {
+      assert.ok(count <= 3, `[${name}] El ítem #${itemId} se rompió ${count} veces (máx 3)`);
+    }
+  }
+
+  // Comparar inversiones: mixed_budget busca menor inversión bruta / gasto de bolsillo que mixed_profit
+  const totalInvestBudget = phasesBudget.reduce((sum, p) => sum + p.totalInvestment, 0);
+  const totalInvestProfit = phasesProfit.reduce((sum, p) => sum + p.totalInvestment, 0);
+  assert.ok(
+    totalInvestBudget <= totalInvestProfit,
+    `La inversión en mixed_budget (${totalInvestBudget}k) no debe ser mayor que en mixed_profit (${totalInvestProfit}k)`
+  );
+});
+
 test.after(() => {
   setTimeout(() => process.exit(0), 50);
 });
+
 

@@ -35,13 +35,15 @@ export { isQuestOrZeroXpCraft };
 // ----------------------------------------------------
 
 export type JobOptimizerStrategy =
+  | "mixed_budget"      // 🔀 Mixto: Menor Inversión (Venta HDV + Romper máx 3x para amortizar rápido)
+  | "mixed_profit"      // 🔀 Mixto: Máxima Rentabilidad (Venta HDV + Romper máx 3x por beneficio neto)
+  | "mixed"             // 🔀 Mixto (alias de compatibilidad con mixed_budget)
   | "low_budget"        // 💸 Mínimo Gasto de Bolsillo (menor coste bruto total en ingredientes)
   | "profit"            // 💰 Máxima Rentabilidad (mayor ganancia neta en mercadillo)
   | "high_turnover"     // 🌊 Alta Rotación y Liquidez (venta rápida en 24-48h)
   | "fastest"           // ⚡ Ultrarrápido (máxima XP por craft, menos clics)
   | "consumables_only"  // 🌿 Solo Consumibles/Componentes (apilables en x100, sin equipables)
-  | "crush_runes"       // ♻️ Rompe-Runas (craftear para machacar en la Rompedora)
-  | "mixed";            // 🔀 Mixto Inteligente (Venta HDV + Romper Runas máx 3x)
+  | "crush_runes";      // ♻️ Rompe-Runas (craftear para machacar en la Rompedora)
 
 export interface SelectedCraftEntry {
   recipe: DofusRecipe;
@@ -792,7 +794,10 @@ export function generateOptimizedPhases(
       }
 
       const runesEstimate =
-        strategy === "crush_runes" || strategy === "mixed"
+        strategy === "crush_runes" ||
+        strategy === "mixed" ||
+        strategy === "mixed_budget" ||
+        strategy === "mixed_profit"
           ? calculateEstimatedRunesValue(item)
           : 0;
 
@@ -831,11 +836,13 @@ export function generateOptimizedPhases(
   const cumulativeCrushUsage = new Map<number, number>();
 
   for (const tier of tiers) {
-    const tierStartLvl = xpToLevel(runningXp);
+    const tierStartLvl = Math.max(tier.fromLevel, xpToLevel(runningXp));
     const tierTargetLvl = tier.toLevel;
     const tierStartXp = runningXp;
     const tierTargetXp = levelToXp(tierTargetLvl);
     const requiredXp = Math.max(0, tierTargetXp - tierStartXp);
+
+    if (tierStartXp >= tierTargetXp) continue;
 
     const tierSequence: Array<{
       recipe: DofusRecipe;
@@ -882,12 +889,38 @@ export function generateOptimizedPhases(
         const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, xpRatio, isBoostedServer);
         if (xp <= 0) continue;
 
-        if (strategy === "mixed") {
+        const isMixedStrategy =
+          strategy === "mixed" ||
+          strategy === "mixed_budget" ||
+          strategy === "mixed_profit";
+
+        if (isMixedStrategy) {
+          const isProfitMode = strategy === "mixed_profit";
+
           // Opción A: Venta en HDV
           const usedSales = cumulativeSalesUsage.get(r.item.id) || 0;
           const capacitySales = Math.max(0, r.maxAllowed - usedSales);
-          const saleProfit = (r.netSale + r.sebuscalinesValue) - r.craftCost;
-          const scoreSale = -(saleProfit / xp);
+          const saleRevenue = r.netSale + r.sebuscalinesValue;
+          const saleProfit = saleRevenue - r.craftCost;
+
+          let scoreSale: number;
+          if (isProfitMode) {
+            // Máxima ganancia neta por XP
+            scoreSale = -(saleProfit / xp);
+          } else {
+            // Menor inversión: amortizar gasto lo más rápido posible.
+            // Para venta HDV, la venta tarda días según rotación (liquidez diferida)
+            const turnoverWeight =
+              r.turnoverRating === "alta" ? 0.9 : r.turnoverRating === "media" ? 0.6 : 0.3;
+            const effectiveSaleRecovery = Math.min(r.craftCost, saleRevenue * turnoverWeight);
+            const netOutlaySale = Math.max(0, r.craftCost - effectiveSaleRecovery);
+            // Factor de desembolso neto no recuperado inmediatamente
+            const outlayRatio = Math.max(0.05, netOutlaySale / Math.max(1, r.craftCost));
+            scoreSale = (r.craftCost / xp) * outlayRatio;
+            if (saleProfit > 0) {
+              scoreSale -= (saleProfit / xp) * 0.1;
+            }
+          }
 
           scored.push({
             item: r.item,
@@ -907,8 +940,25 @@ export function generateOptimizedPhases(
           if (r.runesEstimate > 0) {
             const usedCrush = cumulativeCrushUsage.get(r.item.id) || 0;
             const capacityCrush = Math.max(0, 3 - usedCrush); // CAP ESTRICTO DE 3 VECES
-            const crushProfit = (r.runesEstimate + r.sebuscalinesValue) - r.craftCost;
-            const scoreCrush = -(crushProfit / xp);
+            const crushRevenue = r.runesEstimate + r.sebuscalinesValue;
+            const crushProfit = crushRevenue - r.craftCost;
+
+            let scoreCrush: number;
+            if (isProfitMode) {
+              // Máxima ganancia neta por XP
+              scoreCrush = -(crushProfit / xp);
+            } else {
+              // Menor inversión: amortización inmediata líquida en runas
+              // Las runas tienen rotación inmediata y permiten recuperar dinero casi al instante
+              const netOutlayCrush = Math.max(0, r.craftCost - crushRevenue);
+              const outlayRatioCrush = Math.max(0.02, netOutlayCrush / Math.max(1, r.craftCost));
+              scoreCrush = (r.craftCost / xp) * outlayRatioCrush;
+              if (crushProfit > 0) {
+                // Si romper genera ganancia neta positiva, bonificar fuertemente
+                // para que se rompa prioritariamente (hasta el cap de 3)
+                scoreCrush = -(crushProfit / xp) - 100;
+              }
+            }
 
             scored.push({
               item: r.item,
@@ -974,9 +1024,14 @@ export function generateOptimizedPhases(
 
       if (scored.length === 0) break;
 
+      const isMixed =
+        strategy === "mixed" ||
+        strategy === "mixed_budget" ||
+        strategy === "mixed_profit";
+
       let candidates = scored.filter((s) => s.capacity > 0);
       if (candidates.length === 0) {
-        if (strategy === "mixed") {
+        if (isMixed) {
           // En modo mixto nunca sobrepasar el cap de 3 de romper si se puede vender
           candidates = scored.filter((s) => s.destination !== "crush");
         }
@@ -989,11 +1044,12 @@ export function generateOptimizedPhases(
         if (Math.abs(a.score - b.score) > 1e-9) {
           return a.score - b.score;
         }
-        if (strategy === "low_budget") {
+        if (strategy === "low_budget" || strategy === "mixed_budget" || strategy === "mixed") {
+          if (a.craftCost !== b.craftCost) return a.craftCost - b.craftCost;
           if (b.profit !== a.profit) return b.profit - a.profit;
-          return a.craftCost - b.craftCost;
+          return b.xpPerCraft - a.xpPerCraft;
         }
-        if (strategy === "profit" || strategy === "mixed") {
+        if (strategy === "profit" || strategy === "mixed_profit") {
           if (b.profit !== a.profit) return b.profit - a.profit;
           return b.xpPerCraft - a.xpPerCraft;
         }
@@ -1060,7 +1116,8 @@ export function generateOptimizedPhases(
           accProfit: number
         ) {
           if (accXp >= xpToNextLevel) {
-            const metric = (strategy === "profit" || strategy === "mixed") ? -accProfit : accCost;
+            const isProfitFocused = strategy === "profit" || strategy === "mixed_profit";
+            const metric = isProfitFocused ? -accProfit : accCost;
             if (metric < bestMetric) {
               bestMetric = metric;
               bestCombo = combo.map((c) => ({ ...c }));
