@@ -233,6 +233,22 @@ export function isOmittedItem(item: {
     return true;
   }
 
+  // Criterios de crafteo exclusivo de misión (Qa= Quête active, Qo= Quête objectif, Qf= Quête finie)
+  const craftCond = String(
+    (item as any)?.craftConditionalCriterion ??
+    (item as any)?.craft_conditional_criterion ??
+    ""
+  );
+  if (craftCond && (/\bQ[aoef]\s*=/i.test(craftCond) || craftCond.includes("Qa=") || craftCond.includes("Qo="))) {
+    return true;
+  }
+
+  // Ítem de misión conocido sin XP o no comerciable
+  const rawItemId = Number(item.id || 0);
+  if (rawItemId === 10272 || (rawItemId > 0 && KNOWN_ZERO_XP_OR_QUEST_ITEM_IDS.has(rawItemId) && !BASIC_HARVEST_INGREDIENT_IDS.has(rawItemId))) {
+    return true;
+  }
+
   const nameStr = typeof item.name === "string" ? item.name : "";
   const nameEs = (
     typeof item.name === "object" ? item.name?.es || "" : nameStr
@@ -710,6 +726,144 @@ export function isClassItem(item: {
     if (spellModifierCount > 0 && (spellModifierCount === allEffects.length || spellModifierCount >= 2)) {
       return true;
     }
+  }
+
+  return false;
+}
+
+// Recursos básicos recolectables que pueden tener craftXpRatio = 0 pero se usan legítimamente como ingredientes
+export const BASIC_HARVEST_INGREDIENT_IDS = new Set<number>([
+  420,  // Hilo de lino
+  1001, // Tabla de madera de kokoko
+  1461, // Veneno azotador
+]);
+
+/**
+ * Listado exhaustivo de ítems de misión o crafteo especial con craftXpRatio = 0 en DofusDB
+ * Estos ítems NO dan experiencia de oficio, requieren pasos de misiones activas (Qa=/Qo=)
+ * o no tienen valor comercial en HDV, por lo que nunca deben incluirse en subidas de nivel.
+ */
+export const KNOWN_ZERO_XP_OR_QUEST_ITEM_IDS = new Set<number>([
+  10272, // Máscara de Sag (Masque à Zag - Lvl 180, Sastre, craftXpRatio: 0, Quest Brakmar)
+  10223, // Pala Heliktrochok (Lvl 179)
+  2151,  // Blopicero envenenado (Lvl 30)
+  9312,  // Sopa de berenjenas amakneana (Lvl 188)
+  9968,  // Botella de Zampaburg (Lvl 151)
+  9979,  // Filtro de longevidad (Lvl 158)
+  9980,  // Plato de fribamga (Lvl 158)
+  9981,  // Harina terrada (Lvl 158)
+  9982,  // Ensalada misela (Lvl 158)
+  9983,  // Hogazas querosas (Lvl 158)
+  10030, // Tejido remendón (Lvl 1)
+  10031, // Tinte naranja sanguina (Lvl 155)
+  10041, // Receptáculo de corruptita (Lvl 1)
+  10046, // Knut artesanal (Lvl 172)
+  10064, // Tinte mágico tenebroso (Lvl 174)
+  10065, // Loción Laérol (Lvl 175)
+  10070, // Tonel de bombú (Lvl 172)
+  10083, // Enchalada de pescado (Lvl 153)
+  10204, // Pócima de sesamobolizante (Lvl 180)
+  10285, // Lucio rebosante (Lvl 180)
+  11701, // Jugo de ardilla de las nieves exprimida (Lvl 60)
+  17442, // Puntas de knut (Lvl 172)
+  17443, // Mango de knut (Lvl 172)
+  17444, // Correas de knut (Lvl 172)
+  17460, // Varita ósea (Lvl 173)
+  17772, // Llave del panteón del rey Leorictus (Lvl 184)
+  17774, // Elixir de arakna (Lvl 184)
+  17777, // Llave del panteón del príncipe Djamal (Lvl 184)
+  17781, // Disolvente fosforescente (Lvl 185)
+  17785, // Llave del templo maldito (Lvl 186)
+  17792, // Sopa social de Astrub (Lvl 188)
+  18113, // Mixtura indecible (Lvl 1)
+  18203, // Tronco encantado (Lvl 110)
+  18208, // Gatrool krósmico (Lvl 120)
+  18348, // Flauta de mastodonte (Lvl 80)
+  18741, // Cofre de trampas de cazador (Lvl 190)
+  18742, // Brebaje muscular (Lvl 190)
+  18743, // Implantes rústicos (Lvl 190)
+  18836, // Brebaje de Nas Orazal (Lvl 1)
+  19415, // Guante de Zrid (Lvl 1)
+  19693, // Calzoncillo de lana (Lvl 1)
+  21713, // Pozo decorativo (Lvl 1)
+  21727, // Cofre decorativo (Lvl 1)
+  21752, // Ramo de flores de blop reineta (Lvl 1)
+  21753, // Ramo de flores de blop guinda (Lvl 1)
+  21754, // Ramo de flores de blop coco (Lvl 1)
+  21755, // Ramo de flores de blop índigo (Lvl 1)
+  420,   // Hilo de lino
+  1001,  // Tabla de madera de kokoko
+  1461,  // Veneno azotador
+]);
+
+/**
+ * Validador estricto para descartar cualquier crafteo de misión, sin XP o no apto para oficios.
+ */
+export function isQuestOrZeroXpCraft(
+  item?: any,
+  recipe?: any
+): boolean {
+  if (!item && !recipe) return false;
+
+  const itemId = Number(item?.id || recipe?.resultId || 0);
+
+  // 1. Ítems conocidos sin XP o de misión
+  if (itemId > 0 && KNOWN_ZERO_XP_OR_QUEST_ITEM_IDS.has(itemId)) {
+    return true;
+  }
+
+  // 2. Ratio oficial de XP de crafteo es exactamente 0
+  const xpRatio =
+    item?.craftXpRatio ??
+    recipe?.craftXpRatio ??
+    recipe?.result?.craftXpRatio ??
+    item?.craft_xp_ratio;
+  if (xpRatio === 0) {
+    return true;
+  }
+
+  // 3. Criterio condicional de crafteo requiere misión activa (Qa= / Qo= / Qf=)
+  const craftCond = String(
+    item?.craftConditionalCriterion ??
+    recipe?.craftConditionalCriterion ??
+    recipe?.result?.craftConditionalCriterion ??
+    item?.craft_conditional_criterion ??
+    ""
+  );
+  if (craftCond && (/\bQ[aoef]\s*=/i.test(craftCond) || craftCond.includes("Qa=") || craftCond.includes("Qo="))) {
+    return true;
+  }
+
+  // 4. Supertipo de objetos de misión (superTypeId 14 en DofusDB = Objet de quête)
+  const superTypeId =
+    item?.superTypeId ??
+    item?.type?.superTypeId ??
+    item?.type?.superType?.id ??
+    recipe?.result?.type?.superTypeId;
+  if (superTypeId === 14) {
+    return true;
+  }
+
+  // 5. Supercategoría de misión (superCategoryId 4 en DofusDB = Objets de quête)
+  const superCategoryId =
+    item?.type?.superCategoryId ??
+    item?.superCategoryId ??
+    recipe?.result?.type?.superCategoryId;
+  if (superCategoryId === 4) {
+    return true;
+  }
+
+  // 6. Tipos específicos de misión conocidos en Dofus
+  const typeId = Number(item?.typeId || item?.type?.id || recipe?.resultTypeId || 0);
+  if (typeId > 0 && [24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 155, 156, 168, 171, 178, 186, 198, 312].includes(typeId)) {
+    return true;
+  }
+
+  // 7. Si no tiene precio base ni en mercadillo y el nombre o descripción menciona explícitamente misión
+  const nameStr = typeof item?.name === "string" ? item.name : item?.name?.es || recipe?.resultName || "";
+  const nameLower = String(nameStr).toLowerCase();
+  if (nameLower.includes("objeto de misión") || nameLower.includes("objeto de mision") || nameLower.includes("(misión)")) {
+    return true;
   }
 
   return false;

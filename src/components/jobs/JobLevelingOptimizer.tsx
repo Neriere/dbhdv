@@ -60,6 +60,7 @@ import {
   getStoredJobPlanV2,
   saveStoredJobPlanV2,
   clearStoredJobPlanV2,
+  isQuestOrZeroXpCraft,
 } from "../../services/jobLevelingService";
 import { useUserJobs } from "../../hooks/useUserJobs";
 import {
@@ -476,7 +477,11 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       const phaseStartXp = actualXp;
       const phaseTargetXp = levelToXp(nextM);
 
-      const sim = simulateCraftBatch(phaseStartXp, item.level || 1, 1, xpMultiplier, isBoostedServer);
+      const itemRatio = isQuestOrZeroXpCraft(item, recipe)
+        ? 0
+        : ((item as any)?.craftXpRatio ?? (recipe as any)?.craftXpRatio ?? 1.0);
+
+      const sim = simulateCraftBatch(phaseStartXp, item.level || 1, 1, xpMultiplier, isBoostedServer, itemRatio);
       const recalculated = recalculateSelectedCraftsSequence(
         phaseStartXp,
         [{ recipe, item, amount: 1 }],
@@ -519,12 +524,17 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       return;
     }
 
+    const itemRatio = isQuestOrZeroXpCraft(item, recipe)
+      ? 0
+      : ((item as any)?.craftXpRatio ?? (recipe as any)?.craftXpRatio ?? 1.0);
+
     const sim = simulateCraftsUntilLevel(
       actualXp,
       item.level || 1,
       targetLvl,
       xpMultiplier,
-      isBoostedServer
+      isBoostedServer,
+      itemRatio
     );
 
     if (sim.amountNeeded <= 0) return;
@@ -664,7 +674,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     const salesMap = getStoredSalesVolumeMap();
 
     return snapshot
-      .filter((item) => item.jobId === jobId && item.recipeData?.ingredientIds?.length)
+      .filter((item) => {
+        if (item.jobId !== jobId || !item.recipeData?.ingredientIds?.length) return false;
+        // Excluir estrictamente recetas de misión o que otorgan 0 XP
+        if (isQuestOrZeroXpCraft(item, item.recipeData)) return false;
+        return true;
+      })
       .map((item) => {
         const itemLevel = item.level || 1;
         const recipe = item.recipeData!;
@@ -673,7 +688,10 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         const netSale = Math.floor(marketPrice * 0.98);
         const totalRevenue = netSale + costInfo.sebuscalinesValue;
         const profit = totalRevenue - costInfo.cost;
-        const xpAtCurrent = getCraftXpByJobLevel(itemLevel, actualLevel, xpMultiplier, 1.0, isBoostedServer);
+        const xpRatio = (item as any)?.craftXpRatio !== undefined
+          ? (item as any).craftXpRatio
+          : (recipe as any)?.craftXpRatio ?? 1.0;
+        const xpAtCurrent = getCraftXpByJobLevel(itemLevel, actualLevel, xpMultiplier, xpRatio, isBoostedServer);
 
         const volumeData = salesMap[item.id] as ItemSalesVolume | undefined;
         const salesAnalysis = analyzeSalesVolume(marketPrice, volumeData);
@@ -1266,9 +1284,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                       />
                                     </td>
 
-                                    <td className="py-2.5 px-3 text-right font-bold text-sky-400">
-                                      +{c.xpGained.toLocaleString()}
-                                    </td>
+                                     <td className="py-2.5 px-3 text-right font-bold font-mono">
+                                       {c.xpGained <= 0 ? (
+                                         <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                           0 XP (Misión)
+                                         </span>
+                                       ) : (
+                                         <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                                       )}
+                                     </td>
 
                                     <td className="py-2.5 px-4 font-sans">
                                       <div className="flex flex-wrap items-center gap-1 max-w-sm">
@@ -1408,9 +1432,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                             />
                           </td>
 
-                          <td className="py-3 px-3 text-right font-bold text-sky-400">
-                            +{c.xpGained.toLocaleString()}
-                          </td>
+                           <td className="py-3 px-3 text-right font-bold font-mono">
+                             {c.xpGained <= 0 ? (
+                               <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                 0 XP (Misión)
+                               </span>
+                             ) : (
+                               <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                             )}
+                           </td>
 
                           <td className="py-3 px-4 font-sans">
                             <div className="flex flex-wrap items-center gap-1.5 max-w-sm">

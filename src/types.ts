@@ -42,6 +42,12 @@ export interface DofusItem {
   itemTypeId?: number;
   price?: number;
   hasRecipe?: boolean;
+  craftXpRatio?: number;
+  craftConditionalCriterion?: string;
+  craftVisibleCriterion?: string;
+  craftFeasibleCriterion?: string;
+  exchangeable?: boolean;
+  isSaleable?: boolean;
 }
 
 export interface DofusRecipeIngredient {
@@ -59,6 +65,8 @@ export interface DofusRecipe {
   quantities: number[];
   ingredients?: DofusRecipeIngredient[];
   jobId?: number;
+  craftXpRatio?: number;
+  craftConditionalCriterion?: string;
 }
 
 export interface DofusEffectDefinition {

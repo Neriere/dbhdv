@@ -27,6 +27,8 @@ import {
 } from "./bycCostService";
 import { USER_JOBS_DEFINITIONS, JobConfigDefinition } from "./userJobsService";
 import { DofusRecipe, DofusItem } from "../types";
+import { isQuestOrZeroXpCraft } from "../data/dofusJobs";
+export { isQuestOrZeroXpCraft };
 
 // ----------------------------------------------------
 // Tipos y Modelos de Datos
@@ -365,14 +367,23 @@ export function simulateCraftBatch(
   recipeLevel: number,
   amount: number,
   xpMultiplier = 1.0,
-  isBoostedServer = false
+  isBoostedServer = false,
+  craftXpRatio = 1.0
 ): { totalXpEarned: number; finalXp: number; finalLevel: number } {
   let runningXp = startingXp;
   let totalXpEarned = 0;
 
+  if (craftXpRatio === 0) {
+    return {
+      totalXpEarned: 0,
+      finalXp: startingXp,
+      finalLevel: xpToLevel(startingXp),
+    };
+  }
+
   for (let i = 0; i < amount; i++) {
     const currentLevel = xpToLevel(runningXp);
-    const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, 1.0, isBoostedServer);
+    const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, craftXpRatio, isBoostedServer);
     if (xp <= 0) break;
 
     totalXpEarned += xp;
@@ -396,15 +407,25 @@ export function simulateCraftsUntilLevel(
   targetLevel: number,
   xpMultiplier = 1.0,
   isBoostedServer = false,
+  craftXpRatio = 1.0,
   maxIterations = 50000
 ): { amountNeeded: number; totalXpEarned: number; finalXp: number; finalLevel: number } {
   let runningXp = startingXp;
   let totalXpEarned = 0;
   let amount = 0;
 
+  if (craftXpRatio === 0) {
+    return {
+      amountNeeded: 0,
+      totalXpEarned: 0,
+      finalXp: startingXp,
+      finalLevel: xpToLevel(startingXp),
+    };
+  }
+
   while (xpToLevel(runningXp) < targetLevel && amount < maxIterations) {
     const currentLevel = xpToLevel(runningXp);
-    const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, 1.0, isBoostedServer);
+    const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, craftXpRatio, isBoostedServer);
     if (xp <= 0) break;
 
     totalXpEarned += xp;
@@ -443,12 +464,18 @@ export function recalculateSelectedCraftsSequence(
     if (c.amount <= 0) continue;
 
     const startXpForThisItem = runningXp;
+    const isQuestOrZero = isQuestOrZeroXpCraft(c.item, c.recipe);
+    const itemCraftRatio = isQuestOrZero
+      ? 0
+      : ((c.item as any)?.craftXpRatio ?? (c.recipe as any)?.craftXpRatio ?? 1.0);
+
     const sim = simulateCraftBatch(
       startXpForThisItem,
       c.item.level || 1,
       c.amount,
       xpMultiplier,
-      isBoostedServer
+      isBoostedServer,
+      itemCraftRatio
     );
 
     runningXp = sim.finalXp;
@@ -682,11 +709,12 @@ export function generateOptimizedPhases(
   const tiers = calculateLevelTiers(cleanStart, cleanTarget);
   if (tiers.length === 0) return [];
 
-  // Filtrar recetas válidas para este oficio
+  // Filtrar recetas válidas para este oficio (excluyendo estrictamente recetas de misión o con 0 XP)
   const jobRecipes = snapshot
     .filter((item) => {
       if (item.jobId !== jobId) return false;
       if (!item.recipeData || !item.recipeData.ingredientIds?.length) return false;
+      if (isQuestOrZeroXpCraft(item, item.recipeData)) return false;
 
       if (strategy === "consumables_only") {
         const isEquip =
@@ -776,7 +804,10 @@ export function generateOptimizedPhases(
 
       const scored = available
         .map((r) => {
-          const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, 1.0, isBoostedServer);
+          const xpRatio = (r.item as any)?.craftXpRatio !== undefined
+            ? (r.item as any).craftXpRatio
+            : (r.recipe as any)?.craftXpRatio ?? 1.0;
+          const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, xpRatio, isBoostedServer);
           if (xp <= 0) return null;
 
           const used = cumulativeUsage.get(r.item.id) || 0;
@@ -788,10 +819,12 @@ export function generateOptimizedPhases(
               score = r.craftCost / xp;
               break;
             case "profit":
-              score = r.netCost / xp;
+              score = r.profit >= 0 ? -r.profit * 100 : r.netCost / xp;
               break;
             case "high_turnover":
-              score = r.netCost / xp - r.avgDailySales * 100;
+              const turnoverWeight =
+                r.turnoverRating === "alta" ? 0.3 : r.turnoverRating === "media" ? 0.7 : 2.0;
+              score = (r.craftCost / xp) * turnoverWeight;
               break;
             case "fastest":
               score = -xp;
@@ -800,13 +833,14 @@ export function generateOptimizedPhases(
               score = r.craftCost / xp;
               break;
             case "crush_runes":
-              const runeProfit = r.runesEstimate - r.craftCost;
-              score = -runeProfit / xp;
+              const netRunesBenefit = r.runesEstimate - r.craftCost;
+              score = netRunesBenefit >= 0 ? -netRunesBenefit * 100 : r.craftCost / xp;
               break;
           }
 
           return {
             ...r,
+            xpRatio,
             xpPerCraft: xp,
             score,
             capacity,
@@ -836,7 +870,8 @@ export function generateOptimizedPhases(
         chosen.level,
         batchSize,
         xpMultiplier,
-        isBoostedServer
+        isBoostedServer,
+        chosen.xpRatio
       );
 
       runningXp = sim.finalXp;

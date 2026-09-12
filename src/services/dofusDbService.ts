@@ -33,6 +33,7 @@ import {
   isDofusItem,
   getJobForItem,
   DOFUS_JOBS,
+  isQuestOrZeroXpCraft,
 } from "../data/dofusJobs";
 import {
   PRESET_CRAFTABLE_ITEMS,
@@ -1979,7 +1980,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
     const presetItem = presetItemMap.get(resultId);
     const itemToUse = existingItem || presetItem;
 
-    if (itemToUse && (isCosmeticItem(itemToUse as any) || isDofusItem(itemToUse as any) || isClassItem(itemToUse as any) || isOmittedItem(itemToUse as any))) {
+    if (itemToUse && (isCosmeticItem(itemToUse as any) || isDofusItem(itemToUse as any) || isClassItem(itemToUse as any) || isOmittedItem(itemToUse as any) || isQuestOrZeroXpCraft(itemToUse as any, recipe))) {
       continue;
     }
 
@@ -2038,7 +2039,7 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
   }
 
   for (const item of importedItems) {
-    if (processedResultIds.has(item.id) || isOmittedItem(item) || isDofusItem(item)) {
+    if (processedResultIds.has(item.id) || isOmittedItem(item) || isDofusItem(item) || isQuestOrZeroXpCraft(item)) {
       continue;
     }
 
@@ -2746,12 +2747,25 @@ export async function performFullItemImport(
               }
             }
             if (ingredientIds.length > 0) {
+              const craftXpRatio = typeof r.craftXpRatio === "number"
+                ? r.craftXpRatio
+                : typeof (r.result as any)?.craftXpRatio === "number"
+                  ? (r.result as any).craftXpRatio
+                  : undefined;
+              const craftConditionalCriterion = typeof r.craftConditionalCriterion === "string"
+                ? r.craftConditionalCriterion
+                : typeof (r.result as any)?.craftConditionalCriterion === "string"
+                  ? (r.result as any).craftConditionalCriterion
+                  : undefined;
+
               allRecipes.push({
                 id: Number(r.id) || resultId,
                 resultId,
                 ingredientIds,
                 quantities,
                 jobId: Number(r.jobId || r.job_id) || undefined,
+                ...(craftXpRatio !== undefined ? { craftXpRatio } : {}),
+                ...(craftConditionalCriterion ? { craftConditionalCriterion } : {}),
               });
             }
           }

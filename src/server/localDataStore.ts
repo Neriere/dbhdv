@@ -865,6 +865,22 @@ export function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusIt
     hasRecipe: Boolean(rawItem.hasRecipe || (rawItem as any).recipe || (rawItem as any).craft),
     isIngredient: Boolean((rawItem as any).isIngredient),
     price: typeof rawItem.price === "number" ? rawItem.price : undefined,
+    ...(typeof rawItem.craftXpRatio === "number"
+      ? { craftXpRatio: rawItem.craftXpRatio }
+      : typeof (rawItem as any).craft_xp_ratio === "number"
+        ? { craftXpRatio: (rawItem as any).craft_xp_ratio }
+        : {}),
+    ...(typeof rawItem.craftConditionalCriterion === "string" && rawItem.craftConditionalCriterion
+      ? { craftConditionalCriterion: rawItem.craftConditionalCriterion }
+      : typeof (rawItem as any).craft_conditional_criterion === "string" && (rawItem as any).craft_conditional_criterion
+        ? { craftConditionalCriterion: (rawItem as any).craft_conditional_criterion }
+        : {}),
+    ...(typeof rawItem.craftVisibleCriterion === "string" && rawItem.craftVisibleCriterion
+      ? { craftVisibleCriterion: rawItem.craftVisibleCriterion }
+      : {}),
+    ...(typeof rawItem.craftFeasibleCriterion === "string" && rawItem.craftFeasibleCriterion
+      ? { craftFeasibleCriterion: rawItem.craftFeasibleCriterion }
+      : {}),
     ...(possibleEffects ? { possibleEffects } : {}),
     ...(effects ? { effects } : {}),
   } as DofusItem;
@@ -923,12 +939,25 @@ function normalizeRecipe(
       (rawRecipe.job as Record<string, unknown> | undefined)?.id ??
       0,
   );
+  const craftXpRatio = typeof rawRecipe.craftXpRatio === "number"
+    ? rawRecipe.craftXpRatio
+    : typeof (rawRecipe.result as any)?.craftXpRatio === "number"
+      ? (rawRecipe.result as any).craftXpRatio
+      : undefined;
+  const craftConditionalCriterion = typeof rawRecipe.craftConditionalCriterion === "string"
+    ? rawRecipe.craftConditionalCriterion
+    : typeof (rawRecipe.result as any)?.craftConditionalCriterion === "string"
+      ? (rawRecipe.result as any).craftConditionalCriterion
+      : undefined;
+
   return {
     id: Number(rawRecipe.id) || resultId,
     resultId,
     ingredientIds,
     quantities,
     jobId: extractedJobId > 0 ? extractedJobId : undefined,
+    ...(craftXpRatio !== undefined ? { craftXpRatio } : {}),
+    ...(craftConditionalCriterion ? { craftConditionalCriterion } : {}),
   };
 }
 

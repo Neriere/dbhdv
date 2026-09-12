@@ -12,6 +12,8 @@ import {
   recalculateSelectedCraftsSequence,
   calculateSummary,
   SUPPORTED_JOB_IDS,
+  isQuestOrZeroXpCraft,
+  generateOptimizedPhases,
 } from "../src/services/jobLevelingService.js";
 
 // Setup mock window and localStorage for headless Node environment
@@ -261,4 +263,86 @@ test("Retorno económico de Sebuscalines en crafteos de Busca y Captura (ByC)", 
   assert.equal(summary.totalNetRevenue, 2 * (490000 + 326400));
   assert.equal(summary.netProfitOrLoss, summary.totalNetRevenue - summary.totalInvestment);
 });
+
+test("Detección estricta de ítems de misión y crafteos sin XP (isQuestOrZeroXpCraft)", () => {
+  // 1. Ítem 10272 (Máscara de Sag) reportado por el usuario
+  assert.equal(isQuestOrZeroXpCraft({ id: 10272 }), true);
+  assert.equal(
+    isQuestOrZeroXpCraft({
+      id: 10272,
+      name: { es: "Máscara de Sag" } as any,
+      craftXpRatio: 0,
+      craftConditionalCriterion: "((Qa=457&Qo>3110)|(Qa=332&Qo>10373))",
+    }),
+    true
+  );
+
+  // 2. Cualquier ítem o receta con craftXpRatio = 0
+  assert.equal(isQuestOrZeroXpCraft({ id: 9312, craftXpRatio: 0 }), true);
+  assert.equal(isQuestOrZeroXpCraft(null, { resultId: 9999, craftXpRatio: 0 } as any), true);
+
+  // 3. Crafteos que requieren misiones activas (Qa= / Qo= / Qf=)
+  assert.equal(
+    isQuestOrZeroXpCraft({
+      id: 88888,
+      craftConditionalCriterion: "(Qa=1728&Qo>10933)",
+    }),
+    true
+  );
+
+  // 4. Objetos en categorías o supertipos de misión
+  assert.equal(isQuestOrZeroXpCraft({ id: 77777, typeId: 126 }), true);
+  assert.equal(isQuestOrZeroXpCraft({ id: 77777, type: { superTypeId: 14 } as any }), true);
+  assert.equal(isQuestOrZeroXpCraft({ id: 77777, type: { superCategoryId: 4 } as any }), true);
+
+  // 5. Ítems normales NO deben ser clasificados como misión
+  assert.equal(isQuestOrZeroXpCraft({ id: 2416, level: 200, name: "Congelorra" as any }), false);
+  assert.equal(isQuestOrZeroXpCraft({ id: 2469, level: 1, name: "Sombrero Pío Azul" as any }), false);
+});
+
+test("getCraftXpByJobLevel y simulaciones otorgan estrictamente 0 XP para crafteos con craftXpRatio = 0", () => {
+  // Sin ratio (default 1.0) da 3600 XP en nivel 180
+  const normalXp = getCraftXpByJobLevel(180, 180, 1.0, 1.0);
+  assert.equal(normalXp, 3600);
+
+  // Máscara de Sag (craftXpRatio = 0) da exactamente 0 XP
+  const zeroXp = getCraftXpByJobLevel(180, 180, 1.0, 0);
+  assert.equal(zeroXp, 0);
+
+  // simulateCraftBatch con ratio 0 retorna 0 XP ganado
+  const batchSim = simulateCraftBatch(10000, 180, 5, 1.0, false, 0);
+  assert.equal(batchSim.totalXpEarned, 0);
+  assert.equal(batchSim.finalXp, 10000);
+
+  // simulateCraftsUntilLevel con ratio 0 retorna 0 crafts y 0 XP
+  const untilSim = simulateCraftsUntilLevel(10000, 180, 190, 1.0, false, 0);
+  assert.equal(untilSim.amountNeeded, 0);
+  assert.equal(untilSim.totalXpEarned, 0);
+});
+
+test("recalculateSelectedCraftsSequence asigna 0 XP a Máscara de Sag y crafteos de misión", () => {
+  const sagCraft = {
+    recipe: {
+      id: 10272,
+      resultId: 10272,
+      ingredientIds: [7035, 426],
+      quantities: [2, 20],
+      craftXpRatio: 0,
+    } as any,
+    item: {
+      id: 10272,
+      level: 180,
+      name: { es: "Máscara de Sag" },
+      craftXpRatio: 0,
+      craftConditionalCriterion: "((Qa=457&Qo>3110)|(Qa=332&Qo>10373))",
+    } as any,
+    amount: 2,
+  };
+
+  const seq = recalculateSelectedCraftsSequence(100000, [sagCraft], 1.0, false, { 7035: 100, 426: 50 });
+  assert.equal(seq.updatedEntries.length, 1);
+  assert.equal(seq.updatedEntries[0].xpGained, 0);
+  assert.equal(seq.finalXp, 100000); // No avanza nada de XP
+});
+
 
