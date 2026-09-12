@@ -21,6 +21,11 @@ const mockStorage: Record<string, string> = {};
 (global as any).window = {
   dispatchEvent: () => true,
 };
+(global as any).fetch = () =>
+  Promise.resolve({
+    ok: true,
+    json: async () => ({ items: [], recipes: {} }),
+  });
 (global as any).localStorage = {
   getItem: (key: string) => mockStorage[key] || null,
   setItem: (key: string, val: string) => {
@@ -396,6 +401,109 @@ test("generateOptimizedPhases en modo profit maximiza ganancias con mayor absorc
     );
   }
 });
+
+test("Restricción estricta de nivel en fórmulas de XP y simulador de crafteo", () => {
+  // 1. getCraftXpByJobLevel debe retornar estrictamente 0 si jobLevel < recipeLevel
+  const xpAt193For194 = getCraftXpByJobLevel(194, 193);
+  assert.equal(xpAt193For194, 0, "No debe otorgar XP a un personaje de nivel 193 crafteando receta de nivel 194");
+
+  const xpAt10For20 = getCraftXpByJobLevel(20, 10);
+  assert.equal(xpAt10For20, 0, "No debe otorgar XP si el nivel del oficio es menor al de la receta");
+
+  // Al alcanzar el nivel exacto, otorga experiencia normal
+  const xpAt194For194 = getCraftXpByJobLevel(194, 194);
+  assert.equal(xpAt194For194, 3880);
+
+  // 2. simulateCraftBatch debe detenerse y dar 0 XP si currentLevel < recipeLevel
+  const simUnderleveled = simulateCraftBatch(374129, 194, 1);
+  assert.equal(simUnderleveled.totalXpEarned, 0);
+  assert.equal(simUnderleveled.finalXp, 374129);
+  assert.equal(simUnderleveled.finalLevel, 193);
+});
+
+test("CASO DEL USUARIO: Sastre 188 con Fuegodala 79x, Congelorra 2x, Berserkofre 30x y Binóculo 1x llega a 193 (374,129 XP) y no puede craftear Capa de Letalina (194)", () => {
+  const startXp = levelToXp(188); // 351,560 XP
+  assert.equal(startXp, 351560);
+
+  const crafts = [
+    {
+      recipe: { id: 7232, resultId: 7232, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 7232, level: 92, name: "Capa Fuegodala" } as any,
+      amount: 79,
+    },
+    {
+      recipe: { id: 11474, resultId: 11474, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 11474, level: 188, name: "Congelorra" } as any,
+      amount: 2,
+    },
+    {
+      recipe: { id: 15212, resultId: 15212, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 15212, level: 105, name: "Casco de berserkofre" } as any,
+      amount: 30,
+    },
+    {
+      recipe: { id: 14286, resultId: 14286, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 14286, level: 192, name: "Binóculo Celo" } as any,
+      amount: 1,
+    },
+    {
+      recipe: { id: 13127, resultId: 13127, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 13127, level: 194, name: "Capa de Letalina" } as any,
+      amount: 1,
+    },
+  ];
+
+  const seq = recalculateSelectedCraftsSequence(startXp, crafts, 1.0, false);
+  const entries = seq.updatedEntries;
+
+  // Verificación de XP exacta coincidente con DofusDB:
+  // 1. Capa Fuegodala (79x): 8,871 XP -> sube a 360,431 (Nivel 190)
+  assert.equal(entries[0].xpGained, 8871);
+  // 2. Congelorra (2x): 5,912 XP -> sube a 366,343 (Nivel 191)
+  assert.equal(entries[1].xpGained, 5912);
+  // 3. Casco de berserkofre (30x): 4,296 XP -> sube a 370,639 (Nivel 193)
+  assert.equal(entries[2].xpGained, 4296);
+  // 4. Binóculo Celo (1x): 3,490 XP -> sube a 374,129 (Nivel 193)
+  assert.equal(entries[3].xpGained, 3490);
+
+  // Total acumulado antes de Capa de Letalina: 374,129 XP (Nivel 193)
+  const xpBeforeLetalina = startXp + 8871 + 5912 + 4296 + 3490;
+  assert.equal(xpBeforeLetalina, 374129);
+  assert.equal(xpToLevel(xpBeforeLetalina), 193);
+  assert.equal(levelToXp(194), 374420);
+  assert.equal(374420 - xpBeforeLetalina, 291); // Faltan 291 XP para 194
+
+  // 5. Capa de Letalina (Nivel 194) debe ser bloqueada con 0 XP e isLevelInsufficient: true
+  assert.equal(entries[4].xpGained, 0);
+  assert.equal(entries[4].isLevelInsufficient, true);
+  assert.equal(entries[4].levelRequired, 194);
+  assert.equal(entries[4].levelAtCraft, 193);
+
+  // Si ahora añadimos una receta intermedia válida a nivel 193 (ej. 3x Casco de berserkofre) para cerrar los 291 XP:
+  const craftsWithBridge = [
+    ...crafts.slice(0, 4),
+    {
+      recipe: { id: 15212, resultId: 15212, ingredientIds: [1], quantities: [1] } as any,
+      item: { id: 15212, level: 105, name: "Casco de berserkofre" } as any,
+      amount: 3,
+    },
+    crafts[4], // Capa de Letalina
+  ];
+
+  const seqBridge = recalculateSelectedCraftsSequence(startXp, craftsWithBridge, 1.0, false);
+  const bridgeEntries = seqBridge.updatedEntries;
+
+  // Los 3 crafteos de Casco otorgan 426 XP (142 * 3) -> 374,129 + 426 = 374,555 XP (Nivel 194 alcanzado!)
+  assert.equal(bridgeEntries[4].xpGained, 426);
+  assert.ok(xpBeforeLetalina + 426 >= 374420);
+  assert.equal(xpToLevel(xpBeforeLetalina + 426), 194);
+
+  // Y ahora la Capa de Letalina se craftea legalmente a nivel 194, otorgando sus 3,880 XP!
+  assert.equal(bridgeEntries[5].isLevelInsufficient, false);
+  assert.equal(bridgeEntries[5].levelAtCraft, 194);
+  assert.equal(bridgeEntries[5].xpGained, 3880);
+});
+
 
 
 

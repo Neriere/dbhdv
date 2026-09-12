@@ -66,6 +66,9 @@ export interface SelectedCraftEntry {
   requiresByc: boolean;
   requiresPebbles: boolean;
   phaseIndex?: number; // Fase o tramo al que pertenece el crafteo
+  isLevelInsufficient?: boolean; // Verdadero si el nivel al llegar a este paso es inferior al nivel requerido
+  levelRequired?: number;        // Nivel requerido para craftear el objeto
+  levelAtCraft?: number;         // Nivel del oficio al iniciar este lote de crafteo
 }
 
 export interface LevelTier {
@@ -277,6 +280,9 @@ export function getCraftXpByJobLevel(
   craftXpRatio = 1.0,
   isBoostedServer = false
 ): number {
+  if (recipeLevel > jobLevel) {
+    return 0;
+  }
   if (jobLevel - 100 > recipeLevel) {
     return 0;
   }
@@ -383,6 +389,9 @@ export function simulateCraftBatch(
 
   for (let i = 0; i < amount; i++) {
     const currentLevel = xpToLevel(runningXp);
+    if (currentLevel < recipeLevel) {
+      break;
+    }
     const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, craftXpRatio, isBoostedServer);
     if (xp <= 0) break;
 
@@ -425,6 +434,9 @@ export function simulateCraftsUntilLevel(
 
   while (xpToLevel(runningXp) < targetLevel && amount < maxIterations) {
     const currentLevel = xpToLevel(runningXp);
+    if (currentLevel < recipeLevel) {
+      break;
+    }
     const xp = getCraftXpByJobLevel(recipeLevel, currentLevel, xpMultiplier, craftXpRatio, isBoostedServer);
     if (xp <= 0) break;
 
@@ -464,6 +476,9 @@ export function recalculateSelectedCraftsSequence(
     if (c.amount <= 0) continue;
 
     const startXpForThisItem = runningXp;
+    const currentLevelAtCraft = xpToLevel(startXpForThisItem);
+    const requiredItemLevel = c.item.level || 1;
+    const isLevelInsufficient = currentLevelAtCraft < requiredItemLevel;
     const isQuestOrZero = isQuestOrZeroXpCraft(c.item, c.recipe);
     const itemCraftRatio = isQuestOrZero
       ? 0
@@ -471,7 +486,7 @@ export function recalculateSelectedCraftsSequence(
 
     const sim = simulateCraftBatch(
       startXpForThisItem,
-      c.item.level || 1,
+      requiredItemLevel,
       c.amount,
       xpMultiplier,
       isBoostedServer,
@@ -522,6 +537,9 @@ export function recalculateSelectedCraftsSequence(
       daysToSell: salesAnalysis.daysToSell,
       requiresByc: costInfo.requiresByc,
       requiresPebbles: costInfo.requiresPebbles,
+      isLevelInsufficient,
+      levelRequired: requiredItemLevel,
+      levelAtCraft: currentLevelAtCraft,
     });
   }
 
@@ -891,9 +909,9 @@ export function generateOptimizedPhases(
         runningXp = sim.finalXp;
         cumulativeUsage.set(cand.item.id, (cumulativeUsage.get(cand.item.id) || 0) + count);
 
-        const existingSeq = tierSequence.find((s) => s.item.id === cand.item.id);
-        if (existingSeq) {
-          existingSeq.amount += count;
+        const lastSeq = tierSequence.length > 0 ? tierSequence[tierSequence.length - 1] : null;
+        if (lastSeq && lastSeq.item.id === cand.item.id) {
+          lastSeq.amount += count;
         } else {
           tierSequence.push({
             recipe: cand.recipe,

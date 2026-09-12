@@ -1284,15 +1284,22 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                       />
                                     </td>
 
-                                     <td className="py-2.5 px-3 text-right font-bold font-mono">
-                                       {c.xpGained <= 0 ? (
-                                         <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
-                                           0 XP (Misión)
-                                         </span>
-                                       ) : (
-                                         <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
-                                       )}
-                                     </td>
+                                                                           <td className="py-2.5 px-3 text-right font-bold font-mono">
+                                        {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
+                                          <span
+                                            className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                            title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
+                                          >
+                                            ⚠️ 0 XP (Req. Nv. {c.item.level})
+                                          </span>
+                                        ) : c.xpGained <= 0 ? (
+                                          <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                            0 XP (Misión)
+                                          </span>
+                                        ) : (
+                                          <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                                        )}
+                                      </td>
 
                                     <td className="py-2.5 px-4 font-sans">
                                       <div className="flex flex-wrap items-center gap-1 max-w-sm">
@@ -1432,15 +1439,22 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                             />
                           </td>
 
-                           <td className="py-3 px-3 text-right font-bold font-mono">
-                             {c.xpGained <= 0 ? (
-                               <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
-                                 0 XP (Misión)
-                               </span>
-                             ) : (
-                               <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
-                             )}
-                           </td>
+                                                       <td className="py-3 px-3 text-right font-bold font-mono">
+                              {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
+                                <span
+                                  className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                  title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
+                                >
+                                  ⚠️ 0 XP (Req. Nv. {c.item.level})
+                                </span>
+                              ) : c.xpGained <= 0 ? (
+                                <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                  0 XP (Misión)
+                                </span>
+                              ) : (
+                                <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                              )}
+                            </td>
 
                           <td className="py-3 px-4 font-sans">
                             <div className="flex flex-wrap items-center gap-1.5 max-w-sm">
@@ -1761,15 +1775,20 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                       <div className="inline-flex items-center gap-1.5">
                         {/* Botón +1 */}
                         <button
+                          disabled={!canCraftForLevel}
                           onClick={() => handleAddOne(r.recipe, r.item)}
-                          className="px-2.5 py-1 rounded bg-lime-600 hover:bg-lime-500 text-white text-xs font-bold shadow transition"
-                          title="Añadir 1 crafteo"
+                          className={`px-2.5 py-1 rounded text-white text-xs font-bold shadow transition ${
+                            canCraftForLevel
+                              ? "bg-lime-600 hover:bg-lime-500 cursor-pointer"
+                              : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50"
+                          }`}
+                          title={canCraftForLevel ? "Añadir 1 crafteo" : `Nivel de oficio insuficiente (Requiere Nivel ${r.level})`}
                         >
                           +1
                         </button>
 
                         {/* Botón -> Siguiente Hito (ej. ->190) */}
-                        {actualLevel < nextMilestone && r.xpAtCurrent > 0 && (
+                        {actualLevel < nextMilestone && canCraftForLevel && r.xpAtCurrent > 0 && (
                           <button
                             onClick={() => handleAddUntilLevel(r.recipe, r.item, nextMilestone)}
                             className="px-2.5 py-1 rounded bg-lime-600 hover:bg-lime-500 text-white text-xs font-bold shadow transition"
@@ -1780,7 +1799,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                         )}
 
                         {/* Botón -> 200 */}
-                        {actualLevel < 200 && r.xpAtCurrent > 0 && (
+                        {actualLevel < 200 && canCraftForLevel && r.xpAtCurrent > 0 && (
                           <button
                             onClick={() => handleAddUntilLevel(r.recipe, r.item, 200)}
                             className="px-2.5 py-1 rounded bg-lime-600 hover:bg-lime-500 text-white text-xs font-bold shadow transition"
