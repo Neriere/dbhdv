@@ -504,6 +504,117 @@ test("CASO DEL USUARIO: Sastre 188 con Fuegodala 79x, Congelorra 2x, Berserkofre
   assert.equal(bridgeEntries[5].xpGained, 3880);
 });
 
+test("Auto-optimización con startingXp exacto inicia desde el progreso real del usuario y ajusta requiredXp", () => {
+  // Nivel 60 base es 60 * 59 * 10 = 35,400 XP
+  // Supongamos que el usuario tiene 36,000 XP acumulados (en nivel 60 pero con 600 XP de progreso)
+  const customXp = 36000;
+  const targetLvl = 70; // Nivel 70 es 70 * 69 * 10 = 48,300 XP
+
+  const phasesWithCustomXp = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 60,
+    startingXp: customXp,
+    targetLevel: targetLvl,
+    strategy: "low_budget",
+  });
+
+  assert.ok(phasesWithCustomXp.length > 0, "Debe generar al menos una fase");
+  const firstPhase = phasesWithCustomXp[0];
+
+  // La fase debe partir exactamente del startingXp provisto
+  assert.equal(firstPhase.startXp, customXp);
+  // El requiredXp debe ser exactamente la diferencia entre el hito y el startingXp provisto
+  assert.equal(firstPhase.requiredXp, levelToXp(70) - customXp);
+  assert.equal(firstPhase.requiredXp, 48300 - 36000);
+
+  // Si comparamos con startingLevel sin startingXp (comienza en 35,400 XP)
+  const phasesDefault = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 60,
+    targetLevel: targetLvl,
+    strategy: "low_budget",
+  });
+  const defaultFirstPhase = phasesDefault[0];
+  assert.equal(defaultFirstPhase.startXp, levelToXp(60));
+  assert.equal(defaultFirstPhase.requiredXp, 48300 - 35400);
+
+  // El plan con startingXp requiere menos XP que el plan por defecto
+  assert.ok(firstPhase.requiredXp < defaultFirstPhase.requiredXp);
+});
+
+test("Estrategia mixta ('mixed') combina venta HDV y romper para runas con cap estricto de máximo 3 crafteos para romper", () => {
+  const phases = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 60,
+    targetLevel: 80,
+    strategy: "mixed",
+  });
+
+  assert.ok(phases.length > 0, "Debe generar fases en modo mixto");
+
+  // Recolectar todos los crafteos
+  const allCrafts = phases.flatMap((p) => p.crafts);
+
+  // Mapear crafteos para romper
+  const crushCounts = new Map<number, number>();
+
+  for (const c of allCrafts) {
+    assert.ok(
+      c.destination === "sell" || c.destination === "crush",
+      `Cada crafteo debe tener destino 'sell' o 'crush', recibido: ${c.destination}`
+    );
+
+    if (c.destination === "crush") {
+      const prev = crushCounts.get(c.item.id) || 0;
+      crushCounts.set(c.item.id, prev + c.amount);
+    }
+  }
+
+  // REGLA CRÍTICA: Ningún ítem debe haber sido roto más de 3 veces en total
+  for (const [itemId, count] of crushCounts.entries()) {
+    assert.ok(
+      count <= 3,
+      `El ítem #${itemId} fue asignado para romper ${count} veces, superando el cap estricto de 3`
+    );
+  }
+});
+
+test("recalculateSelectedCraftsSequence asigna retorno de runas cuando destination es 'crush'", () => {
+  const testEquipItem = {
+    id: 11474,
+    level: 188,
+    name: "Congelorra",
+    type: { superCategoryId: 1 },
+  } as any;
+
+  const testRecipe = {
+    id: 11474,
+    resultId: 11474,
+    ingredientIds: [1],
+    quantities: [1],
+  } as any;
+
+  const crafts = [
+    {
+      recipe: testRecipe,
+      item: testEquipItem,
+      amount: 3,
+      destination: "crush" as const,
+    },
+  ];
+
+  const seq = recalculateSelectedCraftsSequence(levelToXp(188), crafts, 1.0, false, { 1: 1000 });
+  const entry = seq.updatedEntries[0];
+
+  assert.equal(entry.destination, "crush");
+  assert.equal(entry.netSaleUnit, 0);
+  assert.equal(entry.totalNetSale, 0);
+  assert.ok(entry.runesEstimateUnit !== undefined);
+  assert.equal(entry.totalRunesEstimate, (entry.runesEstimateUnit || 0) * 3);
+  assert.equal(entry.totalRevenue, (entry.totalRunesEstimate || 0) + entry.totalSebuscalinesValue);
+  assert.equal(entry.profitUnit, entry.totalRevenueUnit - entry.craftCostUnit);
+});
+
 
 
 

@@ -362,6 +362,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     const newPhases = generateOptimizedPhases({
       jobId,
       startingLevel,
+      startingXp,
       targetLevel: goal,
       strategy,
       xpMultiplier,
@@ -396,7 +397,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
   };
 
   // ── Manejo de crafteos dentro de una fase específica ────────
-  const handlePhaseQuantityChange = (phaseIndex: number, itemId: number, newAmount: number) => {
+  const handlePhaseQuantityChange = (
+    phaseIndex: number,
+    itemId: number,
+    newAmount: number,
+    destination?: "sell" | "crush"
+  ) => {
     const cleanAmount = Math.max(0, Math.min(99999, Math.floor(newAmount)));
 
     setPhases((prevPhases) => {
@@ -404,12 +410,21 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         if (phase.phaseIndex !== phaseIndex) return phase;
 
         const updatedCrafts = phase.crafts
-          .map((c) => (c.item.id === itemId ? { ...c, amount: cleanAmount } : c))
+          .map((c) =>
+            c.item.id === itemId && (c.destination || "sell") === (destination || "sell")
+              ? { ...c, amount: cleanAmount }
+              : c
+          )
           .filter((c) => c.amount > 0);
 
         const recalculated = recalculateSelectedCraftsSequence(
           phase.startXp,
-          updatedCrafts.map((c) => ({ recipe: c.recipe, item: c.item, amount: c.amount })),
+          updatedCrafts.map((c) => ({
+            recipe: c.recipe,
+            item: c.item,
+            amount: c.amount,
+            destination: c.destination,
+          })),
           xpMultiplier,
           isBoostedServer
         );
@@ -422,9 +437,13 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         let inv = 0;
         let rev = 0;
         let xpG = 0;
+        let sebus = 0;
+        let sebusVal = 0;
         for (const c of craftsWithPhase) {
           inv += c.totalCraftCost;
-          rev += c.totalNetSale;
+          rev += (c.totalRevenue ?? (c.totalNetSale + (c.totalSebuscalinesValue || 0)));
+          sebus += (c.totalSebuscalines || 0);
+          sebusVal += (c.totalSebuscalinesValue || 0);
           xpG += c.xpGained;
         }
 
@@ -433,6 +452,8 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           crafts: craftsWithPhase,
           totalInvestment: inv,
           totalNetRevenue: rev,
+          totalSebuscalines: sebus,
+          totalSebuscalinesValue: sebusVal,
           netProfitOrLoss: rev - inv,
           xpGained: xpG,
         };
@@ -443,8 +464,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     });
   };
 
-  const handlePhaseRemoveCraft = (phaseIndex: number, itemId: number) => {
-    handlePhaseQuantityChange(phaseIndex, itemId, 0);
+  const handlePhaseRemoveCraft = (
+    phaseIndex: number,
+    itemId: number,
+    destination?: "sell" | "crush"
+  ) => {
+    handlePhaseQuantityChange(phaseIndex, itemId, 0, destination);
   };
 
   const handleRemovePhase = (phaseIndex: number) => {
@@ -575,24 +600,34 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
   };
 
   // Cambiar cantidad en modo vista unificada
-  const handleQuantityChange = (itemId: number, newAmount: number) => {
+  const handleQuantityChange = (itemId: number, newAmount: number, destination?: "sell" | "crush") => {
     const cleanAmount = Math.max(0, Math.min(99999, Math.floor(newAmount)));
     if (cleanAmount === 0) {
-      handleRemoveCraft(itemId);
+      handleRemoveCraft(itemId, destination);
       return;
     }
     setSelectedCrafts((prev) =>
-      prev.map((c) => (c.item.id === itemId ? { ...c, amount: cleanAmount } : c))
+      prev.map((c) =>
+        c.item.id === itemId && (c.destination || "sell") === (destination || "sell")
+          ? { ...c, amount: cleanAmount }
+          : c
+      )
     );
   };
 
   // Eliminar un crafteo en modo unificado
-  const handleRemoveCraft = (itemId: number) => {
-    setSelectedCrafts((prev) => prev.filter((c) => c.item.id !== itemId));
+  const handleRemoveCraft = (itemId: number, destination?: "sell" | "crush") => {
+    setSelectedCrafts((prev) =>
+      prev.filter(
+        (c) => !(c.item.id === itemId && (c.destination || "sell") === (destination || "sell"))
+      )
+    );
     setPhases((prevPhases) =>
       prevPhases.map((p) => ({
         ...p,
-        crafts: p.crafts.filter((c) => c.item.id !== itemId),
+        crafts: p.crafts.filter(
+          (c) => !(c.item.id === itemId && (c.destination || "sell") === (destination || "sell"))
+        ),
       }))
     );
   };
@@ -650,14 +685,16 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         text += `[Fase ${p.phaseIndex}: Niveles ${p.fromLevel} -> ${p.toLevel}] (+${p.xpGained.toLocaleString()} XP | Coste: ${p.totalInvestment.toLocaleString()} k)\n`;
         p.crafts.forEach((c) => {
           const sebusText = c.totalSebuscalines > 0 ? ` (+${c.totalSebuscalines} Sebus)` : "";
-          text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
+          const destTag = c.destination === "crush" ? " [♻️ Romper Runas]" : " [🛒 Venta HDV]";
+          text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level})${destTag} | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
         });
         text += `\n`;
       });
     } else {
       updatedSelectedCrafts.forEach((c) => {
         const sebusText = c.totalSebuscalines > 0 ? ` (+${c.totalSebuscalines} Sebus)` : "";
-        text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
+        const destTag = c.destination === "crush" ? " [♻️ Romper Runas]" : " [🛒 Venta HDV]";
+        text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level})${destTag} | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
       });
     }
 
@@ -842,9 +879,14 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
           {/* Experience Points Input */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
-              Puntos de Experiencia (XP)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-amber-300">
+                XP Actual del Oficio
+              </label>
+              <span className="text-[10px] text-amber-400 font-mono font-bold">
+                Nv. {xpToLevel(startingXp)}
+              </span>
+            </div>
             <input
               type="number"
               min={0}
@@ -852,7 +894,19 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
               value={startingXp}
               onChange={(e) => handleStartingXpChange(Number(e.target.value) || 0)}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-semibold text-white focus:outline-none focus:border-amber-500 font-mono"
+              title="Introduce tu XP exacta para empezar el cálculo desde tus puntos actuales en vez de XP cero del nivel"
             />
+            <div className="text-[10px] text-slate-400 mt-1 truncate font-mono">
+              {(() => {
+                const currentLvl = xpToLevel(startingXp);
+                const curLvlXp = levelToXp(currentLvl);
+                const nextLvlXp = levelToXp(currentLvl + 1);
+                const diff = Math.max(1, nextLvlXp - curLvlXp);
+                const inProgress = Math.max(0, startingXp - curLvlXp);
+                const pct = Math.min(100, Math.floor((inProgress / diff) * 100));
+                return `${inProgress.toLocaleString()} / ${diff.toLocaleString()} XP (${pct}%)`;
+              })()}
+            </div>
           </div>
 
           {/* XP Coefficient */}
@@ -896,6 +950,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
               onChange={(e) => setStrategy(e.target.value as JobOptimizerStrategy)}
               className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-medium focus:outline-none"
             >
+              <option value="mixed">🔀 Mixto Inteligente (Venta HDV + Romper máx 3x)</option>
               <option value="low_budget">💸 Mínimo Gasto de Bolsillo (Low Cost)</option>
               <option value="profit">💰 Máxima Rentabilidad (Reventa HDV)</option>
               <option value="high_turnover">🌊 Alta Rotación y Liquidez</option>
@@ -1233,7 +1288,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                 const resolvedName = typeof c.item.name === "object" ? c.item.name?.es || "" : String(c.item.name || `Objeto #${c.item.id}`);
 
                                 return (
-                                  <tr key={c.item.id} className="hover:bg-slate-850/50 transition">
+                                  <tr key={`${c.item.id}-${c.destination || "sell"}`} className="hover:bg-slate-850/50 transition">
                                     <td className="py-2.5 px-4 font-sans">
                                       <div className="flex items-center gap-2.5">
                                         <div className="relative shrink-0">
@@ -1250,8 +1305,25 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                           </span>
                                         </div>
                                         <div>
-                                          <div className="font-bold text-white text-xs">
-                                            {resolvedName}
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-bold text-white text-xs">
+                                              {resolvedName}
+                                            </span>
+                                            {c.destination === "crush" ? (
+                                              <span
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-[9px] text-purple-300 font-mono font-bold"
+                                                title="Romper en la Rompedora para obtener runas (límite máx. 3x para proteger el coeficiente del servidor)"
+                                              >
+                                                ♻️ Romper (Runas, máx 3x)
+                                              </span>
+                                            ) : (
+                                              <span
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40 text-[9px] text-sky-300 font-mono font-medium"
+                                                title="Vender en el Mercadillo (HDV)"
+                                              >
+                                                🛒 Venta HDV
+                                              </span>
+                                            )}
                                           </div>
                                           <div className="flex items-center gap-1.5 mt-0.5">
                                             <span className="text-[10px] text-slate-500 font-mono">
@@ -1279,27 +1351,27 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                         type="number"
                                         min={1}
                                         value={c.amount}
-                                        onChange={(e) => handlePhaseQuantityChange(phase.phaseIndex, c.item.id, Number(e.target.value) || 1)}
+                                        onChange={(e) => handlePhaseQuantityChange(phase.phaseIndex, c.item.id, Number(e.target.value) || 1, c.destination)}
                                         className="w-16 text-center bg-slate-950 border border-slate-700 rounded py-1 px-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
                                       />
                                     </td>
 
-                                                                           <td className="py-2.5 px-3 text-right font-bold font-mono">
-                                        {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
-                                          <span
-                                            className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                                            title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
-                                          >
-                                            ⚠️ 0 XP (Req. Nv. {c.item.level})
-                                          </span>
-                                        ) : c.xpGained <= 0 ? (
-                                          <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
-                                            0 XP (Misión)
-                                          </span>
-                                        ) : (
-                                          <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
-                                        )}
-                                      </td>
+                                    <td className="py-2.5 px-3 text-right font-bold font-mono">
+                                      {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
+                                        <span
+                                          className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                          title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
+                                        >
+                                          ⚠️ 0 XP (Req. Nv. {c.item.level})
+                                        </span>
+                                      ) : c.xpGained <= 0 ? (
+                                        <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                          0 XP (Misión)
+                                        </span>
+                                      ) : (
+                                        <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                                      )}
+                                    </td>
 
                                     <td className="py-2.5 px-4 font-sans">
                                       <div className="flex flex-wrap items-center gap-1 max-w-sm">
@@ -1337,7 +1409,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                         {c.totalProfit >= 0 ? "+" : ""}
                                         {c.totalProfit.toLocaleString()} k
                                       </div>
-                                      {c.totalSebuscalines > 0 && (
+                                      {c.destination === "crush" && (c.totalRunesEstimate || 0) > 0 && (
+                                        <div className="text-[9px] font-normal text-purple-300 font-mono" title="Estimación de valor en runas al romper">
+                                          (Runas: +{(c.totalRunesEstimate || 0).toLocaleString()} k{c.totalSebuscalines > 0 ? ` | ByC: +${c.totalSebuscalinesValue.toLocaleString()} k` : ""})
+                                        </div>
+                                      )}
+                                      {c.destination !== "crush" && c.totalSebuscalines > 0 && (
                                         <div className="text-[9px] font-normal text-amber-400/90 font-mono" title="Desglose: HDV + Sebuscalines">
                                           (HDV: +{c.totalNetSale.toLocaleString()} k | ByC: +{c.totalSebuscalinesValue.toLocaleString()} k)
                                         </div>
@@ -1346,7 +1423,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
                                     <td className="py-2.5 px-3 text-center">
                                       <button
-                                        onClick={() => handlePhaseRemoveCraft(phase.phaseIndex, c.item.id)}
+                                        onClick={() => handlePhaseRemoveCraft(phase.phaseIndex, c.item.id, c.destination)}
                                         className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
                                         title="Eliminar este crafteo de la fase"
                                       >
@@ -1388,7 +1465,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                       const resolvedName = typeof c.item.name === "object" ? c.item.name?.es || "" : String(c.item.name || `Objeto #${c.item.id}`);
 
                       return (
-                        <tr key={`${c.phaseIndex || 1}-${c.item.id}`} className="hover:bg-slate-850/50 transition">
+                        <tr key={`${c.phaseIndex || 1}-${c.item.id}-${c.destination || "sell"}`} className="hover:bg-slate-850/50 transition">
                           <td className="py-3 px-4 font-sans">
                             <div className="flex items-center gap-3">
                               <div className="relative shrink-0">
@@ -1405,8 +1482,25 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                 </span>
                               </div>
                               <div>
-                                <div className="font-bold text-white text-sm">
-                                  {resolvedName}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-white text-sm">
+                                    {resolvedName}
+                                  </span>
+                                  {c.destination === "crush" ? (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-[9px] text-purple-300 font-mono font-bold"
+                                      title="Romper en la Rompedora para obtener runas (límite máx. 3x para proteger el coeficiente del servidor)"
+                                    >
+                                      ♻️ Romper (Runas, máx 3x)
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40 text-[9px] text-sky-300 font-mono font-medium"
+                                      title="Vender en el Mercadillo (HDV)"
+                                    >
+                                      🛒 Venta HDV
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
                                   <span className="text-[10px] text-slate-500 font-mono">
@@ -1434,27 +1528,27 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                               type="number"
                               min={1}
                               value={c.amount}
-                              onChange={(e) => handleQuantityChange(c.item.id, Number(e.target.value) || 1)}
+                              onChange={(e) => handleQuantityChange(c.item.id, Number(e.target.value) || 1, c.destination)}
                               className="w-16 text-center bg-slate-950 border border-slate-700 rounded py-1 px-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
                             />
                           </td>
 
-                                                       <td className="py-3 px-3 text-right font-bold font-mono">
-                              {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
-                                <span
-                                  className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                                  title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
-                                >
-                                  ⚠️ 0 XP (Req. Nv. {c.item.level})
-                                </span>
-                              ) : c.xpGained <= 0 ? (
-                                <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
-                                  0 XP (Misión)
-                                </span>
-                              ) : (
-                                <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
-                              )}
-                            </td>
+                          <td className="py-3 px-3 text-right font-bold font-mono">
+                            {c.isLevelInsufficient || (c.levelAtCraft !== undefined && c.levelAtCraft < c.item.level) ? (
+                              <span
+                                className="text-amber-400 font-bold text-[11px] bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                                title={`No puedes craftear este objeto: tu nivel en este paso (${c.levelAtCraft ?? actualLevel}) es menor que el nivel requerido (${c.item.level})`}
+                              >
+                                ⚠️ 0 XP (Req. Nv. {c.item.level})
+                              </span>
+                            ) : c.xpGained <= 0 ? (
+                              <span className="text-rose-400 font-bold text-[11px] bg-rose-500/10 border border-rose-500/30 px-1.5 py-0.5 rounded">
+                                0 XP (Misión)
+                              </span>
+                            ) : (
+                              <span className="text-sky-400">+{c.xpGained.toLocaleString()}</span>
+                            )}
+                          </td>
 
                           <td className="py-3 px-4 font-sans">
                             <div className="flex flex-wrap items-center gap-1.5 max-w-sm">
@@ -1496,7 +1590,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                               {c.totalProfit >= 0 ? "+" : ""}
                               {c.totalProfit.toLocaleString()} k
                             </div>
-                            {c.totalSebuscalines > 0 && (
+                            {c.destination === "crush" && (c.totalRunesEstimate || 0) > 0 && (
+                              <div className="text-[9px] font-normal text-purple-300 font-mono" title="Estimación de valor en runas al romper">
+                                (Runas: +{(c.totalRunesEstimate || 0).toLocaleString()} k{c.totalSebuscalines > 0 ? ` | ByC: +${c.totalSebuscalinesValue.toLocaleString()} k` : ""})
+                              </div>
+                            )}
+                            {c.destination !== "crush" && c.totalSebuscalines > 0 && (
                               <div className="text-[9px] font-normal text-amber-400/90 font-mono" title="Desglose: HDV + Sebuscalines">
                                 (HDV: +{c.totalNetSale.toLocaleString()} k | ByC: +{c.totalSebuscalinesValue.toLocaleString()} k)
                               </div>
@@ -1511,7 +1610,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
                           <td className="py-3 px-3 text-center">
                             <button
-                              onClick={() => handleRemoveCraft(c.item.id)}
+                              onClick={() => handleRemoveCraft(c.item.id, c.destination)}
                               className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded transition"
                               title="Eliminar este crafteo"
                             >

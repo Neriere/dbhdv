@@ -40,12 +40,16 @@ export type JobOptimizerStrategy =
   | "high_turnover"     // 🌊 Alta Rotación y Liquidez (venta rápida en 24-48h)
   | "fastest"           // ⚡ Ultrarrápido (máxima XP por craft, menos clics)
   | "consumables_only"  // 🌿 Solo Consumibles/Componentes (apilables en x100, sin equipables)
-  | "crush_runes";      // ♻️ Rompe-Runas (craftear para machacar en la Rompedora)
+  | "crush_runes"       // ♻️ Rompe-Runas (craftear para machacar en la Rompedora)
+  | "mixed";            // 🔀 Mixto Inteligente (Venta HDV + Romper Runas máx 3x)
 
 export interface SelectedCraftEntry {
   recipe: DofusRecipe;
   item: CraftableItem;
   amount: number;
+  destination?: "sell" | "crush"; // 🛒 Venta HDV vs ♻️ Romper Runas
+  runesEstimateUnit?: number;     // Estimación de retorno en runas por unidad (si se rompe)
+  totalRunesEstimate?: number;    // Estimación total de retorno en runas
   xpGained: number; // XP real acumulada sumando craft a craft con decaimiento
   craftCostUnit: number; // Coste óptimo por unidad (incluyendo ByC por fragmentos)
   totalCraftCost: number;
@@ -56,8 +60,8 @@ export interface SelectedCraftEntry {
   totalSebuscalines: number;     // Sebuscalines totales obtenidos
   sebuscalinesValueUnit: number; // Valor en kamas de los sebuscalines obtenidos por unidad
   totalSebuscalinesValue: number;// Valor en kamas total del botín de sebuscalines
-  totalRevenueUnit: number;      // Retorno total unitario (netSaleUnit + sebuscalinesValueUnit)
-  totalRevenue: number;          // Retorno total (totalNetSale + totalSebuscalinesValue)
+  totalRevenueUnit: number;      // Retorno total unitario (netSaleUnit / runesEstimateUnit + sebuscalinesValueUnit)
+  totalRevenue: number;          // Retorno total (totalNetSale / totalRunesEstimate + totalSebuscalinesValue)
   profitUnit: number;            // Retorno unitario - coste (positivo = ganancia, negativo = pérdida)
   totalProfit: number;
   avgDailySales: number;
@@ -461,7 +465,7 @@ export function simulateCraftsUntilLevel(
  */
 export function recalculateSelectedCraftsSequence(
   baseStartingXp: number,
-  crafts: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }>,
+  crafts: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number; destination?: "sell" | "crush" }>,
   xpMultiplier = 1.0,
   isBoostedServer = false,
   customPricesMap?: Record<number, number>
@@ -498,18 +502,29 @@ export function recalculateSelectedCraftsSequence(
     const costInfo = calculateOptimizedCraftCost(c.recipe, pricesMap);
     const craftCostUnit = costInfo.cost;
     const marketPriceUnit = pricesMap[c.item.id] || getStoredItemPrice(c.item.id) || 0;
+    const isCrush = c.destination === "crush";
+    const runesEstimateUnit = calculateEstimatedRunesValue(c.item);
+    const totalRunesEstimate = isCrush ? runesEstimateUnit * c.amount : 0;
+
     const netSaleUnit = Math.floor(marketPriceUnit * 0.98);
+    const totalNetSale = isCrush ? 0 : netSaleUnit * c.amount;
+
     const sebuscalinesPerCraft = costInfo.sebuscalinesEarned;
     const sebuscalinesValueUnit = costInfo.sebuscalinesValue;
-    const totalRevenueUnit = netSaleUnit + sebuscalinesValueUnit;
-    const profitUnit = totalRevenueUnit - craftCostUnit;
-
-    const totalCraftCost = craftCostUnit * c.amount;
-    const totalNetSale = netSaleUnit * c.amount;
     const totalSebuscalines = sebuscalinesPerCraft * c.amount;
     const totalSebuscalinesValue = sebuscalinesValueUnit * c.amount;
-    const totalRevenue = totalNetSale + totalSebuscalinesValue;
+
+    const totalRevenueUnit = isCrush
+      ? runesEstimateUnit + sebuscalinesValueUnit
+      : netSaleUnit + sebuscalinesValueUnit;
+
+    const totalRevenue = isCrush
+      ? totalRunesEstimate + totalSebuscalinesValue
+      : totalNetSale + totalSebuscalinesValue;
+
+    const profitUnit = totalRevenueUnit - craftCostUnit;
     const totalProfit = profitUnit * c.amount;
+    const totalCraftCost = craftCostUnit * c.amount;
 
     const volumeData = salesMap[c.item.id] as ItemSalesVolume | undefined;
     const salesAnalysis = analyzeSalesVolume(marketPriceUnit, volumeData);
@@ -518,11 +533,14 @@ export function recalculateSelectedCraftsSequence(
       recipe: c.recipe,
       item: c.item,
       amount: c.amount,
+      destination: c.destination || "sell",
+      runesEstimateUnit,
+      totalRunesEstimate,
       xpGained: sim.totalXpEarned,
       craftCostUnit,
       totalCraftCost,
       marketPriceUnit,
-      netSaleUnit,
+      netSaleUnit: isCrush ? 0 : netSaleUnit,
       totalNetSale,
       sebuscalinesPerCraft,
       totalSebuscalines,
@@ -532,9 +550,9 @@ export function recalculateSelectedCraftsSequence(
       totalRevenue,
       profitUnit,
       totalProfit,
-      avgDailySales: salesAnalysis.avgDailySales || 0,
-      turnoverRating: salesAnalysis.turnoverRating,
-      daysToSell: salesAnalysis.daysToSell,
+      avgDailySales: isCrush ? 0 : (salesAnalysis.avgDailySales || 0),
+      turnoverRating: isCrush ? "alta" : salesAnalysis.turnoverRating,
+      daysToSell: isCrush ? 0 : salesAnalysis.daysToSell,
       requiresByc: costInfo.requiresByc,
       requiresPebbles: costInfo.requiresPebbles,
       isLevelInsufficient,
@@ -691,6 +709,7 @@ export interface AutoOptimizeOptions {
   startingLevel: number;
   targetLevel: number;
   strategy: JobOptimizerStrategy;
+  startingXp?: number; // Puntos de XP exactos iniciales (opcional, inicia directamente desde este valor)
   xpMultiplier?: number;
   isBoostedServer?: boolean;
   maxDailyAbsorptionRatio?: number; // 1x a 4x ventas
@@ -710,6 +729,7 @@ export function generateOptimizedPhases(
     startingLevel,
     targetLevel,
     strategy,
+    startingXp,
     xpMultiplier = 1.0,
     isBoostedServer = false,
     maxDailyAbsorptionRatio = 3.0,
@@ -724,7 +744,15 @@ export function generateOptimizedPhases(
 
   const cleanStart = Math.max(1, Math.min(200, Math.floor(startingLevel)));
   const cleanTarget = Math.max(cleanStart, Math.min(200, Math.floor(targetLevel)));
-  const tiers = calculateLevelTiers(cleanStart, cleanTarget);
+
+  const initialStartingXp =
+    startingXp !== undefined && startingXp > 0
+      ? startingXp
+      : levelToXp(cleanStart);
+
+  const effectiveStartLevel = Math.max(cleanStart, xpToLevel(initialStartingXp));
+  const effectiveTargetLevel = Math.max(effectiveStartLevel, cleanTarget);
+  const tiers = calculateLevelTiers(effectiveStartLevel, effectiveTargetLevel);
   if (tiers.length === 0) return [];
 
   // Filtrar recetas válidas para este oficio (excluyendo estrictamente recetas de misión o con 0 XP)
@@ -747,7 +775,8 @@ export function generateOptimizedPhases(
       const costInfo = calculateOptimizedCraftCost(recipe, pricesMap);
       const marketPrice = pricesMap[item.id] || getStoredItemPrice(item.id) || 0;
       const netSale = Math.floor(marketPrice * 0.98);
-      const totalRevenue = netSale + costInfo.sebuscalinesValue;
+      const sebuscalinesValue = costInfo.sebuscalinesValue || 0;
+      const totalRevenue = netSale + sebuscalinesValue;
       const profit = totalRevenue - costInfo.cost;
       const netCost = costInfo.cost - totalRevenue;
 
@@ -763,7 +792,9 @@ export function generateOptimizedPhases(
       }
 
       const runesEstimate =
-        strategy === "crush_runes" ? calculateEstimatedRunesValue(item) : 0;
+        strategy === "crush_runes" || strategy === "mixed"
+          ? calculateEstimatedRunesValue(item)
+          : 0;
 
       return {
         item,
@@ -772,6 +803,7 @@ export function generateOptimizedPhases(
         craftCost: costInfo.cost,
         marketPrice,
         netSale,
+        sebuscalinesValue,
         profit,
         netCost,
         avgDailySales,
@@ -793,8 +825,10 @@ export function generateOptimizedPhases(
   if (jobRecipes.length === 0) return [];
 
   const phases: JobPlanPhase[] = [];
-  let runningXp = levelToXp(cleanStart);
+  let runningXp = initialStartingXp;
   const cumulativeUsage = new Map<number, number>();
+  const cumulativeSalesUsage = new Map<number, number>();
+  const cumulativeCrushUsage = new Map<number, number>();
 
   for (const tier of tiers) {
     const tierStartLvl = xpToLevel(runningXp);
@@ -803,7 +837,12 @@ export function generateOptimizedPhases(
     const tierTargetXp = levelToXp(tierTargetLvl);
     const requiredXp = Math.max(0, tierTargetXp - tierStartXp);
 
-    const tierSequence: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }> = [];
+    const tierSequence: Array<{
+      recipe: DofusRecipe;
+      item: CraftableItem;
+      amount: number;
+      destination?: "sell" | "crush";
+    }> = [];
     let tierIteration = 0;
     const maxTierIterations = 1000;
 
@@ -820,18 +859,78 @@ export function generateOptimizedPhases(
       );
       if (available.length === 0) break;
 
-      const scored = available
-        .map((r) => {
-          const xpRatio = (r.item as any)?.craftXpRatio !== undefined
-            ? (r.item as any).craftXpRatio
-            : (r.recipe as any)?.craftXpRatio ?? 1.0;
-          const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, xpRatio, isBoostedServer);
-          if (xp <= 0) return null;
+      type Candidate = {
+        item: CraftableItem;
+        recipe: DofusRecipe;
+        level: number;
+        craftCost: number;
+        profit: number;
+        xpRatio: number;
+        xpPerCraft: number;
+        score: number;
+        capacity: number;
+        destination: "sell" | "crush";
+        runesEstimate: number;
+      };
 
+      const scored: Candidate[] = [];
+
+      for (const r of available) {
+        const xpRatio = (r.item as any)?.craftXpRatio !== undefined
+          ? (r.item as any).craftXpRatio
+          : (r.recipe as any)?.craftXpRatio ?? 1.0;
+        const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, xpRatio, isBoostedServer);
+        if (xp <= 0) continue;
+
+        if (strategy === "mixed") {
+          // Opción A: Venta en HDV
+          const usedSales = cumulativeSalesUsage.get(r.item.id) || 0;
+          const capacitySales = Math.max(0, r.maxAllowed - usedSales);
+          const saleProfit = (r.netSale + r.sebuscalinesValue) - r.craftCost;
+          const scoreSale = -(saleProfit / xp);
+
+          scored.push({
+            item: r.item,
+            recipe: r.recipe,
+            level: r.level,
+            craftCost: r.craftCost,
+            profit: saleProfit,
+            xpRatio,
+            xpPerCraft: xp,
+            score: scoreSale,
+            capacity: capacitySales,
+            destination: "sell",
+            runesEstimate: r.runesEstimate,
+          });
+
+          // Opción B: Romper en Rompedora para Runas (solo equipables con valor de runas estimado > 0)
+          if (r.runesEstimate > 0) {
+            const usedCrush = cumulativeCrushUsage.get(r.item.id) || 0;
+            const capacityCrush = Math.max(0, 3 - usedCrush); // CAP ESTRICTO DE 3 VECES
+            const crushProfit = (r.runesEstimate + r.sebuscalinesValue) - r.craftCost;
+            const scoreCrush = -(crushProfit / xp);
+
+            scored.push({
+              item: r.item,
+              recipe: r.recipe,
+              level: r.level,
+              craftCost: r.craftCost,
+              profit: crushProfit,
+              xpRatio,
+              xpPerCraft: xp,
+              score: scoreCrush,
+              capacity: capacityCrush,
+              destination: "crush",
+              runesEstimate: r.runesEstimate,
+            });
+          }
+        } else {
+          // Estrategias estándar
           const used = cumulativeUsage.get(r.item.id) || 0;
           const capacity = Math.max(0, r.maxAllowed - used);
-
           let score = 0;
+          let dest: "sell" | "crush" = "sell";
+
           switch (strategy) {
             case "low_budget":
               score = r.craftCost / xp;
@@ -851,26 +950,39 @@ export function generateOptimizedPhases(
               score = r.craftCost / xp;
               break;
             case "crush_runes":
+              dest = "crush";
               const netRunesBenefit = r.runesEstimate - r.craftCost;
               score = netRunesBenefit >= 0 ? -netRunesBenefit * 100 : r.craftCost / xp;
               break;
           }
 
-          return {
-            ...r,
+          scored.push({
+            item: r.item,
+            recipe: r.recipe,
+            level: r.level,
+            craftCost: r.craftCost,
+            profit: dest === "crush" ? (r.runesEstimate + r.sebuscalinesValue - r.craftCost) : r.profit,
             xpRatio,
             xpPerCraft: xp,
             score,
             capacity,
-          };
-        })
-        .filter((s): s is NonNullable<typeof s> => s !== null);
+            destination: dest,
+            runesEstimate: r.runesEstimate,
+          });
+        }
+      }
 
       if (scored.length === 0) break;
 
       let candidates = scored.filter((s) => s.capacity > 0);
       if (candidates.length === 0) {
-        candidates = scored;
+        if (strategy === "mixed") {
+          // En modo mixto nunca sobrepasar el cap de 3 de romper si se puede vender
+          candidates = scored.filter((s) => s.destination !== "crush");
+        }
+        if (candidates.length === 0) {
+          candidates = scored;
+        }
       }
 
       candidates.sort((a, b) => {
@@ -881,7 +993,7 @@ export function generateOptimizedPhases(
           if (b.profit !== a.profit) return b.profit - a.profit;
           return a.craftCost - b.craftCost;
         }
-        if (strategy === "profit") {
+        if (strategy === "profit" || strategy === "mixed") {
           if (b.profit !== a.profit) return b.profit - a.profit;
           return b.xpPerCraft - a.xpPerCraft;
         }
@@ -897,7 +1009,7 @@ export function generateOptimizedPhases(
       const bestCand = candidates[0];
       const craftsNeededBest = Math.max(1, Math.ceil(xpToNextLevel / bestCand.xpPerCraft));
 
-      const executeBatch = (cand: typeof bestCand, count: number) => {
+      const executeBatch = (cand: Candidate, count: number) => {
         const sim = simulateCraftBatch(
           runningXp,
           cand.level,
@@ -908,15 +1020,25 @@ export function generateOptimizedPhases(
         );
         runningXp = sim.finalXp;
         cumulativeUsage.set(cand.item.id, (cumulativeUsage.get(cand.item.id) || 0) + count);
+        if (cand.destination === "crush") {
+          cumulativeCrushUsage.set(cand.item.id, (cumulativeCrushUsage.get(cand.item.id) || 0) + count);
+        } else {
+          cumulativeSalesUsage.set(cand.item.id, (cumulativeSalesUsage.get(cand.item.id) || 0) + count);
+        }
 
         const lastSeq = tierSequence.length > 0 ? tierSequence[tierSequence.length - 1] : null;
-        if (lastSeq && lastSeq.item.id === cand.item.id) {
+        if (
+          lastSeq &&
+          lastSeq.item.id === cand.item.id &&
+          (lastSeq as any).destination === cand.destination
+        ) {
           lastSeq.amount += count;
         } else {
           tierSequence.push({
             recipe: cand.recipe,
             item: cand.item,
             amount: count,
+            destination: cand.destination,
           });
         }
       };
@@ -927,18 +1049,18 @@ export function generateOptimizedPhases(
         executeBatch(bestCand, batchSize);
       } else {
         const top = candidates.slice(0, 4);
-        let bestCombo: Array<{ cand: typeof top[0]; amount: number }> | null = null;
+        let bestCombo: Array<{ cand: Candidate; amount: number }> | null = null;
         let bestMetric = Infinity;
 
         function search(
           idx: number,
-          combo: Array<{ cand: typeof top[0]; amount: number }>,
+          combo: Array<{ cand: Candidate; amount: number }>,
           accXp: number,
           accCost: number,
           accProfit: number
         ) {
           if (accXp >= xpToNextLevel) {
-            const metric = strategy === "profit" ? -accProfit : accCost;
+            const metric = (strategy === "profit" || strategy === "mixed") ? -accProfit : accCost;
             if (metric < bestMetric) {
               bestMetric = metric;
               bestCombo = combo.map((c) => ({ ...c }));
@@ -1053,9 +1175,11 @@ export function appendNextPhaseToPlan(
   }
 
   const nextMilestone = getNextMilestoneLevel(lastLevel);
+  const nextStartXp = lastPhase ? (lastPhase.startXp + lastPhase.xpGained) : levelToXp(lastLevel);
   const newPhases = generateOptimizedPhases({
     ...options,
     startingLevel: lastLevel,
+    startingXp: nextStartXp,
     targetLevel: nextMilestone,
   });
 
