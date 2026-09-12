@@ -401,7 +401,9 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     phaseIndex: number,
     itemId: number,
     newAmount: number,
-    destination?: "sell" | "crush"
+    destination?: "sell" | "crush",
+    itemObj?: CraftableItem,
+    recipeObj?: DofusRecipe
   ) => {
     const cleanAmount = Math.max(0, Math.min(99999, Math.floor(newAmount)));
 
@@ -409,22 +411,47 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       const nextPhases = prevPhases.map((phase) => {
         if (phase.phaseIndex !== phaseIndex) return phase;
 
-        const updatedCrafts = phase.crafts
-          .map((c) =>
-            c.item.id === itemId && (c.destination || "sell") === (destination || "sell")
-              ? { ...c, amount: cleanAmount }
-              : c
-          )
-          .filter((c) => c.amount > 0);
+        const exists = phase.crafts.some(
+          (c) => c.item.id === itemId && (c.destination || "sell") === (destination || "sell")
+        );
+
+        let rawCrafts: Array<{
+          recipe: DofusRecipe;
+          item: CraftableItem;
+          amount: number;
+          destination?: "sell" | "crush";
+        }>;
+
+        if (exists) {
+          rawCrafts = phase.crafts
+            .map((c) =>
+              c.item.id === itemId && (c.destination || "sell") === (destination || "sell")
+                ? { recipe: c.recipe, item: c.item, amount: cleanAmount, destination: c.destination }
+                : { recipe: c.recipe, item: c.item, amount: c.amount, destination: c.destination }
+            )
+            .filter((c) => c.amount > 0);
+        } else if (cleanAmount > 0 && recipeObj && itemObj) {
+          rawCrafts = [
+            ...phase.crafts.map((c) => ({
+              recipe: c.recipe,
+              item: c.item,
+              amount: c.amount,
+              destination: c.destination,
+            })),
+            {
+              recipe: recipeObj,
+              item: itemObj,
+              amount: cleanAmount,
+              destination: destination || "sell",
+            },
+          ];
+        } else {
+          return phase;
+        }
 
         const recalculated = recalculateSelectedCraftsSequence(
           phase.startXp,
-          updatedCrafts.map((c) => ({
-            recipe: c.recipe,
-            item: c.item,
-            amount: c.amount,
-            destination: c.destination,
-          })),
+          rawCrafts,
           xpMultiplier,
           isBoostedServer
         );
@@ -535,8 +562,16 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     }
 
     const lastPhase = phases[phases.length - 1];
-    const existingAmount = lastPhase.crafts.find((c) => c.item.id === item.id)?.amount || 0;
-    handlePhaseQuantityChange(lastPhase.phaseIndex, item.id, existingAmount + 1);
+    const existingEntry = lastPhase.crafts.find((c) => c.item.id === item.id);
+    const existingAmount = existingEntry?.amount || 0;
+    handlePhaseQuantityChange(
+      lastPhase.phaseIndex,
+      item.id,
+      existingAmount + 1,
+      existingEntry?.destination || "sell",
+      item,
+      recipe
+    );
   };
 
   // Añadir crafteos hasta alcanzar un nivel objetivo
@@ -595,8 +630,16 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     }
 
     const lastPhase = phases[phases.length - 1];
-    const existingAmount = lastPhase.crafts.find((c) => c.item.id === item.id)?.amount || 0;
-    handlePhaseQuantityChange(lastPhase.phaseIndex, item.id, existingAmount + sim.amountNeeded);
+    const existingEntry = lastPhase.crafts.find((c) => c.item.id === item.id);
+    const existingAmount = existingEntry?.amount || 0;
+    handlePhaseQuantityChange(
+      lastPhase.phaseIndex,
+      item.id,
+      existingAmount + sim.amountNeeded,
+      existingEntry?.destination || "sell",
+      item,
+      recipe
+    );
   };
 
   // Cambiar cantidad en modo vista unificada
@@ -613,6 +656,14 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           : c
       )
     );
+    if (phases.length > 0) {
+      const targetPhase = phases.find((p) =>
+        p.crafts.some((c) => c.item.id === itemId && (c.destination || "sell") === (destination || "sell"))
+      );
+      if (targetPhase) {
+        handlePhaseQuantityChange(targetPhase.phaseIndex, itemId, cleanAmount, destination);
+      }
+    }
   };
 
   // Eliminar un crafteo en modo unificado

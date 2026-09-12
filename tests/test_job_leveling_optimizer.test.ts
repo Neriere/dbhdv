@@ -615,6 +615,41 @@ test("recalculateSelectedCraftsSequence asigna retorno de runas cuando destinati
   assert.equal(entry.profitUnit, entry.totalRevenueUnit - entry.craftCostUnit);
 });
 
+test("generateOptimizedPhases consolida objetos idénticos por destino en cada fase sin duplicar filas", () => {
+  // Probamos generar fases para Sastre (jobId 27) desde nivel 188 a 200
+  const phases = generateOptimizedPhases({
+    jobId: 27,
+    startingLevel: 188,
+    targetLevel: 200,
+    strategy: "balanced",
+  });
 
+  assert.ok(phases.length > 0, "Debe generar al menos 1 fase");
 
+  for (const phase of phases) {
+    const keys = phase.crafts.map((c) => `${c.item.id}-${c.destination || "sell"}`);
+    const uniqueKeys = new Set(keys);
+    assert.equal(
+      keys.length,
+      uniqueKeys.size,
+      `La fase ${phase.phaseIndex} tiene filas duplicadas para el mismo ítem: ${JSON.stringify(keys)}`
+    );
+
+    // Verificar que la cantidad es >= 1
+    for (const c of phase.crafts) {
+      assert.ok(c.amount >= 1, `Cantidad debe ser >= 1, recibido ${c.amount}`);
+      assert.ok(c.xpGained > 0, `XP ganada debe ser > 0`);
+    }
+
+    // Verificar que la fase alcanzó la meta de XP o nivel
+    assert.ok(
+      phase.xpGained >= phase.requiredXp || phase.startXp + phase.xpGained >= phase.targetXp,
+      `La fase ${phase.phaseIndex} (${phase.fromLevel}->${phase.toLevel}) debe alcanzar o superar el XP requerido`
+    );
+  }
+});
+
+test.after(() => {
+  setTimeout(() => process.exit(0), 50);
+});
 

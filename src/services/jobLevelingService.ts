@@ -1104,12 +1104,89 @@ export function generateOptimizedPhases(
       }
     }
 
-    const { updatedEntries } = recalculateSelectedCraftsSequence(
+    // Consolidar crafteos idénticos (mismo ítem y mismo destino) dentro de la fase
+    // para evitar filas repetidas y agrupar cantidades totales limpiamente.
+    const firstSeenOrder = new Map<string, number>();
+    const consolidatedMap = new Map<string, {
+      recipe: DofusRecipe;
+      item: CraftableItem;
+      amount: number;
+      destination?: "sell" | "crush";
+    }>();
+
+    for (let i = 0; i < tierSequence.length; i++) {
+      const s = tierSequence[i];
+      const key = `${s.item.id}-${s.destination || "sell"}`;
+      if (!firstSeenOrder.has(key)) {
+        firstSeenOrder.set(key, i);
+      }
+      const existing = consolidatedMap.get(key);
+      if (existing) {
+        existing.amount += s.amount;
+      } else {
+        consolidatedMap.set(key, { ...s });
+      }
+    }
+
+    const consolidatedTierSequence = Array.from(consolidatedMap.values());
+
+    // Ordenar respetando estrictamente requisitos de nivel:
+    // 1. Recetas que ya se pueden craftear al inicio del tramo (level <= tierStartLvl), en orden de selección
+    // 2. Recetas que requieren subir de nivel dentro del tramo (level > tierStartLvl), ordenadas por nivel ascendente
+    consolidatedTierSequence.sort((a, b) => {
+      const aReq = a.item.level || 1;
+      const bReq = b.item.level || 1;
+      const aNeedsLevelUp = aReq > tierStartLvl;
+      const bNeedsLevelUp = bReq > tierStartLvl;
+
+      if (aNeedsLevelUp && !bNeedsLevelUp) return 1;
+      if (!aNeedsLevelUp && bNeedsLevelUp) return -1;
+      if (aNeedsLevelUp && bNeedsLevelUp) return aReq - bReq;
+
+      const orderA = firstSeenOrder.get(`${a.item.id}-${a.destination || "sell"}`) ?? 0;
+      const orderB = firstSeenOrder.get(`${b.item.id}-${b.destination || "sell"}`) ?? 0;
+      return orderA - orderB;
+    });
+
+    let { updatedEntries, finalXp: tierFinalXp } = recalculateSelectedCraftsSequence(
       tierStartXp,
-      tierSequence,
+      consolidatedTierSequence,
       xpMultiplier,
       isBoostedServer
     );
+
+    // Si por decaimiento tras consolidación faltase XP para alcanzar el nivel objetivo del tramo:
+    while (xpToLevel(tierFinalXp) < tierTargetLvl && tierFinalXp < tierTargetXp) {
+      const currentJobLevel = xpToLevel(tierFinalXp);
+      const available = jobRecipes.filter(
+        (r) => r.level <= currentJobLevel && currentJobLevel <= r.level + 100
+      );
+      if (available.length === 0) break;
+      const best = available[0];
+      const existing = consolidatedTierSequence.find(
+        (c) => c.item.id === best.item.id && (c.destination || "sell") === "sell"
+      );
+      if (existing) {
+        existing.amount += 1;
+      } else {
+        consolidatedTierSequence.push({
+          recipe: best.recipe,
+          item: best.item,
+          amount: 1,
+          destination: "sell",
+        });
+      }
+      const recalc = recalculateSelectedCraftsSequence(
+        tierStartXp,
+        consolidatedTierSequence,
+        xpMultiplier,
+        isBoostedServer
+      );
+      updatedEntries = recalc.updatedEntries;
+      tierFinalXp = recalc.finalXp;
+    }
+
+    runningXp = tierFinalXp;
 
     const phaseCrafts = updatedEntries.map((c) => ({
       ...c,
