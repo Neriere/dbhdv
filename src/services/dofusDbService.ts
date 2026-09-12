@@ -572,6 +572,44 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function executeBootstrapFetch(): Promise<BootstrapResponse> {
+  const isRealBrowser =
+    typeof window !== "undefined" &&
+    typeof window.location?.origin === "string" &&
+    window.location.origin.startsWith("http");
+
+  if (!isRealBrowser) {
+    try {
+      const seed = await getDofusDbSeedDataAsync();
+      const finalRecipes: Record<number, any> = {};
+      for (const r of seed.recipes || []) {
+        if (r.resultId) finalRecipes[r.resultId] = r;
+      }
+      return {
+        items: seed.items || [],
+        recipes: finalRecipes,
+        prices: {},
+        priceUpdatedAt: {},
+        syncStatus: syncStatusMemoryCache,
+        syncSettings: { enabled: true, intervalDays: 30 },
+        priceProfiles: DEFAULT_PRICE_PROFILES,
+        activePriceProfileId: 1,
+        databasePath: "local.db",
+      };
+    } catch {
+      return {
+        items: [],
+        recipes: {},
+        prices: {},
+        priceUpdatedAt: {},
+        syncStatus: syncStatusMemoryCache,
+        syncSettings: { enabled: true, intervalDays: 30 },
+        priceProfiles: DEFAULT_PRICE_PROFILES,
+        activePriceProfileId: 1,
+        databasePath: "local.db",
+      };
+    }
+  }
+
   let profileQuery = "";
   if (typeof window !== "undefined") {
     const savedProfileId = localStorage.getItem("selected_dofus_price_profile_id");

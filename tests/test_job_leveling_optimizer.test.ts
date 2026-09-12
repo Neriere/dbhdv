@@ -345,4 +345,57 @@ test("recalculateSelectedCraftsSequence asigna 0 XP a Máscara de Sag y crafteos
   assert.equal(seq.finalXp, 100000); // No avanza nada de XP
 });
 
+test("generateOptimizedPhases mantiene monotonía económica de inversión en low_budget (1x >= 2x >= 3x >= 4x)", () => {
+  // Simulamos subida con Sastre (jobId 27)
+  const ratios = [1.0, 2.0, 3.0, 4.0];
+  const investments: number[] = [];
+
+  for (const ratio of ratios) {
+    const phases = generateOptimizedPhases({
+      jobId: 27,
+      startingLevel: 60,
+      targetLevel: 100,
+      strategy: "low_budget",
+      maxDailyAbsorptionRatio: ratio,
+    });
+
+    const totalInv = phases.reduce((sum, p) => sum + p.totalInvestment, 0);
+    investments.push(totalInv);
+  }
+
+  // Al aumentar la tolerancia a ventas diarias, la inversión requerida debe ser menor o igual
+  for (let i = 1; i < investments.length; i++) {
+    assert.ok(
+      investments[i] <= investments[i - 1],
+      `Inversión en ratio ${ratios[i]}x (${investments[i]}k) no debe ser mayor que en ratio ${ratios[i - 1]}x (${investments[i - 1]}k)`
+    );
+  }
+});
+
+test("generateOptimizedPhases en modo profit maximiza ganancias con mayor absorción de ventas (1x <= 2x <= 3x <= 4x)", () => {
+  const ratios = [1.0, 2.0, 3.0, 4.0];
+  const profits: number[] = [];
+
+  for (const ratio of ratios) {
+    const phases = generateOptimizedPhases({
+      jobId: 27,
+      startingLevel: 60,
+      targetLevel: 100,
+      strategy: "profit",
+      maxDailyAbsorptionRatio: ratio,
+    });
+
+    const totalProfit = phases.reduce((sum, p) => sum + p.netProfitOrLoss, 0);
+    profits.push(totalProfit);
+  }
+
+  for (let i = 1; i < profits.length; i++) {
+    assert.ok(
+      profits[i] >= profits[i - 1],
+      `Ganancia en ratio ${ratios[i]}x (${profits[i]}k) no debe ser menor que en ratio ${ratios[i - 1]}x (${profits[i - 1]}k)`
+    );
+  }
+});
+
+
 

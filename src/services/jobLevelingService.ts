@@ -741,7 +741,7 @@ export function generateOptimizedPhases(
       if (avgDailySales > 0) {
         maxAllowed = Math.max(1, Math.round(avgDailySales * maxDailyAbsorptionRatio));
       } else {
-        maxAllowed = 2;
+        maxAllowed = Math.max(1, Math.round(2 * maxDailyAbsorptionRatio));
       }
 
       const runesEstimate =
@@ -787,7 +787,7 @@ export function generateOptimizedPhases(
 
     const tierSequence: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }> = [];
     let tierIteration = 0;
-    const maxTierIterations = 500;
+    const maxTierIterations = 1000;
 
     while (
       xpToLevel(runningXp) < tierTargetLvl &&
@@ -819,7 +819,7 @@ export function generateOptimizedPhases(
               score = r.craftCost / xp;
               break;
             case "profit":
-              score = r.profit >= 0 ? -r.profit * 100 : r.netCost / xp;
+              score = -(r.profit / xp);
               break;
             case "high_turnover":
               const turnoverWeight =
@@ -855,37 +855,112 @@ export function generateOptimizedPhases(
         candidates = scored;
       }
 
-      candidates.sort((a, b) => a.score - b.score);
-      const chosen = candidates[0];
+      candidates.sort((a, b) => {
+        if (Math.abs(a.score - b.score) > 1e-9) {
+          return a.score - b.score;
+        }
+        if (strategy === "low_budget") {
+          if (b.profit !== a.profit) return b.profit - a.profit;
+          return a.craftCost - b.craftCost;
+        }
+        if (strategy === "profit") {
+          if (b.profit !== a.profit) return b.profit - a.profit;
+          return b.xpPerCraft - a.xpPerCraft;
+        }
+        if (strategy === "fastest") {
+          return a.craftCost - b.craftCost;
+        }
+        return a.craftCost - b.craftCost;
+      });
 
-      const xpRemaining = tierTargetXp - runningXp;
-      const craftsForMilestone = Math.max(1, Math.ceil(xpRemaining / chosen.xpPerCraft));
-      const batchSize = Math.max(
-        1,
-        Math.min(craftsForMilestone, chosen.capacity || craftsForMilestone, 10)
-      );
+      const nextLvlXp = levelToXp(currentJobLevel + 1);
+      const xpToNextLevel = Math.min(tierTargetXp, nextLvlXp) - runningXp;
 
-      const sim = simulateCraftBatch(
-        runningXp,
-        chosen.level,
-        batchSize,
-        xpMultiplier,
-        isBoostedServer,
-        chosen.xpRatio
-      );
+      const bestCand = candidates[0];
+      const craftsNeededBest = Math.max(1, Math.ceil(xpToNextLevel / bestCand.xpPerCraft));
 
-      runningXp = sim.finalXp;
-      cumulativeUsage.set(chosen.item.id, (cumulativeUsage.get(chosen.item.id) || 0) + batchSize);
+      const executeBatch = (cand: typeof bestCand, count: number) => {
+        const sim = simulateCraftBatch(
+          runningXp,
+          cand.level,
+          count,
+          xpMultiplier,
+          isBoostedServer,
+          cand.xpRatio
+        );
+        runningXp = sim.finalXp;
+        cumulativeUsage.set(cand.item.id, (cumulativeUsage.get(cand.item.id) || 0) + count);
 
-      const existingSeq = tierSequence.find((s) => s.item.id === chosen.item.id);
-      if (existingSeq) {
-        existingSeq.amount += batchSize;
+        const existingSeq = tierSequence.find((s) => s.item.id === cand.item.id);
+        if (existingSeq) {
+          existingSeq.amount += count;
+        } else {
+          tierSequence.push({
+            recipe: cand.recipe,
+            item: cand.item,
+            amount: count,
+          });
+        }
+      };
+
+      if (bestCand.capacity >= craftsNeededBest || candidates.length === 1) {
+        const batchLimit = bestCand.capacity > 0 ? bestCand.capacity : craftsNeededBest;
+        const batchSize = Math.max(1, Math.min(craftsNeededBest, batchLimit));
+        executeBatch(bestCand, batchSize);
       } else {
-        tierSequence.push({
-          recipe: chosen.recipe,
-          item: chosen.item,
-          amount: batchSize,
-        });
+        const top = candidates.slice(0, 4);
+        let bestCombo: Array<{ cand: typeof top[0]; amount: number }> | null = null;
+        let bestMetric = Infinity;
+
+        function search(
+          idx: number,
+          combo: Array<{ cand: typeof top[0]; amount: number }>,
+          accXp: number,
+          accCost: number,
+          accProfit: number
+        ) {
+          if (accXp >= xpToNextLevel) {
+            const metric = strategy === "profit" ? -accProfit : accCost;
+            if (metric < bestMetric) {
+              bestMetric = metric;
+              bestCombo = combo.map((c) => ({ ...c }));
+            }
+            return;
+          }
+          if (idx >= top.length) return;
+
+          const cand = top[idx];
+          const maxNeeded = Math.ceil((xpToNextLevel - accXp) / cand.xpPerCraft);
+          const maxUse = Math.min(cand.capacity > 0 ? cand.capacity : maxNeeded, maxNeeded);
+
+          for (let count = maxUse; count >= 0; count--) {
+            if (count > 0) {
+              combo.push({ cand, amount: count });
+              search(
+                idx + 1,
+                combo,
+                accXp + count * cand.xpPerCraft,
+                accCost + count * cand.craftCost,
+                accProfit + count * cand.profit
+              );
+              combo.pop();
+            } else {
+              search(idx + 1, combo, accXp, accCost, accProfit);
+            }
+          }
+        }
+
+        search(0, [], 0, 0, 0);
+
+        if (bestCombo && (bestCombo as any[]).length > 0) {
+          for (const step of bestCombo as any[]) {
+            executeBatch(step.cand, step.amount);
+          }
+        } else {
+          const batchLimit = bestCand.capacity > 0 ? bestCand.capacity : craftsNeededBest;
+          const batchSize = Math.max(1, Math.min(craftsNeededBest, batchLimit));
+          executeBatch(bestCand, batchSize);
+        }
       }
     }
 

@@ -55,10 +55,14 @@ export function getDofusDbSeedData(): DofusSeedPayload {
     try {
       // Synchronous Node execution for server/scripts
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const zlib = require("zlib");
       const buffer = Buffer.from(COMPRESSED_SEED, "base64");
-      const decompressed = zlib.gunzipSync(buffer).toString("utf-8");
-      cachedData = JSON.parse(decompressed);
+      // @ts-ignore
+      const zlib = (globalThis as any).require ? (globalThis as any).require("zlib") : null;
+      if (zlib) {
+        const decompressed = zlib.gunzipSync(buffer).toString("utf-8");
+        cachedData = JSON.parse(decompressed);
+        return cachedData!;
+      }
       return cachedData!;
     } catch (e) {
       console.error("Error in getDofusDbSeedData sync:", e);
