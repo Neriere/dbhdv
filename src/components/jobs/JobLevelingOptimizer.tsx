@@ -626,7 +626,11 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
     let text = `📦 PLAN DE SUBIDA DE OFICIO: ${selectedJob.nameEs.toUpperCase()} (${startingLevel} -> ${actualLevel} [Meta: ${targetLevel}])\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `• Inversión Total : ${planSummary.totalInvestment.toLocaleString()} k\n`;
-    text += `• Retorno HDV     : ${planSummary.totalNetRevenue.toLocaleString()} k\n`;
+    text += `• Retorno Total   : ${planSummary.totalNetRevenue.toLocaleString()} k${
+      planSummary.totalSebuscalines && planSummary.totalSebuscalines > 0
+        ? ` (HDV: ${(planSummary.totalNetRevenue - (planSummary.totalSebuscalinesValue || 0)).toLocaleString()} k + Sebuscalines: +${planSummary.totalSebuscalinesValue?.toLocaleString()} k [${planSummary.totalSebuscalines} Sebus])`
+        : ""
+    }\n`;
     text += `• Balance Neto    : ${planSummary.netProfitOrLoss >= 0 ? "+" : ""}${planSummary.netProfitOrLoss.toLocaleString()} k\n`;
     text += `• Total Crafteos  : ${planSummary.totalCrafts} objetos\n`;
     text += `• Eficiencia      : ${planSummary.globalKamasPerXp.toFixed(2)} k/xp\n\n`;
@@ -635,13 +639,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       phases.forEach((p) => {
         text += `[Fase ${p.phaseIndex}: Niveles ${p.fromLevel} -> ${p.toLevel}] (+${p.xpGained.toLocaleString()} XP | Coste: ${p.totalInvestment.toLocaleString()} k)\n`;
         p.crafts.forEach((c) => {
-          text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k\n`;
+          const sebusText = c.totalSebuscalines > 0 ? ` (+${c.totalSebuscalines} Sebus)` : "";
+          text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
         });
         text += `\n`;
       });
     } else {
       updatedSelectedCrafts.forEach((c) => {
-        text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k\n`;
+        const sebusText = c.totalSebuscalines > 0 ? ` (+${c.totalSebuscalines} Sebus)` : "";
+        text += `  - ${c.amount}x ${c.item.name?.es || c.item.name} (Lvl ${c.item.level}) | +${c.xpGained.toLocaleString()} XP | ${c.totalCraftCost.toLocaleString()} k${sebusText}\n`;
       });
     }
 
@@ -665,7 +671,8 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         const costInfo = calculateOptimizedCraftCost(recipe, pricesMap);
         const marketPrice = pricesMap[item.id] || getStoredItemPrice(item.id) || 0;
         const netSale = Math.floor(marketPrice * 0.98);
-        const profit = netSale - costInfo.cost;
+        const totalRevenue = netSale + costInfo.sebuscalinesValue;
+        const profit = totalRevenue - costInfo.cost;
         const xpAtCurrent = getCraftXpByJobLevel(itemLevel, actualLevel, xpMultiplier, 1.0, isBoostedServer);
 
         const volumeData = salesMap[item.id] as ItemSalesVolume | undefined;
@@ -681,7 +688,10 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
           craftCost: costInfo.cost,
           marketPrice,
           netSale,
+          totalRevenue,
           profit,
+          sebuscalinesEarned: costInfo.sebuscalinesEarned,
+          sebuscalinesValue: costInfo.sebuscalinesValue,
           xpAtCurrent,
           avgDailySales: salesAnalysis.avgDailySales || 0,
           turnoverRating: salesAnalysis.turnoverRating,
@@ -994,25 +1004,44 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
 
         {/* Mini KPIs Económicos */}
         {updatedSelectedCrafts.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-800 text-xs font-mono">
-            <div className="p-2 bg-slate-950/60 rounded-lg">
-              <span className="text-slate-500 block text-[10px]">INVERSIÓN TOTAL</span>
-              <span className="text-slate-200 font-bold">{planSummary.totalInvestment.toLocaleString()} k</span>
+          <div className="space-y-2 pt-2 border-t border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+              <div className="p-2 bg-slate-950/60 rounded-lg">
+                <span className="text-slate-500 block text-[10px]">INVERSIÓN TOTAL</span>
+                <span className="text-slate-200 font-bold">{planSummary.totalInvestment.toLocaleString()} k</span>
+              </div>
+              <div className="p-2 bg-slate-950/60 rounded-lg">
+                <span className="text-slate-500 block text-[10px]">
+                  RETORNO {planSummary.totalSebuscalines && planSummary.totalSebuscalines > 0 ? "TOTAL (HDV + ByC)" : "HDV (-2%)"}
+                </span>
+                <span className="text-slate-200 font-bold">{planSummary.totalNetRevenue.toLocaleString()} k</span>
+              </div>
+              <div className="p-2 bg-slate-950/60 rounded-lg">
+                <span className="text-slate-500 block text-[10px]">BALANCE NETO</span>
+                <span className={`font-bold ${planSummary.netProfitOrLoss >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                  {planSummary.netProfitOrLoss >= 0 ? "+" : ""}{planSummary.netProfitOrLoss.toLocaleString()} k
+                </span>
+              </div>
+              <div className="p-2 bg-slate-950/60 rounded-lg">
+                <span className="text-slate-500 block text-[10px]">EFICIENCIA GLOBAL</span>
+                <span className="text-slate-300 font-bold">{planSummary.globalKamasPerXp.toFixed(2)} k/xp</span>
+              </div>
             </div>
-            <div className="p-2 bg-slate-950/60 rounded-lg">
-              <span className="text-slate-500 block text-[10px]">RETORNO HDV (-2%)</span>
-              <span className="text-slate-200 font-bold">{planSummary.totalNetRevenue.toLocaleString()} k</span>
-            </div>
-            <div className="p-2 bg-slate-950/60 rounded-lg">
-              <span className="text-slate-500 block text-[10px]">BALANCE NETO</span>
-              <span className={`font-bold ${planSummary.netProfitOrLoss >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
-                {planSummary.netProfitOrLoss >= 0 ? "+" : ""}{planSummary.netProfitOrLoss.toLocaleString()} k
-              </span>
-            </div>
-            <div className="p-2 bg-slate-950/60 rounded-lg">
-              <span className="text-slate-500 block text-[10px]">EFICIENCIA GLOBAL</span>
-              <span className="text-slate-300 font-bold">{planSummary.globalKamasPerXp.toFixed(2)} k/xp</span>
-            </div>
+
+            {/* Pill informativo de Sebuscalines de Cacerías ByC */}
+            {planSummary.totalSebuscalines !== undefined && planSummary.totalSebuscalines > 0 && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs">
+                <div className="flex items-center gap-2 text-amber-300">
+                  <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Botín de Sebuscalines incluido:</strong> +{planSummary.totalSebuscalines.toLocaleString()} Sebuscalines de cofres ByC
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-amber-400">
+                  +{planSummary.totalSebuscalinesValue?.toLocaleString()} k de retorno
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1141,6 +1170,12 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                               {phase.netProfitOrLoss >= 0 ? "+" : ""}{phase.netProfitOrLoss.toLocaleString()} k
                             </span>
                           </div>
+                          {phase.totalSebuscalines !== undefined && phase.totalSebuscalines > 0 ? (
+                            <div className="hidden sm:block text-right" title="Sebuscalines generados por cacerías en esta fase">
+                              <span className="text-amber-500/80 block text-[10px]">SEBUSCALINES</span>
+                              <span className="text-amber-300 font-semibold">+{phase.totalSebuscalines.toLocaleString()}</span>
+                            </div>
+                          ) : null}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1200,8 +1235,18 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                           <div className="font-bold text-white text-xs">
                                             {resolvedName}
                                           </div>
-                                          <div className="text-[10px] text-slate-500 font-mono">
-                                            ID #{c.item.id}
+                                          <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className="text-[10px] text-slate-500 font-mono">
+                                              ID #{c.item.id}
+                                            </span>
+                                            {c.totalSebuscalines > 0 && (
+                                              <span
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-[10px] text-amber-300 font-mono font-medium"
+                                                title={`Cofre de cacería: +${c.sebuscalinesPerCraft} Sebuscalines por craft (+${c.totalSebuscalinesValue.toLocaleString()} k de retorno total)`}
+                                              >
+                                                🪙 +{c.totalSebuscalines.toLocaleString()} Sebus (+{c.totalSebuscalinesValue.toLocaleString()} k)
+                                              </span>
+                                            )}
                                           </div>
                                         </div>
                                       </div>
@@ -1257,8 +1302,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                     </td>
 
                                     <td className={`py-2.5 px-3 text-right font-semibold ${c.totalProfit >= 0 ? "text-emerald-400" : "text-amber-400"}`}>
-                                      {c.totalProfit >= 0 ? "+" : ""}
-                                      {c.totalProfit.toLocaleString()} k
+                                      <div>
+                                        {c.totalProfit >= 0 ? "+" : ""}
+                                        {c.totalProfit.toLocaleString()} k
+                                      </div>
+                                      {c.totalSebuscalines > 0 && (
+                                        <div className="text-[9px] font-normal text-amber-400/90 font-mono" title="Desglose: HDV + Sebuscalines">
+                                          (HDV: +{c.totalNetSale.toLocaleString()} k | ByC: +{c.totalSebuscalinesValue.toLocaleString()} k)
+                                        </div>
+                                      )}
                                     </td>
 
                                     <td className="py-2.5 px-3 text-center">
@@ -1325,8 +1377,18 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                                 <div className="font-bold text-white text-sm">
                                   {resolvedName}
                                 </div>
-                                <div className="text-[10px] text-slate-500 font-mono">
-                                  ID #{c.item.id}
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    ID #{c.item.id}
+                                  </span>
+                                  {c.totalSebuscalines > 0 && (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-[10px] text-amber-300 font-mono font-medium"
+                                      title={`Cofre de cacería: +${c.sebuscalinesPerCraft} Sebuscalines por craft (+${c.totalSebuscalinesValue.toLocaleString()} k de retorno total)`}
+                                    >
+                                      🪙 +{c.totalSebuscalines.toLocaleString()} Sebus (+{c.totalSebuscalinesValue.toLocaleString()} k)
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1386,8 +1448,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                               c.totalProfit >= 0 ? "text-emerald-400" : "text-amber-400"
                             }`}
                           >
-                            {c.totalProfit >= 0 ? "+" : ""}
-                            {c.totalProfit.toLocaleString()} k
+                            <div>
+                              {c.totalProfit >= 0 ? "+" : ""}
+                              {c.totalProfit.toLocaleString()} k
+                            </div>
+                            {c.totalSebuscalines > 0 && (
+                              <div className="text-[9px] font-normal text-amber-400/90 font-mono" title="Desglose: HDV + Sebuscalines">
+                                (HDV: +{c.totalNetSale.toLocaleString()} k | ByC: +{c.totalSebuscalinesValue.toLocaleString()} k)
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-3 px-3 text-center">
@@ -1438,12 +1507,14 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                 <div
                   key={mat.itemId}
                   className="relative group shrink-0"
-                  title={`${mat.name}: ${mat.quantity.toLocaleString()} u (~${mat.totalCost.toLocaleString()} k)`}
+                  title={`${mat.name}: ${mat.quantity.toLocaleString()} u (~${mat.totalCost.toLocaleString()} k)${mat.sebuscalinesEarned ? ` | Genera +${mat.sebuscalinesEarned.toLocaleString()} Sebuscalines (+${mat.sebuscalinesValue?.toLocaleString()} k)` : ""}`}
                 >
                   <img
                     src={getItemIconUrl({ id: mat.itemId, iconId: mat.iconId })}
                     alt={mat.name}
-                    className="w-10 h-10 rounded-lg bg-slate-900 border border-slate-700 object-contain p-1"
+                    className={`w-10 h-10 rounded-lg bg-slate-900 border object-contain p-1 ${
+                      mat.isByc ? "border-amber-500/60 ring-1 ring-amber-500/30" : "border-slate-700"
+                    }`}
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = getItemFallbackIconUrl({ id: mat.itemId });
                     }}
@@ -1451,9 +1522,24 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                   <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 bg-slate-950 border border-slate-700 text-amber-300 font-bold text-[10px] rounded font-mono shadow">
                     {mat.quantity.toLocaleString()}
                   </span>
+                  {mat.isByc && (
+                    <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-amber-950 border border-amber-500/50 text-[8px] font-bold text-amber-400 rounded">
+                      ByC
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
+
+            {/* Info box de Botín ByC en materiales si aplica */}
+            {planSummary.totalSebuscalines !== undefined && planSummary.totalSebuscalines > 0 && (
+              <div className="flex items-center gap-2 p-2.5 bg-amber-950/30 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Botín por Cacerías ByC:</strong> Al realizar las búsquedas y capturas para obtener los recursos ByC vía fragmentos/mapa, recibes un botín adicional de <strong>+{planSummary.totalSebuscalines.toLocaleString()} Sebuscalines</strong> (+{planSummary.totalSebuscalinesValue?.toLocaleString()} k de retorno según el precio configurado en Mapas & ByC).
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1556,7 +1642,17 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                         />
                         <div>
                           <div className="font-semibold text-slate-200">{r.name}</div>
-                          <div className="text-[10px] text-slate-500 font-mono">#{r.item.id}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-slate-500 font-mono">#{r.item.id}</span>
+                            {r.sebuscalinesEarned > 0 && (
+                              <span
+                                className="px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-[9px] text-amber-300 font-mono"
+                                title={`Genera +${r.sebuscalinesEarned} Sebuscalines (+${r.sebuscalinesValue.toLocaleString()} k de retorno por unidad)`}
+                              >
+                                🪙 +{r.sebuscalinesEarned} Sebus
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -1608,8 +1704,15 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
                         r.profit >= 0 ? "text-emerald-400" : "text-amber-400"
                       }`}
                     >
-                      {r.profit >= 0 ? "+" : ""}
-                      {r.profit.toLocaleString()} k
+                      <div>
+                        {r.profit >= 0 ? "+" : ""}
+                        {r.profit.toLocaleString()} k
+                      </div>
+                      {r.sebuscalinesEarned > 0 && (
+                        <div className="text-[9px] font-normal text-amber-400/90 font-mono" title="HDV + Sebuscalines">
+                          (HDV: +{r.netSale.toLocaleString()} k | ByC: +{r.sebuscalinesValue.toLocaleString()} k)
+                        </div>
+                      )}
                     </td>
 
                     {/* Ventas diarias */}

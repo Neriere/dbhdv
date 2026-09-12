@@ -1,6 +1,21 @@
 import { BYC_LEGENDARY_HUNTS, BycHuntData } from "../data/bycDatabase";
 import { MarketPriceMap } from "../types";
 import { getStoredMarketPrices, getStoredItemPrice } from "./dofusDbService";
+import { resolveServerSlug } from "../data/dofusRuneWeights";
+
+export const SEBUSCALIN_STORAGE_KEY = "dofus_sebuscalin_unit_price_v1";
+
+/**
+ * Obtiene el precio configurado por Sebuscalín en Kamas (definido en Mapas & ByC)
+ */
+export function getStoredSebuscalinPrice(serverSlug?: string): number {
+  if (typeof window === "undefined") return 320;
+  const slug = resolveServerSlug(serverSlug);
+  const val = localStorage.getItem(`dofus_sebuscalin_unit_price_${slug}`);
+  if (val) return Math.max(1, Number(val));
+  const legacy = localStorage.getItem(SEBUSCALIN_STORAGE_KEY);
+  return legacy ? Math.max(1, Number(legacy)) : 320;
+}
 
 export interface BycResourceCostOption {
   method: "direct" | "fragments" | "map";
@@ -54,10 +69,12 @@ export function getBycHuntForResource(itemId: number): BycHuntData | undefined {
 export function analyzeBycResourceCost(
   resourceId: number,
   marketPrices: MarketPriceMap = getStoredMarketPrices(),
-  sebuscalineKamasRatio: number = 1000 // default 1.000 K por sebuscalín
+  sebuscalineKamasRatio?: number
 ): BycResourceCostAnalysis | null {
   const hunt = resourceToHuntMap.get(resourceId);
   if (!hunt) return null;
+
+  const ratio = sebuscalineKamasRatio !== undefined ? sebuscalineKamasRatio : getStoredSebuscalinPrice();
 
   // 1. Direct Resource Price
   const directPrice = marketPrices[resourceId] ?? getStoredItemPrice(resourceId) ?? hunt.resource.defaultPrice ?? 0;
@@ -78,7 +95,7 @@ export function analyzeBycResourceCost(
 
   // Sebuscalines valuation (chest sebuscalines)
   const sebuscalinesEarned = hunt.chestSebuscalines || hunt.sebuscalines || 0;
-  const sebuscalinesValue = sebuscalinesEarned * sebuscalineKamasRatio;
+  const sebuscalinesValue = sebuscalinesEarned * ratio;
 
   // Net cost taking into account sebuscalines returned from hunt
   const netFragmentsCost = Math.max(0, fragmentsPrice - sebuscalinesValue);
@@ -153,8 +170,6 @@ export function getOptimizedIngredientCost(
   const direct = marketPrices[itemId] ?? getStoredItemPrice(itemId) ?? 0;
   return { cost: direct, isByc: false };
 }
-
-import { resolveServerSlug } from "../data/dofusRuneWeights";
 
 const BYC_STORAGE_KEY = "dofus_byc_preferred_methods";
 

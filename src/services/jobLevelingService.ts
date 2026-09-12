@@ -19,7 +19,12 @@ import {
   analyzeSalesVolume,
   ItemSalesVolume,
 } from "./salesVolumeService";
-import { isBycResource, getOptimizedIngredientCost } from "./bycCostService";
+import {
+  isBycResource,
+  getOptimizedIngredientCost,
+  getBycHuntForResource,
+  getStoredSebuscalinPrice,
+} from "./bycCostService";
 import { USER_JOBS_DEFINITIONS, JobConfigDefinition } from "./userJobsService";
 import { DofusRecipe, DofusItem } from "../types";
 
@@ -45,7 +50,13 @@ export interface SelectedCraftEntry {
   marketPriceUnit: number;
   netSaleUnit: number;
   totalNetSale: number;
-  profitUnit: number; // positivo = ganancia, negativo = pérdida
+  sebuscalinesPerCraft: number; // Sebuscalines obtenidos por unidad de craft (si la ruta ByC es fragmento/mapa)
+  totalSebuscalines: number;     // Sebuscalines totales obtenidos
+  sebuscalinesValueUnit: number; // Valor en kamas de los sebuscalines obtenidos por unidad
+  totalSebuscalinesValue: number;// Valor en kamas total del botín de sebuscalines
+  totalRevenueUnit: number;      // Retorno total unitario (netSaleUnit + sebuscalinesValueUnit)
+  totalRevenue: number;          // Retorno total (totalNetSale + totalSebuscalinesValue)
+  profitUnit: number;            // Retorno unitario - coste (positivo = ganancia, negativo = pérdida)
   totalProfit: number;
   avgDailySales: number;
   turnoverRating: "alta" | "media" | "baja" | null;
@@ -73,6 +84,8 @@ export interface JobPlanPhase {
   crafts: SelectedCraftEntry[];
   totalInvestment: number;
   totalNetRevenue: number;
+  totalSebuscalines?: number;
+  totalSebuscalinesValue?: number;
   netProfitOrLoss: number;
 }
 
@@ -84,6 +97,9 @@ export interface ConsolidatedMaterial {
   unitPrice: number;
   totalCost: number;
   isByc: boolean;
+  bycMethod?: "direct" | "fragments" | "map";
+  sebuscalinesEarned?: number;
+  sebuscalinesValue?: number;
 }
 
 export interface JobPlanState {
@@ -110,6 +126,8 @@ export interface JobPlanState {
     totalCrafts: number;
     totalInvestment: number;
     totalNetRevenue: number;
+    totalSebuscalines?: number;
+    totalSebuscalinesValue?: number;
     netProfitOrLoss: number;
     globalKamasPerXp: number;
     estimatedDaysToSell: number;
@@ -273,14 +291,30 @@ export function getCraftXpByJobLevel(
 export function calculateOptimizedCraftCost(
   recipe: DofusRecipe,
   marketPrices = getStoredMarketPrices()
-): { cost: number; requiresByc: boolean; requiresPebbles: boolean } {
+): {
+  cost: number;
+  requiresByc: boolean;
+  requiresPebbles: boolean;
+  sebuscalinesEarned: number;
+  sebuscalinesValue: number;
+  sebuscalinUnitPrice: number;
+} {
+  const sebuscalinUnitPrice = getStoredSebuscalinPrice();
   if (!recipe || !recipe.ingredientIds || recipe.ingredientIds.length === 0) {
-    return { cost: 0, requiresByc: false, requiresPebbles: false };
+    return {
+      cost: 0,
+      requiresByc: false,
+      requiresPebbles: false,
+      sebuscalinesEarned: 0,
+      sebuscalinesValue: 0,
+      sebuscalinUnitPrice,
+    };
   }
 
   let totalCost = 0;
   let requiresByc = false;
   let requiresPebbles = false;
+  let sebuscalinesEarned = 0;
 
   for (let i = 0; i < recipe.ingredientIds.length; i++) {
     const ingId = recipe.ingredientIds[i];
@@ -296,9 +330,26 @@ export function calculateOptimizedCraftCost(
     // Ruta de coste optimizada (fragmentos de mapa si es ByC o precio más bajo)
     const costInfo = getOptimizedIngredientCost(ingId, marketPrices, "auto");
     totalCost += costInfo.cost * qty;
+
+    // Si el ingrediente es de Busca y Captura y la ruta óptima es fragmentos o mapa:
+    // Significa que se consiguió también un retorno del cofre de Sebuscalines por cada cacería realizada
+    if (costInfo.isByc && (costInfo.method === "fragments" || costInfo.method === "map")) {
+      const hunt = costInfo.bycAnalysis?.hunt || getBycHuntForResource(ingId);
+      const chestSebus = hunt?.chestSebuscalines || hunt?.sebuscalines || 0;
+      sebuscalinesEarned += chestSebus * qty;
+    }
   }
 
-  return { cost: totalCost, requiresByc, requiresPebbles };
+  const sebuscalinesValue = sebuscalinesEarned * sebuscalinUnitPrice;
+
+  return {
+    cost: totalCost,
+    requiresByc,
+    requiresPebbles,
+    sebuscalinesEarned,
+    sebuscalinesValue,
+    sebuscalinUnitPrice,
+  };
 }
 
 // ----------------------------------------------------
@@ -379,9 +430,10 @@ export function recalculateSelectedCraftsSequence(
   baseStartingXp: number,
   crafts: Array<{ recipe: DofusRecipe; item: CraftableItem; amount: number }>,
   xpMultiplier = 1.0,
-  isBoostedServer = false
+  isBoostedServer = false,
+  customPricesMap?: Record<number, number>
 ): { updatedEntries: SelectedCraftEntry[]; finalXp: number; finalLevel: number } {
-  const pricesMap = getStoredMarketPrices();
+  const pricesMap = customPricesMap ?? getStoredMarketPrices();
   const salesMap = getStoredSalesVolumeMap();
 
   let runningXp = baseStartingXp;
@@ -405,7 +457,17 @@ export function recalculateSelectedCraftsSequence(
     const craftCostUnit = costInfo.cost;
     const marketPriceUnit = pricesMap[c.item.id] || getStoredItemPrice(c.item.id) || 0;
     const netSaleUnit = Math.floor(marketPriceUnit * 0.98);
-    const profitUnit = netSaleUnit - craftCostUnit;
+    const sebuscalinesPerCraft = costInfo.sebuscalinesEarned;
+    const sebuscalinesValueUnit = costInfo.sebuscalinesValue;
+    const totalRevenueUnit = netSaleUnit + sebuscalinesValueUnit;
+    const profitUnit = totalRevenueUnit - craftCostUnit;
+
+    const totalCraftCost = craftCostUnit * c.amount;
+    const totalNetSale = netSaleUnit * c.amount;
+    const totalSebuscalines = sebuscalinesPerCraft * c.amount;
+    const totalSebuscalinesValue = sebuscalinesValueUnit * c.amount;
+    const totalRevenue = totalNetSale + totalSebuscalinesValue;
+    const totalProfit = profitUnit * c.amount;
 
     const volumeData = salesMap[c.item.id] as ItemSalesVolume | undefined;
     const salesAnalysis = analyzeSalesVolume(marketPriceUnit, volumeData);
@@ -416,12 +478,18 @@ export function recalculateSelectedCraftsSequence(
       amount: c.amount,
       xpGained: sim.totalXpEarned,
       craftCostUnit,
-      totalCraftCost: craftCostUnit * c.amount,
+      totalCraftCost,
       marketPriceUnit,
       netSaleUnit,
-      totalNetSale: netSaleUnit * c.amount,
+      totalNetSale,
+      sebuscalinesPerCraft,
+      totalSebuscalines,
+      sebuscalinesValueUnit,
+      totalSebuscalinesValue,
+      totalRevenueUnit,
+      totalRevenue,
       profitUnit,
-      totalProfit: profitUnit * c.amount,
+      totalProfit,
       avgDailySales: salesAnalysis.avgDailySales || 0,
       turnoverRating: salesAnalysis.turnoverRating,
       daysToSell: salesAnalysis.daysToSell,
@@ -446,9 +514,19 @@ export function consolidateMaterialsNeeded(
 ): ConsolidatedMaterial[] {
   const ingMap = new Map<
     number,
-    { quantity: number; unitPrice: number; name: string; iconId: number; isByc: boolean }
+    {
+      quantity: number;
+      unitPrice: number;
+      name: string;
+      iconId: number;
+      isByc: boolean;
+      bycMethod?: "direct" | "fragments" | "map";
+      sebuscalinesEarned?: number;
+      sebuscalinesValue?: number;
+    }
   >();
   const pricesMap = getStoredMarketPrices();
+  const sebuscalinPrice = getStoredSebuscalinPrice();
 
   for (const c of crafts) {
     const recipe = c.recipe;
@@ -461,6 +539,12 @@ export function consolidateMaterialsNeeded(
 
       if (current) {
         current.quantity += qty;
+        if (current.isByc && (current.bycMethod === "fragments" || current.bycMethod === "map")) {
+          const hunt = getBycHuntForResource(ingId);
+          const chestSebus = hunt?.chestSebuscalines || hunt?.sebuscalines || 0;
+          current.sebuscalinesEarned = (current.sebuscalinesEarned || 0) + chestSebus * qty;
+          current.sebuscalinesValue = (current.sebuscalinesEarned || 0) * sebuscalinPrice;
+        }
       } else {
         const item = getItemById(ingId);
         const name =
@@ -472,12 +556,24 @@ export function consolidateMaterialsNeeded(
         const iconId = item?.iconId || ingId;
         const costInfo = getOptimizedIngredientCost(ingId, pricesMap, "auto");
 
+        let sebuscalinesEarned = 0;
+        let sebuscalinesValue = 0;
+        if (costInfo.isByc && (costInfo.method === "fragments" || costInfo.method === "map")) {
+          const hunt = costInfo.bycAnalysis?.hunt || getBycHuntForResource(ingId);
+          const chestSebus = hunt?.chestSebuscalines || hunt?.sebuscalines || 0;
+          sebuscalinesEarned = chestSebus * qty;
+          sebuscalinesValue = sebuscalinesEarned * sebuscalinPrice;
+        }
+
         ingMap.set(ingId, {
           quantity: qty,
           unitPrice: costInfo.cost,
           name,
           iconId,
           isByc: costInfo.isByc,
+          bycMethod: costInfo.method,
+          sebuscalinesEarned,
+          sebuscalinesValue,
         });
       }
     }
@@ -493,6 +589,9 @@ export function consolidateMaterialsNeeded(
       unitPrice: data.unitPrice,
       totalCost: data.quantity * data.unitPrice,
       isByc: data.isByc,
+      bycMethod: data.bycMethod,
+      sebuscalinesEarned: data.sebuscalinesEarned,
+      sebuscalinesValue: data.sebuscalinesValue,
     });
   }
 
@@ -507,12 +606,17 @@ export function calculateSummary(
   let totalCrafts = 0;
   let totalInvestment = 0;
   let totalNetRevenue = 0;
+  let totalSebuscalines = 0;
+  let totalSebuscalinesValue = 0;
   let maxDaysToSell = 0;
 
   for (const c of crafts) {
     totalCrafts += c.amount;
     totalInvestment += c.totalCraftCost;
-    totalNetRevenue += c.totalNetSale;
+    const revenue = c.totalRevenue ?? (c.totalNetSale + (c.totalSebuscalinesValue || 0));
+    totalNetRevenue += revenue;
+    totalSebuscalines += (c.totalSebuscalines || 0);
+    totalSebuscalinesValue += (c.totalSebuscalinesValue || 0);
     if (c.daysToSell && c.daysToSell > maxDaysToSell) {
       maxDaysToSell = c.daysToSell;
     }
@@ -525,6 +629,8 @@ export function calculateSummary(
     totalCrafts,
     totalInvestment,
     totalNetRevenue,
+    totalSebuscalines,
+    totalSebuscalinesValue,
     netProfitOrLoss,
     globalKamasPerXp,
     estimatedDaysToSell: Math.ceil(maxDaysToSell),
@@ -595,8 +701,9 @@ export function generateOptimizedPhases(
       const costInfo = calculateOptimizedCraftCost(recipe, pricesMap);
       const marketPrice = pricesMap[item.id] || getStoredItemPrice(item.id) || 0;
       const netSale = Math.floor(marketPrice * 0.98);
-      const profit = netSale - costInfo.cost;
-      const netCost = costInfo.cost - netSale;
+      const totalRevenue = netSale + costInfo.sebuscalinesValue;
+      const profit = totalRevenue - costInfo.cost;
+      const netCost = costInfo.cost - totalRevenue;
 
       const volumeData = salesMap[item.id] as ItemSalesVolume | undefined;
       const salesAnalysis = analyzeSalesVolume(marketPrice, volumeData);
@@ -761,11 +868,15 @@ export function generateOptimizedPhases(
 
     let phaseInvestment = 0;
     let phaseNetRevenue = 0;
+    let phaseSebuscalines = 0;
+    let phaseSebuscalinesValue = 0;
     let phaseXpGained = 0;
 
     for (const c of phaseCrafts) {
       phaseInvestment += c.totalCraftCost;
-      phaseNetRevenue += c.totalNetSale;
+      phaseNetRevenue += (c.totalRevenue ?? (c.totalNetSale + (c.totalSebuscalinesValue || 0)));
+      phaseSebuscalines += (c.totalSebuscalines || 0);
+      phaseSebuscalinesValue += (c.totalSebuscalinesValue || 0);
       phaseXpGained += c.xpGained;
     }
 
@@ -780,6 +891,8 @@ export function generateOptimizedPhases(
       crafts: phaseCrafts,
       totalInvestment: phaseInvestment,
       totalNetRevenue: phaseNetRevenue,
+      totalSebuscalines: phaseSebuscalines,
+      totalSebuscalinesValue: phaseSebuscalinesValue,
       netProfitOrLoss: phaseNetRevenue - phaseInvestment,
     });
   }

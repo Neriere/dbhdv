@@ -8,6 +8,9 @@ import {
   calculateLevelTiers,
   simulateCraftBatch,
   simulateCraftsUntilLevel,
+  calculateOptimizedCraftCost,
+  recalculateSelectedCraftsSequence,
+  calculateSummary,
   SUPPORTED_JOB_IDS,
 } from "../src/services/jobLevelingService.js";
 
@@ -171,5 +174,91 @@ test("Verifica que los 14 oficios (incluido Ganadero 101) estén en SUPPORTED_JO
   assert.ok(SUPPORTED_JOB_IDS.includes(60));  // Fabricante
   assert.ok(SUPPORTED_JOB_IDS.includes(65));  // Manitas
   assert.equal(SUPPORTED_JOB_IDS.length, 14);
+});
+
+test("Retorno económico de Sebuscalines en crafteos de Busca y Captura (ByC)", () => {
+  // Recurso 15551 (Botella de Lonyon) -> Da 1020 Sebuscalines en cofre
+  // Fragmentos: 15383 a 15390 (8 fragmentos)
+  const fakeRecipe = {
+    id: 99999,
+    resultId: 99999,
+    resultName: "Equipo Legendario de Prueba",
+    level: 200,
+    ingredientIds: [15551],
+    quantities: [1],
+  };
+
+  // CASO A: Fragmentos son más baratos que compra directa (Ruta Óptima = Fragmentos)
+  // Directo = 1,000,000 k. 8 Fragmentos = 50,000 k cada uno = 400,000 k total.
+  const pricesRouteFragments: Record<number, number> = {
+    15551: 1000000,
+    15383: 50000,
+    15384: 50000,
+    15385: 50000,
+    15386: 50000,
+    15387: 50000,
+    15388: 50000,
+    15389: 50000,
+    15390: 50000,
+  };
+
+  const costInfoFragments = calculateOptimizedCraftCost(fakeRecipe as any, pricesRouteFragments);
+  assert.equal(costInfoFragments.cost, 400000);
+  assert.equal(costInfoFragments.requiresByc, true);
+  // Al ser ruta de fragmentos, el jugador hace la cacería y gana 1020 Sebuscalines
+  assert.equal(costInfoFragments.sebuscalinesEarned, 1020);
+  assert.equal(costInfoFragments.sebuscalinesValue, 1020 * costInfoFragments.sebuscalinUnitPrice);
+
+  // CASO B: Compra directa en mercadillo es más barata que fragmentos (Ruta Óptima = Directo)
+  // Directo = 250,000 k. Fragmentos = 400,000 k total.
+  const pricesRouteDirect: Record<number, number> = {
+    ...pricesRouteFragments,
+    15551: 250000,
+  };
+
+  const costInfoDirect = calculateOptimizedCraftCost(fakeRecipe as any, pricesRouteDirect);
+  assert.equal(costInfoDirect.cost, 250000);
+  assert.equal(costInfoDirect.requiresByc, true);
+  // Al comprar directo en HDV, no se hace la cacería ni se obtienen Sebuscalines
+  assert.equal(costInfoDirect.sebuscalinesEarned, 0);
+  assert.equal(costInfoDirect.sebuscalinesValue, 0);
+
+  // CASO C: Recalcular secuencia y verificar que profitUnit suma el valor de Sebuscalines
+  const crafts = [
+    {
+      recipe: fakeRecipe as any,
+      item: { id: 99999, level: 200, name: "Equipo Legendario" } as any,
+      amount: 2,
+    },
+  ];
+
+  // Supongamos que el equipo se vende a 500,000 k en HDV
+  (global as any).localStorage.setItem("dofus_sebuscalin_unit_price_v1", "320");
+  pricesRouteFragments[99999] = 500000;
+
+  const seq = recalculateSelectedCraftsSequence(0, crafts, 1.0, false, pricesRouteFragments);
+  const entry = seq.updatedEntries[0];
+
+  assert.equal(entry.amount, 2);
+  assert.equal(entry.craftCostUnit, 400000);
+  assert.equal(entry.netSaleUnit, Math.floor(500000 * 0.98)); // 490,000
+  assert.equal(entry.sebuscalinesPerCraft, 1020);
+  assert.equal(entry.totalSebuscalines, 2040); // 2 crafts * 1020
+  assert.equal(entry.sebuscalinesValueUnit, 1020 * 320); // 326,400 k
+  assert.equal(entry.totalSebuscalinesValue, 2040 * 320); // 652,800 k
+
+  // Retorno total unitario = 490,000 + 326,400 = 816,400 k
+  assert.equal(entry.totalRevenueUnit, 490000 + 326400);
+  // Beneficio unitario = 816,400 - 400,000 = 416,400 k (en vez de solo 90,000 si no se contaran los Sebuscalines)
+  assert.equal(entry.profitUnit, (490000 + 326400) - 400000);
+
+  // CASO D: calculateSummary refleja los Sebuscalines y retorno total acumulado
+  const summary = calculateSummary(seq.updatedEntries, seq.finalXp);
+  assert.equal(summary.totalCrafts, 2);
+  assert.equal(summary.totalInvestment, 800000);
+  assert.equal(summary.totalSebuscalines, 2040);
+  assert.equal(summary.totalSebuscalinesValue, 652800);
+  assert.equal(summary.totalNetRevenue, 2 * (490000 + 326400));
+  assert.equal(summary.netProfitOrLoss, summary.totalNetRevenue - summary.totalInvestment);
 });
 

@@ -44,6 +44,7 @@ import { useBankInventory } from "../hooks/useBankInventory";
 import { BycDetailPage } from "./BycDetailPage";
 import { BycExportExcelModal } from "./BycExportExcelModal";
 import { ModalPortal } from "./common/ModalPortal";
+import { getStoredSebuscalinPrice, SEBUSCALIN_STORAGE_KEY } from "../services/bycCostService";
 
 interface TreasureHuntCalculatorProps {
   onNavigateToShopping?: () => void;
@@ -78,17 +79,6 @@ export interface CalculatedBycEquipment {
   addedValueVsRawSale: number;
   recipeIngredients: BycRecipeIngredient[];
 }
-
-const SEBUSCALIN_STORAGE_KEY = "dofus_sebuscalin_unit_price_v1";
-
-const getStoredSebuscalinPrice = (serverSlug?: string): number => {
-  if (typeof window === "undefined") return 320;
-  const slug = resolveServerSlug(serverSlug);
-  const val = localStorage.getItem(`dofus_sebuscalin_unit_price_${slug}`);
-  if (val) return Math.max(1, Number(val));
-  const legacy = localStorage.getItem(SEBUSCALIN_STORAGE_KEY);
-  return legacy ? Math.max(1, Number(legacy)) : 320;
-};
 
 const ZONE_FILTERS = [
   { id: "all", label: "Todas las zonas" },
