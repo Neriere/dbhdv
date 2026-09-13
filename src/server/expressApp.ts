@@ -1267,12 +1267,6 @@ def clean_ladder(raw_list):
         if cl[0] <= 20 or (cl[1] > 0 and cl[2] >= cl[1]):
             return cl[1:]
 
-    if len(cl) > 1 and 1 <= cl[0] <= 10 and cl[1] >= 20:
-        return cl[1:]
-
-    if len(cl) > 1 and 1 <= cl[0] <= 50 and cl[1] > 0 and (cl[1] / max(1, cl[0])) > 40:
-        return cl[1:]
-
     return cl
 
 def process_ladders(ladders, offer_prices=None, item_id=0):

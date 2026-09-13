@@ -1307,7 +1307,7 @@ async function getPricesAndUpdatedAtMaps(profileId: number): Promise<{ prices: M
   // Fallback para objetos sin stock / sin precio en mercadillo pero con cotización sugerida
   try {
     const volResult = await database.execute({
-      sql: "SELECT item_id, suggested_price, updated_at FROM profile_sales_volume WHERE profile_id = ? AND suggested_price >= 50",
+      sql: "SELECT item_id, suggested_price, updated_at FROM profile_sales_volume WHERE profile_id = ? AND suggested_price >= 1",
       args: [profileId],
     });
     for (const row of volResult.rows) {
@@ -2035,7 +2035,7 @@ async function buildBootstrapData(): Promise<BootstrapData> {
   // Fallback para objetos sin precio directo pero con cotización sugerida
   for (const [idStr, vol] of Object.entries(salesVolume)) {
     const id = Number(idStr);
-    if (id > 0 && (prices[id] === undefined || prices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+    if (id > 0 && (prices[id] === undefined || prices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 1) {
       prices[id] = Math.round(vol.suggestedPrice);
       if (!priceUpdatedAt[id]) {
         priceUpdatedAt[id] = vol.updatedAt || Date.now();
@@ -2679,7 +2679,7 @@ export async function correctPricesAgainstSalesVolume(
     const sItemId = Number(idStr);
     const sv = svRaw as any;
     const sug = Number(sv?.suggestedPrice || sv?.suggested_price || 0);
-    if (sItemId > 0 && sug >= 50) {
+    if (sItemId > 0 && sug >= 1) {
       const currentPrice = await getPrice(profileId, sItemId);
       if (currentPrice > 0) {
         const isExaggerated = currentPrice >= sug * 3.0;
@@ -3101,10 +3101,13 @@ export function calculateItemMarketPrice(
 
       // Desfasaje automático si 'p1' contiene el prefijo del conteo de lotes o TypeID/Categoría (1..20)
       if (p1 <= 20 && p10 > 50 && (p10 / 10) > (p1 * 3)) {
-        p1 = Number(rawObj['10'] ?? 0);
-        p10 = Number(rawObj['100'] ?? 0);
-        p100 = Number(rawObj['1000'] ?? 0);
-        p1000 = 0;
+        const isShiftedLots = p100 > 0 && (p100 / 10) <= (p10 * 3.0) && (p100 / 10) >= (p10 * 0.3);
+        if (isShiftedLots) {
+          p1 = Number(rawObj['10'] ?? 0);
+          p10 = Number(rawObj['100'] ?? 0);
+          p100 = Number(rawObj['1000'] ?? 0);
+          p1000 = 0;
+        }
       }
 
       // Si los lotes vienen invertidos (descendentes de x1000 a x1)
@@ -3175,7 +3178,8 @@ export function calculateItemMarketPrice(
         let validLots = rawLots;
         if (rawLots.length >= 3) {
           const sortedUnits = [...allUnits].sort((a, b) => a - b);
-          const medianUnit = sortedUnits[Math.floor(sortedUnits.length / 2)];
+          // Usar la mediana inferior para preservar el suelo real accesible del mercado
+          const medianUnit = sortedUnits[Math.floor((sortedUnits.length - 1) / 2)];
           const cleaned = rawLots.filter(l => l.unit >= medianUnit * 0.25 && l.unit <= medianUnit * 3.5);
           if (cleaned.length > 0) {
             filteredOutliers = rawLots.length - cleaned.length;
@@ -3230,7 +3234,7 @@ export function calculateItemMarketPrice(
   // 2. Si el precio en mercadillo está inflado (>= 3.0x de cotización), se protege contra troll inflado.
   // 3. Falso dump: si hay 2 o más ofertas en mercadillo o es equipable, el precio de mercadillo es real.
   //    Solo se considera dump anómalo si hay exactamente 1 oferta solitaria de recurso por debajo del 25%.
-  if (suggestedPrice && suggestedPrice >= 50) {
+  if (suggestedPrice && suggestedPrice >= 1) {
     if (finalPrice > 0) {
       const isExaggerated = finalPrice >= suggestedPrice * 3.0;
       const isExtremeDump =

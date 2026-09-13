@@ -661,15 +661,6 @@ def clean_ladder(raw_list):
         if cl[0] <= 20 or (cl[1] > 0 and cl[2] >= cl[1]):
             return cl[1:]
 
-    # 3. Si cl[0] es un conteo/tipo pequeño (1 <= cl[0] <= 10) y cl[1] es un precio real (>= 20)
-    if len(cl) > 1 and 1 <= cl[0] <= 10 and cl[1] >= 20:
-        return cl[1:]
-
-    # 4. Verificación de ratio anómalo: si 1 <= cl[0] <= 50 y cl[1] / max(1, cl[0]) > 40
-    # (en Dofus ningún lote 10 cuesta 40 veces más que el lote 1)
-    if len(cl) > 1 and 1 <= cl[0] <= 50 and cl[1] > 0 and (cl[1] / max(1, cl[0])) > 40:
-        return cl[1:]
-
     return cl
 
 def process_ladders(ladders, offer_prices=None, item_id=0):
@@ -830,7 +821,7 @@ def async_worker():
 
             if iid in ITEM_SALES_VOLUME:
                 s_sug = ITEM_SALES_VOLUME[iid].get("suggestedPrice")
-                if s_sug and s_sug >= 50:
+                if s_sug and s_sug >= 1:
                     body["suggested_price"] = s_sug
 
             prepared_items.append((body, raw))

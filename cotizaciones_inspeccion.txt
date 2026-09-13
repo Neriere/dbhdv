@@ -1,6 +1,6 @@
 ==========================================================================================
   DOFUS UNITY -> REGISTRO ESPECIAL DE INSPECCION DE COTIZACIONES Y HISTORIAL DE VENTAS
-  Inicio de sesion : 2026-09-11 00:26:15
+  Inicio de sesion : 2026-09-13 18:24:45
   Archivo destino  : cotizaciones_inspeccion.txt
   (Usa este log para encontrar los numeros exactos de 24h, 7d y 30d de ventas)
 ==========================================================================================

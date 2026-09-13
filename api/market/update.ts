@@ -159,10 +159,14 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
 
     // Desfasaje automático si 'p1' contiene el prefijo de lotes o categoría/tipo (1..20)
     if (p1 <= 20 && p10 > 50 && (p10 / 10) > (p1 * 3)) {
-      p1 = p10;
-      p10 = p100;
-      p100 = p1000;
-      p1000 = 0;
+      // Solo desfasar si p100 es consistente con p10 (siendo los lotes x1 y x10 consecutivos)
+      const isShiftedLots = p100 > 0 && (p100 / 10) <= (p10 * 3.0) && (p100 / 10) >= (p10 * 0.3);
+      if (isShiftedLots) {
+        p1 = p10;
+        p10 = p100;
+        p100 = p1000;
+        p1000 = 0;
+      }
     }
 
     const rawLots = [
@@ -196,7 +200,8 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
         let validLots = rawLots;
         if (rawLots.length >= 3) {
           const sortedUnits = [...allUnits].sort((a, b) => a - b);
-          const medianUnit = sortedUnits[Math.floor(sortedUnits.length / 2)];
+          // Usar la mediana inferior para preservar el suelo real accesible del mercado
+          const medianUnit = sortedUnits[Math.floor((sortedUnits.length - 1) / 2)];
           const cleaned = rawLots.filter(l => l.unit >= medianUnit * 0.25 && l.unit <= medianUnit * 3.5);
           if (cleaned.length > 0) {
             filteredOutliersCount = rawLots.length - cleaned.length;
@@ -252,7 +257,7 @@ function processItemPayload(payload: any, now: number, previousRef: number | Ite
   // 2. Si el precio en mercadillo está inflado (>= 3.0x de cotización), se protege contra troll inflado.
   // 3. Falso dump: si hay 2 o más ofertas en mercadillo o es equipable, el precio de mercadillo es real.
   //    Solo se considera dump anómalo si hay exactamente 1 oferta solitaria de recurso por debajo del 25%.
-  if (historicalSuggestedPrice >= 50) {
+  if (historicalSuggestedPrice >= 1) {
     if (finalPrice > 0) {
       const isExaggerated = finalPrice >= historicalSuggestedPrice * 3.0;
       const isExtremeDump =
@@ -369,7 +374,7 @@ export default async function handler(req: any, res: any) {
           const suggestedPrice = Number(sv.suggestedPrice || sv.suggested_price || 0);
           const currentRef = currentPriceMap.get(sItemId);
           const currentPrice = currentRef?.price || 0;
-          if (suggestedPrice >= 50) {
+          if (suggestedPrice >= 1) {
             if (currentPrice > 0) {
               const isExaggerated = currentPrice >= suggestedPrice * 3.0;
               const isExtremeDump = currentPrice <= suggestedPrice * 0.25;

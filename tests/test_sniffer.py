@@ -74,14 +74,6 @@ def clean_ladder(raw_list):
         if cl[0] <= 20 or (cl[1] > 0 and cl[2] >= cl[1]):
             return cl[1:]
 
-    # 3. Si cl[0] es un conteo/tipo pequeño (1 <= cl[0] <= 10) y cl[1] es un precio real (>= 20)
-    if len(cl) > 1 and 1 <= cl[0] <= 10 and cl[1] >= 20:
-        return cl[1:]
-
-    # 4. Verificación de ratio anómalo: si 1 <= cl[0] <= 50 y cl[1] / max(1, cl[0]) > 40
-    if len(cl) > 1 and 1 <= cl[0] <= 50 and cl[1] > 0 and (cl[1] / max(1, cl[0])) > 40:
-        return cl[1:]
-
     return cl
 
 EQUIPMENT_IDS = {"13114", "13115", "13116"}
@@ -332,6 +324,13 @@ class TestSnifferMarketIngest(unittest.TestCase):
         raw = [500, 4800, 47000, 450000]
         cleaned = clean_ladder(raw)
         self.assertEqual(cleaned, [500, 4800, 47000, 450000])
+
+    def test_clean_ladder_cheap_resource_untouched(self):
+        """Caso Diente de larva zafiro (#13713): lotes baratos [2, 20, 2800, 299999] NO deben desfasarse"""
+        raw = [2, 20, 2800, 299999]
+        cleaned = clean_ladder(raw)
+        self.assertEqual(cleaned, [2, 20, 2800, 299999])
+        self.assertEqual(cleaned[0], 2)
 
     def test_process_ladders_discards_single_category_id_6(self):
         """Si un paquete solo contiene [6], NUNCA debe registrarse como 6 kamas"""

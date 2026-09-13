@@ -136,7 +136,7 @@ export const RecipeCraftingCalculator: React.FC<{
     if (salesVolumeMap) {
       for (const [idStr, vol] of Object.entries(salesVolumeMap)) {
         const id = Number(idStr);
-        if (id > 0 && (!merged[id] || merged[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+        if (id > 0 && (!merged[id] || merged[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 1) {
           merged[id] = Math.round(vol.suggestedPrice);
         }
       }
@@ -149,7 +149,7 @@ export const RecipeCraftingCalculator: React.FC<{
     if (salesVolumeMap) {
       for (const [idStr, vol] of Object.entries(salesVolumeMap)) {
         const id = Number(idStr);
-        if (id > 0 && (!basePrices[id] || basePrices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 50) {
+        if (id > 0 && (!basePrices[id] || basePrices[id] <= 0) && vol?.suggestedPrice && vol.suggestedPrice >= 1) {
           merged[id] = vol.updatedAt || Date.now();
         }
       }

@@ -312,6 +312,50 @@ test('Inflación legítima de mercado (subida x3 con múltiples ofertas) es acep
   assert.ok(result.finalPrice >= 70000, `Precio debe aceptar la inflación legítima de 75k, actual: ${result.finalPrice}`);
 });
 
+test('Diente de larva zafiro (#13713) preserva lotes baratos de 2k y no se desvirtúa a 23,955k ni 28k', () => {
+  const item = {
+    id: 13713,
+    name: { es: 'Diente de larva zafiro' },
+    level: 45,
+    typeId: 53, // Hueso / Recurso
+  } as unknown as DofusItem;
+
+  // En mercadillo real: 1 a 2k, 10 a 20k, 100 a 2.800k, 1000 a 299.999k
+  const precios = {
+    '1': 2,
+    '10': 20,
+    '100': 2800,
+    '1000': 299999,
+  };
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', 10);
+  assert.equal(result.resolvedType, 'recurso');
+  // Debe haber preservado los lotes de 2k y filtrado los lotes inflados de 28k y 300k
+  assert.equal(result.finalPrice, 2, `El precio de Diente de larva zafiro debe ser 2 kamas, pero fue ${result.finalPrice}`);
+  assert.notEqual(result.finalPrice, 23955, 'El precio NUNCA debe ser 23,955k');
+  assert.notEqual(result.finalPrice, 28, 'El precio no debe descartar los lotes de 2k como outliers');
+});
+
+test('Salvaguarda anti-troll protege recursos económicos con cotización < 50k (ej: 10k)', () => {
+  const item = {
+    id: 13713,
+    name: { es: 'Diente de larva zafiro' },
+    level: 45,
+    typeId: 53,
+  } as unknown as DofusItem;
+
+  // Mercadillo desabastecido con una sola oferta inflada troll a 200k
+  const precios = {
+    '1': 200,
+  };
+  const cotizacionSugerida = 10; // 10 kamas
+
+  const result = calculateItemMarketPrice(item, precios, 'recurso', cotizacionSugerida);
+  assert.equal(result.antiTrollTriggered, true, 'Debe activar anti-troll contra oferta de 200k cuando cotización es 10k');
+  assert.equal(result.finalPrice, 10, 'Debe adoptar la cotización sugerida de 10k');
+});
+
+
 
 
 
