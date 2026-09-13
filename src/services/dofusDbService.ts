@@ -230,7 +230,7 @@ export const CATEGORY_TYPE_IDS_MAP: Record<string, number[]> = {
   pescador: [41, 49, 134, 135, 64],
   cazador: [63, 69, 187, 56, 59, 150],
   ganadero: [99, 323, 326, 327],
-  fabricante: [82, 188, 271, 112, 217],
+  fabricante: [82, 151, 112, 217],
   monsters: [
     47, 48, 53, 54, 55, 56, 57, 59, 103, 104, 105, 106, 107, 108, 109, 110, 111,
     119, 15, 74, 96, 98, 152, 219, 229, 278,
@@ -2055,7 +2055,11 @@ export function getCraftableItemsSnapshot(): CraftableItem[] {
       "";
     const resolvedName = knownName || `Objeto #${resultId}`;
 
-    if (isClassItem({ id: resultId, name: resolvedName }) || isOmittedItem({ id: resultId, name: resolvedName })) {
+    if (
+      isClassItem({ id: resultId, name: resolvedName }) ||
+      isOmittedItem({ id: resultId, name: resolvedName }) ||
+      isQuestOrZeroXpCraft({ id: resultId, name: resolvedName }, recipe)
+    ) {
       continue;
     }
 

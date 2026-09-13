@@ -27,8 +27,12 @@ import {
 } from "./bycCostService";
 import { USER_JOBS_DEFINITIONS, JobConfigDefinition } from "./userJobsService";
 import { DofusRecipe, DofusItem } from "../types";
-import { isQuestOrZeroXpCraft } from "../data/dofusJobs";
-export { isQuestOrZeroXpCraft };
+import {
+  isQuestOrZeroXpCraft,
+  getItemCraftXpRatio,
+  ITEM_TYPE_CRAFT_XP_RATIOS,
+} from "../data/dofusJobs";
+export { isQuestOrZeroXpCraft, getItemCraftXpRatio, ITEM_TYPE_CRAFT_XP_RATIOS };
 
 // ----------------------------------------------------
 // Tipos y Modelos de Datos
@@ -486,9 +490,7 @@ export function recalculateSelectedCraftsSequence(
     const requiredItemLevel = c.item.level || 1;
     const isLevelInsufficient = currentLevelAtCraft < requiredItemLevel;
     const isQuestOrZero = isQuestOrZeroXpCraft(c.item, c.recipe);
-    const itemCraftRatio = isQuestOrZero
-      ? 0
-      : ((c.item as any)?.craftXpRatio ?? (c.recipe as any)?.craftXpRatio ?? 1.0);
+    const itemCraftRatio = getItemCraftXpRatio(c.item, c.recipe);
 
     const sim = simulateCraftBatch(
       startXpForThisItem,
@@ -883,9 +885,7 @@ export function generateOptimizedPhases(
       const scored: Candidate[] = [];
 
       for (const r of available) {
-        const xpRatio = (r.item as any)?.craftXpRatio !== undefined
-          ? (r.item as any).craftXpRatio
-          : (r.recipe as any)?.craftXpRatio ?? 1.0;
+        const xpRatio = getItemCraftXpRatio(r.item, r.recipe);
         const xp = getCraftXpByJobLevel(r.level, currentJobLevel, xpMultiplier, xpRatio, isBoostedServer);
         if (xp <= 0) continue;
 

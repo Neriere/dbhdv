@@ -276,6 +276,18 @@ export async function initDB() {
         console.warn("[Database] ensureDefaultPriceProfile warning:", err);
       }
 
+      // Purgar ídolos de misiones (tipo 289 / taller base) de la base de datos
+      try {
+        await database.execute(`
+          DELETE FROM items WHERE type_id = 289 OR id IN (28431, 28432, 28444, 28445, 28446, 28447, 28448, 28449, 28450, 28451, 28452, 28453, 28455, 30049);
+        `);
+        await database.execute(`
+          DELETE FROM recipes WHERE result_id IN (28431, 28432, 28444, 28445, 28446, 28447, 28448, 28449, 28450, 28451, 28452, 28453, 28455, 30049);
+        `);
+      } catch (err) {
+        console.warn("[Database] Purge quest idols warning:", err);
+      }
+
       // Ensure runes
       try {
         await ensureRunesInDatabase();
@@ -832,16 +844,44 @@ export function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusIt
     rawType.superCategoryId ?? rawType.super_category_id ?? known?.type?.superCategoryId ?? 0,
   );
 
+  const superTypeId = Number(
+    rawItem.superTypeId ??
+      rawItem.super_type_id ??
+      rawType.superTypeId ??
+      rawType.super_type_id ??
+      (rawType.superType as any)?.id ??
+      0,
+  );
+
   const iconId = Number(rawItem.iconId ?? rawItem.icon_id ?? known?.iconId ?? 0);
 
   const possibleEffects = cleanEffects(rawItem.possibleEffects);
   const effects = cleanEffects(rawItem.effects);
+
+  const rawCraftRatio =
+    typeof rawItem.craftXpRatio === "number"
+      ? rawItem.craftXpRatio
+      : typeof (rawItem as any).craft_xp_ratio === "number"
+        ? (rawItem as any).craft_xp_ratio
+        : typeof rawType.craftXpRatio === "number"
+          ? rawType.craftXpRatio
+          : undefined;
+
+  const normalizedCraftXpRatio =
+    rawCraftRatio !== undefined && rawCraftRatio >= 0
+      ? rawCraftRatio > 10
+        ? rawCraftRatio / 100
+        : rawCraftRatio
+      : undefined;
 
   const cleanItem: DofusItem = {
     id: extractedId,
     level: Number(rawItem.level ?? known?.level ?? 1),
     typeId,
     iconId,
+    superTypeId: superTypeId || undefined,
+    exchangeable: rawItem.exchangeable !== false,
+    usable: Boolean(rawItem.usable),
     name: {
       es: spanishName,
       fr: getLocalizedText(
@@ -860,16 +900,13 @@ export function normalizeSpanishItem(rawInput: Record<string, unknown>): DofusIt
     type: {
       id: typeId,
       superCategoryId,
+      superTypeId: superTypeId || undefined,
       name: { es: typeName, fr: typeName, en: typeName },
     },
     hasRecipe: Boolean(rawItem.hasRecipe || (rawItem as any).recipe || (rawItem as any).craft),
     isIngredient: Boolean((rawItem as any).isIngredient),
     price: typeof rawItem.price === "number" ? rawItem.price : undefined,
-    ...(typeof rawItem.craftXpRatio === "number"
-      ? { craftXpRatio: rawItem.craftXpRatio }
-      : typeof (rawItem as any).craft_xp_ratio === "number"
-        ? { craftXpRatio: (rawItem as any).craft_xp_ratio }
-        : {}),
+    ...(normalizedCraftXpRatio !== undefined ? { craftXpRatio: normalizedCraftXpRatio } : {}),
     ...(typeof rawItem.craftConditionalCriterion === "string" && rawItem.craftConditionalCriterion
       ? { craftConditionalCriterion: rawItem.craftConditionalCriterion }
       : typeof (rawItem as any).craft_conditional_criterion === "string" && (rawItem as any).craft_conditional_criterion

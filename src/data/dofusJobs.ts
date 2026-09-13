@@ -227,9 +227,20 @@ export function isOmittedItem(item: {
   if (
     [
       24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146,
-      147, 148, 155, 156, 168, 171, 178, 186, 198, 312,
+      147, 148, 155, 156, 168, 171, 178, 186, 198, 289, 312,
     ].includes(typeId)
   ) {
+    return true;
+  }
+
+  // Supertipo de objetos de misión (superTypeId 14)
+  const superTypeId = Number(
+    (item as any)?.superTypeId ??
+    (item as any)?.type?.superTypeId ??
+    (item as any)?.type?.superType?.id ??
+    0
+  );
+  if (superTypeId === 14) {
     return true;
   }
 
@@ -259,6 +270,16 @@ export function isOmittedItem(item: {
   const nameEn = (
     typeof item.name === "object" ? item.name?.en || "" : ""
   ).toLowerCase().trim();
+
+  // Ídolos de misiones (ligados, consumibles de misión y sin valor comercial)
+  if (
+    nameEs.includes("ídolo") ||
+    nameEs.includes("idolo") ||
+    nameFr.includes("idole") ||
+    nameEn.includes("idol")
+  ) {
+    return true;
+  }
 
   // 6. Objetos de prueba / debug de Ankama (como [!] Rapa, [!] Test, etc.)
   if (
@@ -387,8 +408,18 @@ export function getJobForItem(
     return { jobId: 0, jobNameEs: "Sin Oficio" };
   }
 
-  // 1. Extract recipe.job or recipe.jobId if directly supplied by DofusDB or Ankama
+  // Si la receta es de taller base (jobId 1 = Base / sin oficio artesanal), o es ítem de misión
   const rawJobId = recipe?.job?.id || recipe?.jobId;
+  if (rawJobId === 1) {
+    return { jobId: 0, jobNameEs: "Sin Oficio" };
+  }
+
+  const rawTypeId = Number(item?.typeId || item?.type?.id || 0);
+  if (rawTypeId === 289 || isQuestOrZeroXpCraft(item, recipe)) {
+    return { jobId: 0, jobNameEs: "Sin Oficio" };
+  }
+
+  // 1. Extract recipe.job or recipe.jobId if directly supplied by DofusDB or Ankama
   if (rawJobId) {
     const foundByJobId = DOFUS_JOBS.find(
       (j) => j.id === rawJobId || j.ankamaJobIds?.includes(rawJobId),
@@ -794,6 +825,21 @@ export const KNOWN_ZERO_XP_OR_QUEST_ITEM_IDS = new Set<number>([
   420,   // Hilo de lino
   1001,  // Tabla de madera de kokoko
   1461,  // Veneno azotador
+  // Ídolos de misiones de Dofus Touch (tipo 289, taller base jobId 1, ligados, sin XP de oficio)
+  28431, // Ídolo Santístico (Lvl 180)
+  28432, // Genkyatto (Lvl 110)
+  28444, // Ídolo de Viti chamuscado (Lvl 100)
+  28445, // Ídolo de Thomahon Nauseabundo (Lvl 105)
+  28446, // Ídolo de Foluk Dorado (Lvl 100)
+  28447, // Ídolo de Viti Vegetal (Lvl 100)
+  28448, // Ídolo de Viti Helado (Lvl 100)
+  28449, // Ídolo de Thomahon Marino (Lvl 100)
+  28450, // Ídolo de Thomahon Arborícola (Lvl 100)
+  28451, // Ídolo de Thomahon de Obsidiana (Lvl 150)
+  28452, // Ídolo de Foluk Arañado (Lvl 170)
+  28453, // Ídolo de Foluk Feérico (Lvl 170)
+  28455, // Ídolo de Hulhu (Lvl 200)
+  30049, // Ídolo de Tolgnas (Lvl 20)
 ]);
 
 /**
@@ -812,7 +858,13 @@ export function isQuestOrZeroXpCraft(
     return true;
   }
 
-  // 2. Ratio oficial de XP de crafteo es exactamente 0
+  // 2. Recetas de taller base o sin oficio artesanal (jobId: 1 = Base)
+  const recipeJobId = Number(recipe?.jobId ?? recipe?.job?.id ?? 0);
+  if (recipeJobId === 1) {
+    return true;
+  }
+
+  // 3. Ratio oficial de XP de crafteo es exactamente 0
   const xpRatio =
     item?.craftXpRatio ??
     recipe?.craftXpRatio ??
@@ -822,7 +874,7 @@ export function isQuestOrZeroXpCraft(
     return true;
   }
 
-  // 3. Criterio condicional de crafteo requiere misión activa (Qa= / Qo= / Qf=)
+  // 4. Criterio condicional de crafteo requiere misión activa (Qa= / Qo= / Qf=)
   const craftCond = String(
     item?.craftConditionalCriterion ??
     recipe?.craftConditionalCriterion ??
@@ -834,7 +886,7 @@ export function isQuestOrZeroXpCraft(
     return true;
   }
 
-  // 4. Supertipo de objetos de misión (superTypeId 14 en DofusDB = Objet de quête)
+  // 5. Supertipo de objetos de misión (superTypeId 14 en DofusDB = Objet de quête)
   const superTypeId =
     item?.superTypeId ??
     item?.type?.superTypeId ??
@@ -844,7 +896,7 @@ export function isQuestOrZeroXpCraft(
     return true;
   }
 
-  // 5. Supercategoría de misión (superCategoryId 4 en DofusDB = Objets de quête)
+  // 6. Supercategoría de misión (superCategoryId 4 en DofusDB = Objets de quête)
   const superCategoryId =
     item?.type?.superCategoryId ??
     item?.superCategoryId ??
@@ -853,19 +905,111 @@ export function isQuestOrZeroXpCraft(
     return true;
   }
 
-  // 6. Tipos específicos de misión conocidos en Dofus
+  // 7. Tipos específicos de misión conocidos en Dofus (incluido 289: Ídolos de misiones)
   const typeId = Number(item?.typeId || item?.type?.id || recipe?.resultTypeId || 0);
-  if (typeId > 0 && [24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 155, 156, 168, 171, 178, 186, 198, 312].includes(typeId)) {
+  if (typeId > 0 && [24, 80, 126, 127, 131, 132, 133, 136, 137, 141, 142, 143, 146, 147, 148, 155, 156, 168, 171, 178, 186, 198, 289, 312].includes(typeId)) {
     return true;
   }
 
-  // 7. Si no tiene precio base ni en mercadillo y el nombre o descripción menciona explícitamente misión
+  // 8. Objetos ligados de un solo uso o con nombre/tipo que mencione explícitamente misión o ídolo
   const nameStr = typeof item?.name === "string" ? item.name : item?.name?.es || recipe?.resultName || "";
   const nameLower = String(nameStr).toLowerCase();
-  if (nameLower.includes("objeto de misión") || nameLower.includes("objeto de mision") || nameLower.includes("(misión)")) {
+  if (
+    nameLower.includes("objeto de misión") ||
+    nameLower.includes("objeto de mision") ||
+    nameLower.includes("(misión)") ||
+    nameLower.includes("ídolo") ||
+    nameLower.includes("idolo")
+  ) {
+    return true;
+  }
+
+  const typeNameStr = typeof item?.type?.name === "string"
+    ? item.type.name
+    : item?.type?.name?.es || item?.type?.name?.fr || item?.type?.name?.en || "";
+  const typeNameLower = String(typeNameStr).toLowerCase();
+  if (
+    typeNameLower.includes("misión") ||
+    typeNameLower.includes("mision") ||
+    typeNameLower.includes("quête") ||
+    typeNameLower.includes("quest") ||
+    typeNameLower.includes("ídolo") ||
+    typeNameLower.includes("idolo") ||
+    typeNameLower.includes("idole")
+  ) {
     return true;
   }
 
   return false;
+}
+
+/**
+ * Ratios oficiales de XP por tipo de objeto en DofusDB / Ankama.
+ * Los trofeos otorgan 300% (3.0x), llaves 60% (0.6x), consumibles entre 2% y 30%, etc.
+ */
+export const ITEM_TYPE_CRAFT_XP_RATIOS: Record<number, number> = {
+  151: 3.0,  // Trofeo (300% = 3.0x)
+  84: 0.6,   // Llave (60% = 0.6x)
+  40: 0.3,   // Aleación (30% = 0.3x)
+  43: 0.2,   // Pócima de teletransportación (20% = 0.2x)
+  95: 0.2,   // Tabla (20% = 0.2x)
+  167: 0.2,  // Esencia de guardián de mazmorra (20% = 0.2x)
+  183: 0.2,  // Concentrado (20% = 0.2x)
+  26: 0.1,   // Pócima de forjamagia (10% = 0.1x)
+  50: 0.1,   // Piedra preciosa (10% = 0.1x)
+  51: 0.1,   // Piedra bruta (10% = 0.1x)
+  69: 0.1,   // Carne comestible (10% = 0.1x)
+  70: 0.1,   // Tinte (10% = 0.1x)
+  165: 0.1,  // Pócima de conquista (10% = 0.1x)
+  12: 0.05,  // Pócima (5% = 0.05x)
+  33: 0.05,  // Pan (5% = 0.05x)
+  42: 0.05,  // Golosina (5% = 0.05x)
+  49: 0.05,  // Pescado comestible (5% = 0.05x)
+  99: 0.05,  // Red de captura (5% = 0.05x)
+  179: 0.05, // Preparación (5% = 0.05x)
+  323: 0.05, // Mákina (5% = 0.05x)
+  326: 0.05, // Carburante de cercados (5% = 0.05x)
+  58: 0.03,  // Semilla (3% = 0.03x)
+  60: 0.02,  // Aceite (2% = 0.02x)
+  174: 0.0,  // Mapa (0x)
+  197: 0.0,  // Garantía (0x)
+  289: 0.0,  // Ídolos de misiones (0x)
+};
+
+/**
+ * Obtiene el multiplicador oficial de XP para una receta u objeto.
+ * Considera exclusión de misiones (0 XP), ratios a nivel de receta/ítem/tipo y la tabla oficial.
+ */
+export function getItemCraftXpRatio(item?: any, recipe?: any): number {
+  if (isQuestOrZeroXpCraft(item, recipe)) {
+    return 0;
+  }
+
+  // 1. Ratio explícito en la receta
+  const recipeRatio = recipe?.craftXpRatio ?? (recipe?.result as any)?.craftXpRatio;
+  if (typeof recipeRatio === "number" && recipeRatio >= 0) {
+    return recipeRatio > 10 ? recipeRatio / 100 : recipeRatio;
+  }
+
+  // 2. Ratio explícito en el objeto
+  const itemRatio = item?.craftXpRatio ?? (item as any)?.craft_xp_ratio;
+  if (typeof itemRatio === "number" && itemRatio >= 0) {
+    return itemRatio > 10 ? itemRatio / 100 : itemRatio;
+  }
+
+  // 3. Ratio en item.type?.craftXpRatio
+  const typeCraftRatio = item?.type?.craftXpRatio ?? (item?.type as any)?.craft_xp_ratio;
+  if (typeof typeCraftRatio === "number" && typeCraftRatio >= 0) {
+    return typeCraftRatio > 10 ? typeCraftRatio / 100 : typeCraftRatio;
+  }
+
+  // 4. Por typeId oficial en tabla de ratios
+  const typeId = Number(item?.typeId || item?.type?.id || recipe?.resultTypeId || 0);
+  if (typeId > 0 && ITEM_TYPE_CRAFT_XP_RATIOS[typeId] !== undefined) {
+    return ITEM_TYPE_CRAFT_XP_RATIOS[typeId];
+  }
+
+  // 5. Default estándar para equipables (armas, escudos, armaduras): 1.0 (100%)
+  return 1.0;
 }
 

@@ -61,6 +61,7 @@ import {
   saveStoredJobPlanV2,
   clearStoredJobPlanV2,
   isQuestOrZeroXpCraft,
+  getItemCraftXpRatio,
 } from "../../services/jobLevelingService";
 import { useUserJobs } from "../../hooks/useUserJobs";
 import {
@@ -186,13 +187,22 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
   // ── 3. Fases Estructuradas y Crafteos ───────────────────────
   const [phases, setPhases] = useState<JobPlanPhase[]>(() => {
     const saved = getStoredJobPlanV2();
-    if (saved?.phases && saved.jobId === jobId) return saved.phases;
+    if (saved?.phases && saved.jobId === jobId) {
+      return saved.phases
+        .map((p) => ({
+          ...p,
+          crafts: (p.crafts || []).filter((c) => !isQuestOrZeroXpCraft(c.item, c.recipe)),
+        }))
+        .filter((p) => p.crafts.length > 0);
+    }
     return [];
   });
 
   const [selectedCrafts, setSelectedCrafts] = useState<SelectedCraftEntry[]>(() => {
     const saved = getStoredJobPlanV2();
-    if (saved && saved.jobId === jobId) return saved.selectedCrafts || [];
+    if (saved && saved.jobId === jobId) {
+      return (saved.selectedCrafts || []).filter((c) => !isQuestOrZeroXpCraft(c.item, c.recipe));
+    }
     return [];
   });
 
@@ -530,9 +540,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       const phaseStartXp = actualXp;
       const phaseTargetXp = levelToXp(nextM);
 
-      const itemRatio = isQuestOrZeroXpCraft(item, recipe)
-        ? 0
-        : ((item as any)?.craftXpRatio ?? (recipe as any)?.craftXpRatio ?? 1.0);
+      const itemRatio = getItemCraftXpRatio(item, recipe);
 
       const sim = simulateCraftBatch(phaseStartXp, item.level || 1, 1, xpMultiplier, isBoostedServer, itemRatio);
       const recalculated = recalculateSelectedCraftsSequence(
@@ -585,9 +593,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
       return;
     }
 
-    const itemRatio = isQuestOrZeroXpCraft(item, recipe)
-      ? 0
-      : ((item as any)?.craftXpRatio ?? (recipe as any)?.craftXpRatio ?? 1.0);
+    const itemRatio = getItemCraftXpRatio(item, recipe);
 
     const sim = simulateCraftsUntilLevel(
       actualXp,
@@ -777,9 +783,7 @@ export const JobLevelingOptimizer: React.FC<JobLevelingOptimizerProps> = ({
         const netSale = Math.floor(marketPrice * 0.98);
         const totalRevenue = netSale + costInfo.sebuscalinesValue;
         const profit = totalRevenue - costInfo.cost;
-        const xpRatio = (item as any)?.craftXpRatio !== undefined
-          ? (item as any).craftXpRatio
-          : (recipe as any)?.craftXpRatio ?? 1.0;
+        const xpRatio = getItemCraftXpRatio(item, recipe);
         const xpAtCurrent = getCraftXpByJobLevel(itemLevel, actualLevel, xpMultiplier, xpRatio, isBoostedServer);
 
         const volumeData = salesMap[item.id] as ItemSalesVolume | undefined;

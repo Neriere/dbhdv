@@ -514,7 +514,7 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
     nameFr: "Façonneur",
     icon: "Shield",
     ankamaJobIds: [60, 82, 74],
-    description: "Fabricación de escudos tácticos, trofeos e ídolos.",
+    description: "Fabricación de escudos tácticos y trofeos.",
     categories: [
       {
         id: "escudos",
@@ -528,17 +528,9 @@ export const JOB_CATEGORY_DATABASE: JobDatabaseEntry[] = [
         id: "trofeos",
         nameEs: "Trofeo",
         nameFr: "Trophée",
-        dofusDbTypes: [151, 271],
-        dofusDuTypes: [151, 271],
+        dofusDbTypes: [151],
+        dofusDuTypes: [151],
         keywords: ["trofeo", "trophée"],
-      },
-      {
-        id: "idolos",
-        nameEs: "Ídolo",
-        nameFr: "Idole",
-        dofusDbTypes: [188],
-        dofusDuTypes: [],
-        keywords: ["ídolo", "idolo", "idole"],
       },
       {
         id: "prismas",

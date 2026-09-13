@@ -14,7 +14,10 @@ import {
   SUPPORTED_JOB_IDS,
   isQuestOrZeroXpCraft,
   generateOptimizedPhases,
+  getItemCraftXpRatio,
+  ITEM_TYPE_CRAFT_XP_RATIOS,
 } from "../src/services/jobLevelingService.js";
+import { getJobForItem, isOmittedItem } from "../src/data/dofusJobs.js";
 
 // Setup mock window and localStorage for headless Node environment
 const mockStorage: Record<string, string> = {};
@@ -621,7 +624,7 @@ test("generateOptimizedPhases consolida objetos idénticos por destino en cada f
     jobId: 27,
     startingLevel: 188,
     targetLevel: 200,
-    strategy: "balanced",
+    strategy: "mixed_budget",
   });
 
   assert.ok(phases.length > 0, "Debe generar al menos 1 fase");
@@ -688,6 +691,97 @@ test("Estrategias Mixtas: mixed_budget (menor inversión) vs mixed_profit (máxi
     totalInvestBudget <= totalInvestProfit,
     `La inversión en mixed_budget (${totalInvestBudget}k) no debe ser mayor que en mixed_profit (${totalInvestProfit}k)`
   );
+});
+
+test("Trofeos otorgan ratio oficial de 300% (3.0x XP) - Caso Astuto mayor (#13762) a nivel 179 da exactamente 1778 XP (DofusDB)", () => {
+  const astutoMayor = {
+    id: 13762,
+    level: 150,
+    typeId: 151,
+    name: { es: "Astuto mayor" },
+  };
+
+  // 1. Ratio oficial para trofeos (tipo 151) debe ser 3.0 (300%)
+  const ratio = getItemCraftXpRatio(astutoMayor);
+  assert.equal(ratio, 3.0, "El ratio oficial de trofeos debe ser 3.0x (300%)");
+
+  // 2. Experiencia a nivel 179 con Astuto mayor (nivel 150)
+  // Base sin ratio = 592.6 -> Con ratio 3.0x = 1778 XP (exacto como en DofusDB)
+  const xp179 = getCraftXpByJobLevel(150, 179, 1.0, ratio, false);
+  assert.equal(xp179, 1778, "Astuto mayor nivel 150 a nivel 179 debe otorgar exactamente 1778 XP");
+
+  // 3. Experiencia a nivel 150 (sin decaimiento): 20 * 150 * 3.0 = 9000 XP
+  const xp150 = getCraftXpByJobLevel(150, 150, 1.0, ratio, false);
+  assert.equal(xp150, 9000, "Astuto mayor nivel 150 a nivel 150 debe otorgar 9000 XP");
+
+  // 4. Verificación de otros tipos con ratio especial
+  assert.equal(getItemCraftXpRatio({ typeId: 84 }), 0.6, "Llaves (tipo 84) otorgan 60% (0.6x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 40 }), 0.3, "Aleaciones (tipo 40) otorgan 30% (0.3x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 95 }), 0.2, "Tablas (tipo 95) otorgan 20% (0.2x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 183 }), 0.2, "Concentrados (tipo 183) otorgan 20% (0.2x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 167 }), 0.2, "Esencias (tipo 167) otorgan 20% (0.2x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 33 }), 0.05, "Panes (tipo 33) otorgan 5% (0.05x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 12 }), 0.05, "Pócimas (tipo 12) otorgan 5% (0.05x)");
+
+  // 5. Equipables normales (escudos, sombreros, etc.) tienen ratio 1.0 (100%)
+  assert.equal(getItemCraftXpRatio({ typeId: 82 }), 1.0, "Escudos (tipo 82) otorgan 100% (1.0x)");
+  assert.equal(getItemCraftXpRatio({ typeId: 16 }), 1.0, "Sombreros (tipo 16) otorgan 100% (1.0x)");
+});
+
+test("Detección y exclusión estricta de Ídolos de misión (tipo 289, taller base jobId 1, sin XP, no comerciables)", () => {
+  const idolFeerico = {
+    id: 28453,
+    level: 170,
+    typeId: 289,
+    name: { es: "Ídolo de Foluk Feérico" },
+  };
+  const idolMarino = {
+    id: 28449,
+    level: 100,
+    typeId: 289,
+    name: { es: "Ídolo de Thomahon Marino" },
+  };
+  const recipeBase = {
+    id: 28453,
+    resultId: 28453,
+    jobId: 1, // Taller base de misión
+    ingredientIds: [11228, 13503],
+    quantities: [3, 10],
+  };
+
+  // 1. isQuestOrZeroXpCraft debe retornar true para todos los ídolos
+  assert.equal(isQuestOrZeroXpCraft(idolFeerico), true);
+  assert.equal(isQuestOrZeroXpCraft(idolMarino), true);
+  assert.equal(isQuestOrZeroXpCraft({ id: 28431, name: "Ídolo Santístico" }), true);
+  assert.equal(isQuestOrZeroXpCraft(null, recipeBase), true);
+
+  // 2. isOmittedItem debe filtrar ídolos de catálogos comerciales y HDV
+  assert.equal(isOmittedItem(idolFeerico as any), true);
+  assert.equal(isOmittedItem(idolMarino as any), true);
+
+  // 3. getJobForItem no debe asignar ídolos a Fabricante (jobId 60) ni a ningún oficio
+  const jobFeerico = getJobForItem(idolFeerico as any, recipeBase as any);
+  assert.equal(jobFeerico.jobId, 0);
+  assert.equal(jobFeerico.jobNameEs, "Sin Oficio");
+
+  // 4. getItemCraftXpRatio debe otorgar estrictamente 0 XP a los ídolos
+  assert.equal(getItemCraftXpRatio(idolFeerico, recipeBase), 0);
+  assert.equal(getItemCraftXpRatio(idolMarino), 0);
+
+  // 5. El plan de optimización de Fabricante no debe incluir ídolos
+  const phases = generateOptimizedPhases({
+    jobId: 60,
+    startingLevel: 170,
+    targetLevel: 200,
+    strategy: "mixed_budget",
+  });
+  for (const phase of phases) {
+    for (const craft of phase.crafts) {
+      assert.notEqual(craft.item.id, 28453, "El plan de Fabricante no debe incluir Ídolo de Foluk Feérico");
+      assert.notEqual(craft.item.id, 28449, "El plan de Fabricante no debe incluir Ídolo de Thomahon Marino");
+      assert.notEqual(craft.item.typeId, 289, "El plan de Fabricante no debe incluir ningún ítem de tipo 289 (Ídolos)");
+    }
+  }
 });
 
 test.after(() => {
