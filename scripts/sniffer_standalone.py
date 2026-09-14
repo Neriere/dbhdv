@@ -461,6 +461,34 @@ def load_or_download_items_db(force=False):
     except Exception as e:
         print(f"[DB Local] Advertencia de descarga: {e}. Se usarán las runas y base en memoria.")
 
+PENDING_ITEM_FETCHES = set()
+FETCH_LOCK = threading.Lock()
+
+def fetch_name_async(item_id):
+    s_id = str(item_id)
+    try:
+        r = http_session.get(f"https://api.dofusdb.fr/items?id={item_id}&lang=es", timeout=3.0)
+        if r.status_code == 200:
+            res_json = r.json()
+            items_list = res_json.get("data", [])
+            if items_list and len(items_list) > 0:
+                first_item = items_list[0]
+                if str(first_item.get("id")) == s_id:
+                    n = first_item.get("name")
+                    name_val = n.get("es") or n.get("fr") or n.get("en") if isinstance(n, dict) else (n if isinstance(n, str) else "")
+                    if name_val and name_val.strip():
+                        clean_n = name_val.strip()
+                        if clean_n.lower() != "puré pic-feil" or s_id in ("35089", "666"):
+                            ITEMS_DB[s_id] = clean_n
+                            type_id = first_item.get("typeId") or (first_item.get("type", {}).get("id") if isinstance(first_item.get("type"), dict) else 0)
+                            if type_id in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 81, 82, 90, 97, 120, 121, 151, 169, 170, 187, 188, 189, 190, 196, 207, 220, 333):
+                                EQUIPMENT_IDS.add(s_id)
+    except Exception:
+        pass
+    finally:
+        with FETCH_LOCK:
+            PENDING_ITEM_FETCHES.discard(s_id)
+
 def get_item_name(item_id):
     if not item_id:
         return "Objeto"
@@ -476,29 +504,14 @@ def get_item_name(item_id):
         return DEFAULT_RUNES_DB[s_id]
     if item_id in ITEMS_DB:
         return ITEMS_DB[item_id]
-    # Auto-resolución en vivo desde DofusDB con query exacto por ID
-    try:
-        r = http_session.get(f"https://api.dofusdb.fr/items?id={item_id}&lang=es", timeout=2.0)
-        if r.status_code == 200:
-            res_json = r.json()
-            items_list = res_json.get("data", [])
-            if items_list and len(items_list) > 0:
-                first_item = items_list[0]
-                if str(first_item.get("id")) == s_id:
-                    n = first_item.get("name")
-                    name_val = n.get("es") or n.get("fr") or n.get("en") if isinstance(n, dict) else (n if isinstance(n, str) else "")
-                    if name_val and name_val.strip():
-                        clean_n = name_val.strip()
-                        if clean_n.lower() == "puré pic-feil" and s_id not in ("35089", "666"):
-                            return f"Objeto #{item_id}"
-                        ITEMS_DB[s_id] = clean_n
-                        type_id = first_item.get("typeId") or (first_item.get("type", {}).get("id") if isinstance(first_item.get("type"), dict) else 0)
-                        if type_id in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 81, 82, 90, 97, 120, 121, 151, 169, 170, 187, 188, 189, 190, 196, 207, 220, 333):
-                            EQUIPMENT_IDS.add(s_id)
-                        return clean_n
-    except Exception:
-        pass
+
+    with FETCH_LOCK:
+        if s_id not in PENDING_ITEM_FETCHES:
+            PENDING_ITEM_FETCHES.add(s_id)
+            threading.Thread(target=fetch_name_async, args=(item_id,), daemon=True).start()
+
     return f"Objeto #{item_id}"
+
 
 def decode_varint(buf, off):
     val, shift, read = 0, 0, 0
@@ -821,15 +834,14 @@ def async_worker():
                     c_price = data.get("calculated_price", 0)
                     is_anti_troll = data.get("anti_troll_triggered", False)
                     outliers = data.get("filtered_outliers", 0)
-                    extra = ""
+                    quick_p = raw.get("quick_price", 0)
                     if is_anti_troll:
-                        extra = " (Protegido contra precio atipico)"
-                    elif outliers > 0:
-                        extra = f" (Filtro {outliers} cebo/outlier)"
-                    print(f"[{now_str}]  [{item['type'].upper()}] {item['item_name']} (#{item['item_id']}) -> {c_price:,} k (Guardado{extra})", flush=True)
-                    api_log_msg = f"OK 200 | Precio: {c_price:,} k{extra}"
+                        print(f"[{now_str}]            • [CORRECCIÓN HDV] Precio protegido contra precio atípico -> {c_price:,} k", flush=True)
+                    elif c_price > 0 and quick_p > 0 and abs(c_price - quick_p) > max(10, quick_p * 0.15):
+                        print(f"[{now_str}]            • [ACTUALIZACIÓN BD] Precio calibrado en base de datos -> {c_price:,} k", flush=True)
+                    api_log_msg = f"OK 200 | Precio: {c_price:,} k"
                 else:
-                    print(f"[{now_str}]  Error {res.status_code}: {res.text}", flush=True)
+                    print(f"[{now_str}]  Error al guardar en BD {res.status_code}: {res.text}", flush=True)
                     api_log_msg = f"Error {res.status_code}: {res.text}"
 
                 # Registro forense en sniffer.log para la sesión activa
@@ -881,9 +893,9 @@ def async_worker():
             print(f"[{now_str}] [Aviso]: {e}", flush=True)
 
 ITEM_SALES_VOLUME = {}
-STREAM_BUFFERS = {}
-STREAM_LOCK = threading.Lock()
-MAX_BUFFER_SIZE = 1000000
+QUOTATION_BUFFERS = {}
+QUOTATION_LOCK = threading.Lock()
+
 
 def parse_quotation_message(payload):
     """
@@ -1072,8 +1084,45 @@ def parse_quotation_message(payload):
     except Exception:
         return 0, None, None, ""
 
+def calculate_quick_price(is_equip, prices):
+    if is_equip:
+        valid = [int(p) for p in prices if isinstance(p, (int, float)) and p >= 50]
+        if not valid:
+            return 0
+        valid.sort()
+        if len(valid) == 1:
+            return valid[0]
+        elif len(valid) == 2:
+            return round((valid[0] + valid[1]) / 2)
+        else:
+            std = [p for p in valid if p <= valid[0] * 1.8]
+            use = std if std else valid
+            low = use[:min(3, len(use))]
+            low_avg = sum(low) / len(low)
+            med = use[len(use) // 2]
+            return round(low_avg * 0.7 + med * 0.3)
+    else:
+        cl = clean_ladder(prices)
+        p1 = cl[0] if len(cl) > 0 else 0
+        p10 = cl[1] if len(cl) > 1 else 0
+        p100 = cl[2] if len(cl) > 2 else 0
+        p1000 = cl[3] if len(cl) > 3 else 0
+        lots = []
+        if p1 > 0: lots.append((p1, 0.40))
+        if p10 > 0: lots.append((round(p10 / 10.0), 0.30))
+        if p100 > 0: lots.append((round(p100 / 100.0), 0.20))
+        if p1000 > 0: lots.append((round(p1000 / 1000.0), 0.10))
+        if not lots:
+            return 0
+        tot_w = sum(w for _, w in lots)
+        return round(sum(u * w for u, w in lots) / tot_w)
+
+LAST_MARKET_ITEM_ID = 0
+LAST_PROCESSED_SIGNATURE = None
+LAST_PACKET_TIME = 0
+
 def process_single_message(payload):
-    global LAST_MARKET_ITEM_ID
+    global LAST_MARKET_ITEM_ID, LAST_PROCESSED_SIGNATURE, LAST_PACKET_TIME
     try:
         if len(payload) < 4:
             return
@@ -1084,74 +1133,89 @@ def process_single_message(payload):
         if item_id:
             LAST_MARKET_ITEM_ID = item_id
 
-        # Registrar en cotizaciones_inspeccion.txt para auditoría forense
-        sales_inspector.inspect_packet(payload, item_id=item_id, item_name=item_name)
-
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
-        q_item_id, quotation_data, _, _ = parse_quotation_message(payload)
-        target_id = q_item_id or LAST_MARKET_ITEM_ID
-        if quotation_data and target_id > 0:
-            target_name = get_item_name(target_id)
-            now_str = datetime.now().strftime("%H:%M:%S")
+        if b"type.ankama.com/iuk" in payload:
+            q_item_id, quotation_data, _, _ = parse_quotation_message(payload)
+            target_id = q_item_id or LAST_MARKET_ITEM_ID
+            if quotation_data and target_id > 0:
+                target_name = get_item_name(target_id)
+                now_str = datetime.now().strftime("%H:%M:%S")
 
-            ITEM_SALES_VOLUME[target_id] = quotation_data
+                # Registrar en cotizaciones_inspeccion.txt únicamente para paquetes de cotización
+                sales_inspector.inspect_packet(payload, item_id=target_id, item_name=target_name)
 
-            s24 = quotation_data.get("sales24h", 0)
-            p24 = quotation_data.get("price24h", 0)
-            m24 = quotation_data.get("median24h", 0)
+                ITEM_SALES_VOLUME[target_id] = quotation_data
 
-            s7 = quotation_data.get("sales7d", 0)
-            p7 = quotation_data.get("price7d", 0)
-            m7 = quotation_data.get("median7d", 0)
+                s24 = quotation_data.get("sales24h", 0)
+                p24 = quotation_data.get("price24h", 0)
+                m24 = quotation_data.get("median24h", 0)
 
-            s30 = quotation_data.get("sales30d", 0)
-            p30 = quotation_data.get("price30d", 0)
-            m30 = quotation_data.get("median30d", 0)
+                s7 = quotation_data.get("sales7d", 0)
+                p7 = quotation_data.get("price7d", 0)
+                m7 = quotation_data.get("median7d", 0)
 
-            print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id})", flush=True)
-            if s24 > 0:
-                print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
-            if s7 > 0:
-                exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
-                print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
-            if s30 > 0:
-                exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
-                print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
+                s30 = quotation_data.get("sales30d", 0)
+                p30 = quotation_data.get("price30d", 0)
+                m30 = quotation_data.get("median30d", 0)
 
-            def send_quotation(t_id=target_id, s_data=quotation_data):
-                try:
-                    headers = {"Content-Type": "application/json"}
-                    if API_SECRET_KEY:
-                        headers["x-api-key"] = API_SECRET_KEY
-                    body = {
-                        "server": SERVER_NAME,
-                        "salesVolume": {
-                            str(t_id): s_data
+                print(f"[{now_str}]  [COTIZACIÓN] {target_name} (#{target_id})", flush=True)
+                if s24 > 0:
+                    print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k", flush=True)
+                if s7 > 0:
+                    exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
+                    print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
+                if s30 > 0:
+                    exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
+                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
+
+                def send_quotation(t_id=target_id, s_data=quotation_data):
+                    try:
+                        headers = {"Content-Type": "application/json"}
+                        if API_SECRET_KEY:
+                            headers["x-api-key"] = API_SECRET_KEY
+                        body = {
+                            "server": SERVER_NAME,
+                            "salesVolume": {
+                                str(t_id): s_data
+                            }
                         }
-                    }
-                    res = http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
-                    if res.status_code == 200:
-                        data = res.json()
-                        for c in data.get("corrected_prices", []):
-                            c_old = c.get("old_price") or c.get("oldPrice") or 0
-                            c_new = c.get("new_price") or c.get("newPrice") or 0
-                            if c_old > 0:
-                                print(f"            • [CORRECCIÓN HDV] Precio actualizado a {c_new:,} k (Mercadillo tenía precio atípico de {c_old:,} k)", flush=True)
-                            else:
-                                print(f"            • [COTIZACIÓN HDV] Precio asignado a {c_new:,} k (Sin stock en mercadillo, usando cotización sugerida)", flush=True)
-                except Exception:
-                    pass
+                        res = http_session.post(API_UPDATE_URL, json=body, headers=headers, timeout=5.0)
+                        if res.status_code == 200:
+                            data = res.json()
+                            for c in data.get("corrected_prices", []):
+                                c_old = c.get("old_price") or c.get("oldPrice") or 0
+                                c_new = c.get("new_price") or c.get("newPrice") or 0
+                                if c_old > 0:
+                                    print(f"            • [CORRECCIÓN HDV] Precio actualizado a {c_new:,} k (Mercadillo tenía precio atípico de {c_old:,} k)", flush=True)
+                                else:
+                                    print(f"            • [COTIZACIÓN HDV] Precio asignado a {c_new:,} k (Sin stock en mercadillo, usando cotización sugerida)", flush=True)
+                    except Exception:
+                        pass
 
-            threading.Thread(target=send_quotation, daemon=True).start()
+                threading.Thread(target=send_quotation, daemon=True).start()
 
         # 2. Si es paquete de mercadillo normal con lotes/precios
         if item_id and prices:
+            # Evitar impresiones duplicadas inmediatas de paquetes retransmitidos
+            sig = (item_id, tuple(prices) if isinstance(prices, list) else tuple(prices.items()) if isinstance(prices, dict) else prices)
+            now_mono = time.time()
+            if sig == LAST_PROCESSED_SIGNATURE and (now_mono - LAST_PACKET_TIME) < 0.25:
+                return
+            LAST_PROCESSED_SIGNATURE = sig
+            LAST_PACKET_TIME = now_mono
+
             # Forzar tipo equipable si está catalogado en EQUIPMENT_IDS
             is_equipment = item_type == "equipable" or is_item_equipment(item_id) or len(prices) > 4
+            quick_p = calculate_quick_price(is_equipment, prices)
+            now_str = datetime.now().strftime("%H:%M:%S")
+            cat_label = "EQUIPABLE" if is_equipment else "RECURSO"
+            print(f"[{now_str}]  [{cat_label}] {item_name} (#{item_id}) -> {quick_p:,} k", flush=True)
+
             raw_entry = {
                 "item_id": item_id,
                 "is_equipment": is_equipment,
                 "prices": prices,
+                "quick_price": quick_p,
                 "server": SERVER_NAME,
                 "raw_debug": debug_info,
                 "hex_summary": payload[:48].hex(),
@@ -1175,51 +1239,69 @@ def process_packet(pkt):
         if len(raw_load) == 0:
             return
 
+        # 1. FAST-PATH MERCADILLO: Los paquetes de lista de precios son ligeros (200-800b)
+        # y viajan en un único segmento TCP. Se despachan de inmediato con 0 ms de latencia.
+        t_bytes = CURRENT_TOKEN.encode('ascii')
+        if t_bytes in raw_load:
+            try:
+                process_single_message(raw_load)
+            except Exception:
+                pass
+
+        # 2. PATH DE COTIZACIONES: 'type.ankama.com/iuk' puede abarcar varios fragmentos TCP (> 1500 bytes).
+        # Reensamblamos únicamente si se detecta la firma o si la conexión tiene fragmentos pendientes.
         conn_key = (pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport) if pkt.haslayer(IP) else pkt[TCP].sport
 
-        with STREAM_LOCK:
-            buf = STREAM_BUFFERS.get(conn_key, b"") + raw_load
+        has_quotation = b"type.ankama.com/iuk" in raw_load
+        needs_quotation_assembly = False
+        with QUOTATION_LOCK:
+            if conn_key in QUOTATION_BUFFERS or has_quotation:
+                needs_quotation_assembly = True
 
-            loop_limit = 50
-            while len(buf) >= 2 and loop_limit > 0:
-                loop_limit -= 1
-                msg_len, r_len = decode_varint(buf, 0)
-                if r_len == 0 or msg_len <= 0:
-                    idx = buf.find(b"type.ankama.com")
-                    if idx > 4:
-                        buf = buf[idx - 4:]
-                        continue
-                    elif idx != -1:
-                        buf = buf[idx:]
-                        break
+        if needs_quotation_assembly:
+            now_t = time.time()
+            with QUOTATION_LOCK:
+                existing = QUOTATION_BUFFERS.get(conn_key)
+                if existing and (now_t - existing.get("ts", 0)) > 4.0:
+                    existing = None
+
+                if existing:
+                    buf = existing["buf"] + raw_load
+                else:
+                    idx = raw_load.find(b"type.ankama.com/iuk")
+                    buf = raw_load[idx:] if idx != -1 else b""
+
+                if buf and b"type.ankama.com/iuk" in buf:
+                    idx = buf.find(b"type.ankama.com/iuk")
+                    off = idx + len(b"type.ankama.com/iuk")
+                    if len(buf) >= off + 2:
+                        tag2, r2 = decode_varint(buf, off)
+                        if r2 > 0:
+                            off += r2
+                            len2, r2_len = decode_varint(buf, off)
+                            if r2_len > 0:
+                                off += r2_len
+                                total_needed = off + len2
+                                if len(buf) >= total_needed:
+                                    quotation_payload = buf[idx:total_needed]
+                                    QUOTATION_BUFFERS.pop(conn_key, None)
+                                    try:
+                                        process_single_message(quotation_payload)
+                                    except Exception:
+                                        pass
+                                else:
+                                    if len(buf) < 500000:
+                                        QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                                    else:
+                                        QUOTATION_BUFFERS.pop(conn_key, None)
+                            else:
+                                QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                        else:
+                            QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
                     else:
-                        buf = b""
-                        break
-
-                if msg_len > 250000:
-                    idx = buf.find(b"type.ankama.com")
-                    if idx > 4:
-                        buf = buf[idx - 4:]
-                        continue
-                    else:
-                        buf = b""
-                        break
-
-                total_needed = r_len + msg_len
-                if len(buf) < total_needed:
-                    # Fragmento TCP incompleto, esperar siguientes paquetes de la conexión
-                    break
-
-                full_msg = buf[:total_needed]
-                buf = buf[total_needed:]
-                try:
-                    process_single_message(full_msg)
-                except Exception:
-                    pass
-
-            if len(buf) > MAX_BUFFER_SIZE:
-                buf = b""
-            STREAM_BUFFERS[conn_key] = buf
+                        QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                else:
+                    QUOTATION_BUFFERS.pop(conn_key, None)
 
     except Exception:
         pass

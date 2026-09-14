@@ -1,7 +1,23 @@
 ==========================================================================================
   DOFUS UNITY -> REGISTRO ESPECIAL DE INSPECCION DE COTIZACIONES Y HISTORIAL DE VENTAS
-  Inicio de sesion : 2026-09-13 18:24:45
+  Inicio de sesion : 2026-09-14 03:50:57
   Archivo destino  : cotizaciones_inspeccion.txt
   (Usa este log para encontrar los numeros exactos de 24h, 7d y 30d de ventas)
+==========================================================================================
+
+==========================================================================================
+[03:50:57.733] PAQUETE INSPECCIONADO #1 | Longitud: 53 bytes | Objeto detectado: Objeto #13713 (#13713)
+------------------------------------------------------------------------------------------
+NUMEROS / VARINTS DETECTADOS EN ESTE PAQUETE (Busca aqui tus numeros de ventas 24h, 7d, 30d):
+  []
+------------------------------------------------------------------------------------------
+ESTRUCTURA PROTOBUF:
+  (No se decodifico estructura de campos estandar)
+------------------------------------------------------------------------------------------
+VOLCADO HEXADECIMAL:
+    0000: 74 79 70 65 2E 61 6E 6B 61 6D 61 2E 63 6F 6D 2F   |type.ankama.com/|
+    0010: 69 75 6B 12 20 0A 1E 08 0A 12 14 32 30 32 36 2D   |iuk. ......2026-|
+    0020: 30 38 2D 31 32 54 32 33 3A 35 39 3A 30 30 5A 18   |08-12T23:59:00Z.|
+    0030: 88 27 20 91 6B                                    |.' .k|
 ==========================================================================================
 

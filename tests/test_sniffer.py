@@ -834,7 +834,104 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertIsNotNone(suggested)
         self.assertTrue(25000 <= suggested <= 28000, f"Precio sugerido {suggested} debe ser ~26.5k y no 645k")
 
+    def test_calculate_quick_price_resource(self):
+        # Recurso con escalera limpia [2000, 19500, 190000, 1850000]
+        p = sniffer_standalone.calculate_quick_price(False, [2000, 19500, 190000, 1850000])
+        self.assertTrue(1800 <= p <= 2100, f"Precio calculado {p} debe estar en el rango de ~1.9k - 2.0k")
+
+        # Recurso con prefijo de conteo de Unity [4, 2000, 19500, 190000, 1850000]
+        p2 = sniffer_standalone.calculate_quick_price(False, [4, 2000, 19500, 190000, 1850000])
+        self.assertEqual(p, p2, "Prefijo de conteo debe ser limpiado idénticamente")
+
+    def test_calculate_quick_price_equipment(self):
+        # Equipable con múltiples ofertas
+        p = sniffer_standalone.calculate_quick_price(True, [250000, 260000, 280000, 8000000])
+        # Filtra exomagueo de 8M, promedia ofertas competitivas bajas
+        self.assertTrue(240000 <= p <= 270000, f"Precio calculado {p} debe reflejar suelo competitivo de ~250k")
+
+    def test_non_blocking_get_item_name(self):
+        # ID inexistente debe retornar inmediatamente f"Objeto #{id}" sin congelar
+        name = sniffer_standalone.get_item_name(999998)
+        self.assertEqual(name, "Objeto #999998")
+
+    def test_quotation_assembly_across_tcp_fragments(self):
+        # Simular paquete de cotizaciones fragmentado en 2 paquetes TCP
+        base_d = datetime(2026, 8, 12, 23, 59, 0)
+        inner = bytearray()
+        b_24 = make_quotation_entry(10, base_d.isoformat() + 'Z', 5000, 13713)
+        inner.append(0x0a)
+        inner.extend(encode_varint(len(b_24)))
+        inner.extend(b_24)
+
+        header = b'type.ankama.com/iuk'
+        full_payload = bytearray(header)
+        full_payload.append(0x12)
+        full_payload.extend(encode_varint(len(inner)))
+        full_payload.extend(inner)
+
+        # Dividir a la mitad
+        half = len(full_payload) // 2
+        chunk1 = bytes(full_payload[:half])
+        chunk2 = bytes(full_payload[half:])
+
+        # Mock pkt Scapy
+        class MockIP:
+            src = "127.0.0.1"
+            dst = "127.0.0.1"
+
+        class MockTCP:
+            sport = 5555
+            dport = 49152
+
+        class MockRaw:
+            def __init__(self, load):
+                self.load = load
+
+        class MockPacket:
+            def __init__(self, raw_bytes):
+                self.ip = MockIP()
+                self.tcp = MockTCP()
+                self.raw = MockRaw(raw_bytes)
+            def haslayer(self, layer):
+                return True
+            def __getitem__(self, item):
+                name = getattr(item, '__name__', str(item))
+                if 'IP' in name:
+                    return self.ip
+                elif 'TCP' in name:
+                    return self.tcp
+                elif 'Raw' in name:
+                    return self.raw
+                return None
+
+
+        # Limpiar búfers antes del test
+        with sniffer_standalone.QUOTATION_LOCK:
+            sniffer_standalone.QUOTATION_BUFFERS.clear()
+
+        # Enviar primer fragmento
+        pkt1 = MockPacket(chunk1)
+        sniffer_standalone.process_packet(pkt1)
+
+        # Debe estar en QUOTATION_BUFFERS esperando el segundo fragmento
+        with sniffer_standalone.QUOTATION_LOCK:
+            conn_key = ("127.0.0.1", 5555, "127.0.0.1", 49152)
+            self.assertIn(conn_key, sniffer_standalone.QUOTATION_BUFFERS)
+
+        # Enviar segundo fragmento
+        pkt2 = MockPacket(chunk2)
+        sniffer_standalone.process_packet(pkt2)
+
+        # Debe haberse completado y limpiado el búfer
+        with sniffer_standalone.QUOTATION_LOCK:
+            self.assertNotIn(conn_key, sniffer_standalone.QUOTATION_BUFFERS)
+
+        # ITEM_SALES_VOLUME debe tener el item 13713
+        self.assertIn(13713, sniffer_standalone.ITEM_SALES_VOLUME)
+        self.assertEqual(sniffer_standalone.ITEM_SALES_VOLUME[13713]["sales24h"], 10)
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
