@@ -25,6 +25,11 @@ const JobLevelingOptimizer = lazy(() =>
     default: m.JobLevelingOptimizer,
   }))
 );
+const DailyCraftPlanner = lazy(() =>
+  import('./components/DailyCraftPlanner').then((m) => ({
+    default: m.DailyCraftPlanner,
+  }))
+);
 const GlobalProfitRanking = lazy(() =>
   import('./components/GlobalProfitRanking').then((m) => ({
     default: m.GlobalProfitRanking,
@@ -139,6 +144,14 @@ export default function App() {
             <RecipeCraftingCalculator
               initialSelectedItem={selectedItem}
               onSelectForCrushing={handleSelectForCrushing}
+            />
+          )}
+
+          {activeTab === 'daily_crafts' && (
+            <DailyCraftPlanner
+              onSelectRecipeForCalculator={handleSelectRecipeForCalculator}
+              onSelectForCrushing={handleSelectForCrushing}
+              onNavigateToShopping={() => handleSetActiveTab('shopping')}
             />
           )}
 

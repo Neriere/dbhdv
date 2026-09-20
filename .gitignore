@@ -41,8 +41,20 @@ scripts/items_db.json
 
 # Internal Development History & Notes
 HISTORIAL_SNIFFER_CAMBIOS.md
+HISTORIAL_SNIFFER_ALMACEN.md
 instructions.txt
 sniffer_history.txt
+ANALISIS_SECCIONES_PROYECTO.md
+ANALISIS_*.md
+
+# Storage & Inventory Sniffer (Local & Private)
+scripts/storage_sniffer.py
+scripts/ejecutar_sniffer_almacen.bat
+storage_sniffer.log
+storage_inspection.txt
+*capturado*.json
+*banco_inventario*.json
+banco_inventario_capturado.json
 
 # Cloud & Tooling artifacts
 .vercel/

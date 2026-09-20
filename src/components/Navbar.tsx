@@ -32,6 +32,7 @@ import { UserJobsModal } from './common/UserJobsModal';
 
 export type ActiveTab =
   | 'recipes'
+  | 'daily_crafts'
   | 'job_optimizer'
   | 'bank'
   | 'treasure_maps'
@@ -62,6 +63,7 @@ const TAB_GROUPS = [
     label: 'Calcular',
     tabs: [
       { id: 'recipes'       as ActiveTab, label: 'Recetas',      icon: Wrench },
+      { id: 'daily_crafts'  as ActiveTab, label: 'Plan Crafteo', icon: Briefcase },
       { id: 'job_optimizer' as ActiveTab, label: 'Subir Oficio', icon: Hammer },
       { id: 'rompedora'     as ActiveTab, label: 'Rompedora',    icon: Zap },
       { id: 'dofusbook'     as ActiveTab, label: 'Set Dofusbook', icon: Sparkles },
