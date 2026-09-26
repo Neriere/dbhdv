@@ -29,6 +29,12 @@ import {
   ShoppingCart,
   Copy,
   Briefcase,
+  Activity,
+  Clock,
+  ShieldCheck,
+  AlertTriangle,
+  RotateCcw,
+  Percent,
 } from "lucide-react";
 import { useUserJobs } from "../hooks/useUserJobs";
 import { MarketPriceMap } from "../types";
@@ -53,8 +59,14 @@ import { calculateItemCrushing } from "../data/dofusRuneWeights";
 import { matchesSearchQuery } from "../utils/searchUtils";
 import { copyItemNameToClipboard } from "../utils/clipboardUtils";
 import { PriceFreshnessBadge } from "./common/PriceFreshnessBadge";
-
 import { useMarketPrices } from "../hooks/useMarketPrices";
+import {
+  getStoredSalesVolumeMap,
+  analyzeSalesVolume,
+  fetchAndSyncSalesVolume,
+  SalesVolumeMap,
+} from "../services/salesVolumeService";
+import { getItemMarketCategory, MarketCategory } from "./DailyCraftPlanner";
 
 const JOB_ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   FlaskConical,
@@ -77,6 +89,7 @@ export interface CalculatedRecipeRanking {
   item: PresetCraftableItem;
   craftCost: number;
   salePrice: number;
+  rawSalePrice: number;
   saleTax: number;
   saleNetProfit: number;
   saleRoiPercent: number;
@@ -89,6 +102,19 @@ export interface CalculatedRecipeRanking {
   bestRoiPercent: number;
   jobName: string;
   jobId: number;
+  marketCategory: MarketCategory | null;
+  hasSalesData: boolean;
+  sales24h: number;
+  sales7d: number;
+  sales30d: number;
+  avgDailySales: number;
+  turnoverRating: "alta" | "media" | "baja" | null;
+  turnoverLabel: string | null;
+  paybackDays: number | null;
+  paybackHours: number | null;
+  isOutlierPrice: boolean;
+  outlierRatio: number;
+  referenceMedian: number | null;
 }
 
 interface GlobalProfitRankingProps {
@@ -106,22 +132,56 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
   const [strategyFilter, setStrategyFilter] = useState<"all" | "hdv" | "crush" | "profitable">("all");
+  const [marketCategoryFilter, setMarketCategoryFilter] = useState<"all" | MarketCategory>("all");
+  const [salesLiquidityFilter, setSalesLiquidityFilter] = useState<"all" | "verified" | "medium_high" | "high">("all");
+  const [filterOutliers, setFilterOutliers] = useState<boolean>(true);
   const [minProfit, setMinProfit] = useState<number | "">(0);
   const [minRoi, setMinRoi] = useState<number | "">(0);
   const [maxCraftCost, setMaxCraftCost] = useState<number | "">(20000000);
   const [minLevel, setMinLevel] = useState<number | "">(1);
   const [maxLevel, setMaxLevel] = useState<number | "">(200);
   const [sortBy, setSortBy] = useState<
-    "best_profit_desc" | "sale_profit_desc" | "crush_profit_desc" | "best_roi_desc" | "cost_asc"
+    | "best_profit_desc"
+    | "sale_profit_desc"
+    | "crush_profit_desc"
+    | "best_roi_desc"
+    | "cost_asc"
+    | "turnover_desc"
+    | "fast_payback"
   >("best_profit_desc");
 
+  const [salesVolumeMap, setSalesVolumeMap] = useState<SalesVolumeMap>(() => getStoredSalesVolumeMap());
+
   const { isEnabled: isUserJobsEnabled, canCraft: canUserCraft } = useUserJobs();
+
+  useEffect(() => {
+    fetchAndSyncSalesVolume().then((map) => {
+      if (map && Object.keys(map).length > 0) {
+        setSalesVolumeMap({ ...map });
+      }
+    });
+
+    const handleVolumeUpdate = () => {
+      setSalesVolumeMap({ ...getStoredSalesVolumeMap() });
+    };
+
+    window.addEventListener("dofus_sales_volume_updated", handleVolumeUpdate);
+    window.addEventListener("dofus_database_updated", handleVolumeUpdate);
+
+    return () => {
+      window.removeEventListener("dofus_sales_volume_updated", handleVolumeUpdate);
+      window.removeEventListener("dofus_database_updated", handleVolumeUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [
     selectedJobId,
     strategyFilter,
+    marketCategoryFilter,
+    salesLiquidityFilter,
+    filterOutliers,
     searchTerm,
     minLevel,
     maxLevel,
@@ -131,6 +191,51 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
     sortBy,
     isUserJobsEnabled,
   ]);
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      selectedJobId !== "all" ||
+      strategyFilter !== "all" ||
+      marketCategoryFilter !== "all" ||
+      salesLiquidityFilter !== "all" ||
+      !filterOutliers ||
+      searchTerm.trim() !== "" ||
+      minLevel !== 1 ||
+      maxLevel !== 200 ||
+      (minProfit !== "" && minProfit !== 0) ||
+      (minRoi !== "" && minRoi !== 0) ||
+      (maxCraftCost !== "" && maxCraftCost !== 20000000) ||
+      sortBy !== "best_profit_desc"
+    );
+  }, [
+    selectedJobId,
+    strategyFilter,
+    marketCategoryFilter,
+    salesLiquidityFilter,
+    filterOutliers,
+    searchTerm,
+    minLevel,
+    maxLevel,
+    minProfit,
+    minRoi,
+    maxCraftCost,
+    sortBy,
+  ]);
+
+  const handleResetFilters = () => {
+    setSelectedJobId("all");
+    setStrategyFilter("all");
+    setMarketCategoryFilter("all");
+    setSalesLiquidityFilter("all");
+    setFilterOutliers(true);
+    setSearchTerm("");
+    setMinLevel(1);
+    setMaxLevel(200);
+    setMinProfit(0);
+    setMinRoi(0);
+    setMaxCraftCost(20000000);
+    setSortBy("best_profit_desc");
+  };
 
   const { marketPrices: basePrices, priceUpdatedAt, activeProfileId, updatePrice } = useMarketPrices();
   const marketPrices = useMemo(
@@ -187,7 +292,42 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         craftCost += ingPrice * qty;
       });
 
-      const salePrice = marketPrices[item.id] || 0;
+      const rawSalePrice = marketPrices[item.id] || 0;
+
+      // Análisis de volumen de ventas
+      const vol = salesVolumeMap[item.id];
+      const salesAnalysis = analyzeSalesVolume(rawSalePrice, vol);
+      const hasVerifiedSales = salesAnalysis.hasData && salesAnalysis.avgDailySales > 0;
+
+      // Verificación de precios inflados / exomagueos (antifraude)
+      const median7d = vol?.median7d;
+      const median30d = vol?.median30d;
+      const suggestedPrice = vol?.suggestedPrice;
+      const referenceMedian =
+        median7d && median7d > 0
+          ? median7d
+          : median30d && median30d > 0
+          ? median30d
+          : suggestedPrice && suggestedPrice > 0
+          ? suggestedPrice
+          : null;
+
+      let isOutlierPrice = false;
+      let outlierRatio = 1;
+      let effectiveSalePrice = rawSalePrice;
+
+      if (referenceMedian && referenceMedian > 0 && rawSalePrice > 0) {
+        outlierRatio = rawSalePrice / referenceMedian;
+        if (outlierRatio > 1.45) {
+          isOutlierPrice = true;
+          // Si la protección antifraude está activa, usar la mediana histórica real
+          if (filterOutliers) {
+            effectiveSalePrice = Math.round(referenceMedian);
+          }
+        }
+      }
+
+      const salePrice = effectiveSalePrice;
       const saleTax = salePrice > 0 ? Math.ceil(salePrice * 0.02) : 0;
       const saleNetProfit = salePrice > 0 ? salePrice - saleTax - craftCost : -craftCost;
       const saleRoiPercent = craftCost > 0 && salePrice > 0 ? (saleNetProfit / craftCost) * 100 : 0;
@@ -209,10 +349,19 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         bestStrategy = saleNetProfit >= crushNetProfit ? "hdv" : "crush";
       }
 
+      // Tiempo de recuperación de capital (Payback / Cashflow)
+      const dailySpeed = hasVerifiedSales ? salesAnalysis.avgDailySales : 0.05;
+      const dailyRevenue = dailySpeed * (salePrice - saleTax);
+      const paybackDays = (dailyRevenue > 0 && craftCost > 0) ? (craftCost / dailyRevenue) : null;
+      const paybackHours = paybackDays !== null ? Math.round(paybackDays * 24) : null;
+
+      const marketCategory = getItemMarketCategory(item);
+
       results.push({
         item,
         craftCost,
         salePrice,
+        rawSalePrice,
         saleTax,
         saleNetProfit,
         saleRoiPercent,
@@ -225,11 +374,24 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         bestRoiPercent,
         jobName: item.jobNameEs,
         jobId: item.jobId,
+        marketCategory,
+        hasSalesData: salesAnalysis.hasData,
+        sales24h: salesAnalysis.sales24h,
+        sales7d: salesAnalysis.sales7d,
+        sales30d: salesAnalysis.sales30d,
+        avgDailySales: salesAnalysis.avgDailySales,
+        turnoverRating: salesAnalysis.turnoverRating,
+        turnoverLabel: salesAnalysis.turnoverLabel,
+        paybackDays,
+        paybackHours,
+        isOutlierPrice,
+        outlierRatio,
+        referenceMedian,
       });
     }
 
     return results;
-  }, [allCraftableItems, marketPrices]);
+  }, [allCraftableItems, marketPrices, salesVolumeMap, filterOutliers]);
 
   const filteredRankings = useMemo(() => {
     const effMinLevel = minLevel === "" ? 1 : Number(minLevel);
@@ -245,12 +407,26 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         if (entry.item.level < effMinLevel || entry.item.level > effMaxLevel) return false;
         if (entry.craftCost > effMaxCraftCost) return false;
 
+        // Filtro por Canal de Mercadillo (Equipamiento, Consumibles, Recursos)
+        if (marketCategoryFilter !== "all" && entry.marketCategory !== marketCategoryFilter) return false;
+
+        // Filtro de Liquidez / Historial de Ventas
+        if (salesLiquidityFilter === "verified" && (!entry.hasSalesData || entry.avgDailySales <= 0)) {
+          return false;
+        }
+        if (salesLiquidityFilter === "medium_high" && (!entry.hasSalesData || entry.avgDailySales < 0.5)) {
+          return false;
+        }
+        if (salesLiquidityFilter === "high" && (!entry.hasSalesData || entry.avgDailySales < 2.0)) {
+          return false;
+        }
+
         if (strategyFilter === "profitable" && entry.bestNetProfit <= 0) return false;
         if (strategyFilter === "hdv" && (entry.saleNetProfit <= 0 || entry.salePrice <= 0)) return false;
         if (strategyFilter === "crush" && (entry.crushNetProfit <= 0 || !entry.canCrush)) return false;
 
         if (entry.bestNetProfit < effMinProfit) return false;
-        if (entry.bestRoiPercent < effMinRoi) return false;
+        if (effMinRoi > 0 && entry.bestRoiPercent < effMinRoi) return false;
 
         if (searchTerm.trim()) {
           if (
@@ -275,12 +451,20 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
         if (sortBy === "crush_profit_desc") return b.crushNetProfit - a.crushNetProfit;
         if (sortBy === "best_roi_desc") return b.bestRoiPercent - a.bestRoiPercent;
         if (sortBy === "cost_asc") return a.craftCost - b.craftCost;
+        if (sortBy === "turnover_desc") return (b.avgDailySales || 0) - (a.avgDailySales || 0);
+        if (sortBy === "fast_payback") {
+          const pa = a.paybackDays !== null && a.paybackDays > 0 ? a.paybackDays : 999999;
+          const pb = b.paybackDays !== null && b.paybackDays > 0 ? b.paybackDays : 999999;
+          return pa - pb;
+        }
         return 0;
       });
   }, [
     rankedItems,
     selectedJobId,
     strategyFilter,
+    marketCategoryFilter,
+    salesLiquidityFilter,
     minLevel,
     maxLevel,
     minProfit,
@@ -415,8 +599,89 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
           </div>
         </div>
 
+        {/* Channel & Antifraud Sub-bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-1">
+          {/* Mercadillo Channel Tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Canal HDV:</span>
+            <button
+              onClick={() => setMarketCategoryFilter("all")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                marketCategoryFilter === "all"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-sm"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+              }`}
+            >
+              Todos HDVs
+            </button>
+            <button
+              onClick={() => setMarketCategoryFilter("equipment")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                marketCategoryFilter === "equipment"
+                  ? "bg-sky-500 text-slate-950 font-black shadow-sm"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+              }`}
+            >
+              Equipamiento
+            </button>
+            <button
+              onClick={() => setMarketCategoryFilter("consumables")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                marketCategoryFilter === "consumables"
+                  ? "bg-emerald-500 text-slate-950 font-black shadow-sm"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+              }`}
+            >
+              Consumibles
+            </button>
+            <button
+              onClick={() => setMarketCategoryFilter("resources")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                marketCategoryFilter === "resources"
+                  ? "bg-amber-600 text-slate-950 font-black shadow-sm"
+                  : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+              }`}
+            >
+              Recursos
+            </button>
+          </div>
+
+          {/* Antifraud & Reset Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterOutliers(!filterOutliers)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                filterOutliers
+                  ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50"
+                  : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
+              }`}
+              title={
+                filterOutliers
+                  ? "Antifraude ACTIVO: Precios de venta inflados (>45% s/ mediana 7d/30d) se ajustan automáticamente a la mediana real para evitar ganancias irreales de exomagueos."
+                  : "Antifraude INACTIVO: Se utiliza el precio bruto registrado sin verificar anomalías."
+              }
+            >
+              <ShieldCheck className={`w-3.5 h-3.5 ${filterOutliers ? "text-emerald-400" : "text-slate-500"}`} />
+              <span>Antifraude: {filterOutliers ? "ON" : "OFF"}</span>
+            </button>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-rose-400 bg-slate-950 border border-slate-800 hover:border-rose-500/30 transition-all flex items-center gap-1"
+                title="Restablecer todos los filtros a sus valores predeterminados"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Restablecer</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Filter Controls Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
           <div>
             <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
               <Tag className="w-3.5 h-3.5 text-amber-400" />
@@ -473,7 +738,47 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
               <option value="sale_profit_desc">Mayor Ganancia HDV</option>
               <option value="crush_profit_desc">Mayor Ganancia Runas</option>
               <option value="best_roi_desc">Mayor ROI (%)</option>
+              <option value="turnover_desc">Mayor Rotación (Ventas/Día)</option>
+              <option value="fast_payback">Retorno Rápido (Payback)</option>
               <option value="cost_asc">Menor Costo</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
+              <Percent className="w-3.5 h-3.5 text-emerald-400" />
+              ROI Mínimo
+            </label>
+            <select
+              value={minRoi === "" ? 0 : minRoi}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setMinRoi(val);
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none font-mono"
+            >
+              <option value="0">Todos (0%+)</option>
+              <option value="15">≥ 15% ROI</option>
+              <option value="30">≥ 30% ROI</option>
+              <option value="50">≥ 50% ROI</option>
+              <option value="100">≥ 100% ROI</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-bold mb-1 flex items-center gap-1">
+              <Activity className="w-3.5 h-3.5 text-sky-400" />
+              Liquidez / Ventas
+            </label>
+            <select
+              value={salesLiquidityFilter}
+              onChange={(e) => setSalesLiquidityFilter(e.target.value as any)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-200 font-bold focus:border-amber-500 focus:outline-none"
+            >
+              <option value="all">Todas las recetas</option>
+              <option value="verified">Ventas verificadas (&gt;0/d)</option>
+              <option value="medium_high">Rotación Media/Alta (≥0.5/d)</option>
+              <option value="high">Alta Rotación (≥2/d)</option>
             </select>
           </div>
 
@@ -490,6 +795,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMinProfit(val === "" ? "" : Number(val));
               }}
               step={5000}
+              placeholder="0 K"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
             />
           </div>
@@ -507,6 +813,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                 setMaxCraftCost(val === "" ? "" : Number(val));
               }}
               step={50000}
+              placeholder="Sin límite"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 font-mono font-bold focus:border-amber-500 focus:outline-none"
             />
           </div>
@@ -616,9 +923,47 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                                 Niv. {item.level}
                               </span>
                             </div>
-                            <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5 mt-1">
-                              <JobIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <span>{entry.jobName}</span>
+                            <div className="text-xs font-medium text-slate-400 flex items-center gap-2 mt-1 flex-wrap">
+                              <div className="flex items-center gap-1 shrink-0">
+                                <JobIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>{entry.jobName}</span>
+                              </div>
+
+                              {/* Canal de Mercadillo */}
+                              {entry.marketCategory && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${
+                                  entry.marketCategory === 'equipment'
+                                    ? 'bg-sky-500/10 text-sky-400 border-sky-500/25'
+                                    : entry.marketCategory === 'consumables'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                                }`}>
+                                  {entry.marketCategory === 'equipment' ? 'HDV Equipos' : entry.marketCategory === 'consumables' ? 'HDV Consumibles' : 'HDV Recursos'}
+                                </span>
+                              )}
+
+                              {/* Indicador de Liquidez / Ventas */}
+                              {entry.hasSalesData && entry.avgDailySales > 0 ? (
+                                <span
+                                  className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border flex items-center gap-1 shrink-0 ${
+                                    entry.avgDailySales >= 2
+                                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                      : entry.avgDailySales >= 0.5
+                                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                                  }`}
+                                  title={`Estimación: ~${entry.avgDailySales.toFixed(1)} ventas/día (24h: ${entry.sales24h || 0}, 7d: ${entry.sales7d || 0}, 30d: ${entry.sales30d || 0})`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    entry.avgDailySales >= 2 ? 'bg-emerald-400 animate-pulse' : entry.avgDailySales >= 0.5 ? 'bg-amber-400' : 'bg-slate-400'
+                                  }`} />
+                                  ~{entry.avgDailySales < 1 ? entry.avgDailySales.toFixed(2) : entry.avgDailySales.toFixed(1)} uds/día
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                                  Sin ventas reg.
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -637,8 +982,8 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                             value={
                               priceDrafts[item.id] !== undefined
                                 ? priceDrafts[item.id]
-                                : entry.salePrice > 0
-                                  ? entry.salePrice
+                                : entry.rawSalePrice > 0
+                                  ? entry.rawSalePrice
                                   : ""
                             }
                             onChange={(e) =>
@@ -678,7 +1023,7 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           />
                           {isSaved && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
                         </div>
-                        <div className="flex items-center justify-end gap-1.5 mt-1">
+                        <div className="flex items-center justify-end gap-1.5 mt-1 flex-wrap">
                           {entry.salePrice > 0 ? (
                             <span className={entry.saleNetProfit >= 0 ? "text-emerald-400 font-bold text-xs" : "text-rose-400 font-bold text-xs"}>
                               {entry.saleNetProfit >= 0 ? "+" : ""}{entry.saleNetProfit.toLocaleString()} K
@@ -688,6 +1033,34 @@ export const GlobalProfitRanking: React.FC<GlobalProfitRankingProps> = ({
                           )}
                           <PriceFreshnessBadge updatedAt={priceUpdatedAt[item.id]} compact />
                         </div>
+
+                        {/* Payback or Antifraud Outlier Badges */}
+                        {(entry.isOutlierPrice || entry.paybackHours !== null) && (
+                          <div className="flex items-center justify-end gap-1 mt-1 flex-wrap text-[10px] font-mono">
+                            {entry.isOutlierPrice && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded border flex items-center gap-1 ${
+                                  filterOutliers
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                    : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                }`}
+                                title={`Precio en HDV: ${entry.rawSalePrice.toLocaleString()} K. Mediana de referencia: ${entry.referenceMedian?.toLocaleString()} K (+${Math.round((entry.outlierRatio - 1) * 100)}%). ${filterOutliers ? 'Se calculó la ganancia con la mediana segura.' : 'Precio inflado detectado.'}`}
+                              >
+                                <ShieldCheck className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                                {filterOutliers ? 'Mediana protegida' : `+${Math.round((entry.outlierRatio - 1) * 100)}% s/mediana`}
+                              </span>
+                            )}
+                            {entry.paybackHours !== null && entry.saleNetProfit > 0 && (
+                              <span
+                                className="text-slate-400 bg-slate-950/80 px-1.5 py-0.5 rounded border border-slate-800 flex items-center gap-1"
+                                title={`Tiempo estimado de recuperación de capital: ~${entry.paybackHours} horas de ventas`}
+                              >
+                                <Clock className="w-2.5 h-2.5 text-sky-400 shrink-0" />
+                                {entry.paybackHours < 48 ? `~${entry.paybackHours}h retorno` : `~${Math.round(entry.paybackDays!)}d retorno`}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Runes Value */}

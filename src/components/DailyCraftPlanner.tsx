@@ -52,7 +52,8 @@ interface DailyCraftPlannerProps {
 }
 
 export type OptimizationMode = 'balanced' | 'fast_cashflow' | 'max_profit' | 'max_roi';
-export type MarketChannel = 'hybrid' | 'equipment' | 'consumables';
+export type MarketChannel = 'multichannel' | 'hybrid' | 'equipment' | 'consumables' | 'resources';
+export type MarketCategory = 'equipment' | 'consumables' | 'resources';
 
 export interface BatchBreakdown {
   lots100: number;
@@ -78,6 +79,7 @@ export interface PlannedCraftItem {
   jobId: number;
   userJobLevel: number;
   canCraft: boolean;
+  marketCategory: MarketCategory;
   isStackable: boolean;
   craftCostUnit: number;
   salePriceUnit: number;
@@ -105,11 +107,124 @@ export interface PlannedCraftItem {
   canCrush: boolean;
 }
 
-const STACKABLE_JOB_IDS = new Set([26, 28, 41, 2, 24, 36, 65]);
+/**
+ * Clasificación precisa de objetos en los 3 Mercadillos independientes de Dofus:
+ * 1. Mercadillo de Equipamiento (Equipables individuales - 1 slot por unidad)
+ * 2. Mercadillo de Consumibles (Panes, carnes, pescados, llaves y pociones bebibles - Lotes x1, x10, x100)
+ * 3. Mercadillo de Recursos (Aleaciones, tablas, concentrados, harinas, aceites y pociones de oficio - Lotes x1, x10, x100)
+ * Nota: El Mercadillo de Criaturas (filtros/extractos) está explícitamente excluido.
+ */
+export function getItemMarketCategory(item: {
+  id?: number;
+  jobId?: number;
+  typeId?: number;
+  type?: { id?: number; superCategoryId?: number; name?: any };
+  name?: any;
+}): MarketCategory | null {
+  const jobId = item.jobId || 0;
+  const typeId = Number(item.typeId || item.type?.id || 0);
+  const superCatId = Number((item as any).superCategoryId || item.type?.superCategoryId || 0);
+
+  const rawName = (
+    typeof item.name === 'object'
+      ? (item.name?.es || item.name?.fr || item.name?.en || '')
+      : String(item.name || '')
+  ).toLowerCase();
+
+  const rawTypeName = (
+    typeof item.type?.name === 'object'
+      ? (item.type?.name?.es || item.type?.name?.fr || '')
+      : String(item.type?.name || '')
+  ).toLowerCase();
+
+  // 1. Excluir Forjamagia / Runas (tienen su propio mercadillo de runas, no van en HDV Recursos)
+  if (
+    typeId === 78 ||
+    (item as any).itemCategory === 'rune' ||
+    rawTypeName.includes('runa') ||
+    rawTypeName.includes('rune') ||
+    rawName.startsWith('runa ') ||
+    rawName.startsWith('rune ')
+  ) {
+    return null;
+  }
+
+  // 2. Minero (Job 24) y Leñador (Job 2):
+  // Aleaciones de minero, piedras pulidas, tablas, concentrados y sustratos de leñador -> Recursos
+  if (jobId === 24 || jobId === 2) {
+    return 'resources';
+  }
+
+  // 3. Campesino (Job 28):
+  // Harinas y Aceites van al Mercadillo de Recursos.
+  // Panes van al Mercadillo de Consumibles.
+  if (jobId === 28) {
+    if (
+      typeId === 88 || typeId === 89 || typeId === 37 || // Harinas
+      typeId === 60 || typeId === 58 || typeId === 129 || // Aceites
+      rawTypeName.includes('harina') || rawTypeName.includes('farine') ||
+      rawTypeName.includes('aceite') || rawTypeName.includes('huile') ||
+      rawName.includes('harina') || rawName.includes('farine') ||
+      rawName.includes('aceite') || rawName.includes('huile')
+    ) {
+      return 'resources';
+    }
+    return 'consumables';
+  }
+
+  // 4. Alquimista (Job 26):
+  // Únicamente las 5 pócimas principales de alta demanda en HDV Recursos:
+  // - Pócima de firma (y desmarcar)
+  // - Pócima de envejecimiento
+  // - Pócima mineral
+  // - Pócima de ganduleo
+  // - Pócima de alteración
+  // Se excluyen tinturas, esencias de mazmorra y otras pócimas secundarias sin demanda masiva.
+  if (jobId === 26) {
+    const isMainResourcePotion =
+      /\b(firma|desmarcar|envejecimiento|vieillesse|mineral|minérale|ganduleo|paresse|alteraci[oó]n|altération)\b/i.test(rawName);
+
+    if (isMainResourcePotion) {
+      return 'resources';
+    }
+
+    // Pócimas bebibles consumibles de alta rotación (vida, curación, energía, recuerdo, bonta, brakmar)
+    const isConsumablePotion =
+      /\b(curaci[oó]n|vida|soin|vie|energ[íi]a|[eé]nergie|recuerdo|rappel|bonta|brakmar|mini de curaci[oó]n|gueto)\b/i.test(rawName);
+
+    if (isConsumablePotion) {
+      return 'consumables';
+    }
+
+    // Las demás pócimas menores de alquimista (tinturas, esencias, virutas, torpeza, etc.) no se incluyen
+    return null;
+  }
+
+  // 5. Cazador (41) y Pescador (36): Consumibles
+  if (jobId === 41 || jobId === 36) {
+    return 'consumables';
+  }
+
+  // 6. Manitas / Bricoleur (Job 65): Llaves -> Consumibles
+  if (jobId === 65) {
+    return 'consumables';
+  }
+
+  // 7. Oficios de equipamiento: Joyero (16), Sastre (27), Zapatero (15), Herrero (11), Escultor (13), Fabricante (60)
+  const EQUIPMENT_JOB_IDS = new Set([16, 27, 15, 11, 13, 60]);
+  if (EQUIPMENT_JOB_IDS.has(jobId) || superCatId === 1) {
+    return 'equipment';
+  }
+
+  if (superCatId === 2) return 'consumables';
+  if (superCatId === 3) return 'resources';
+
+  return null;
+}
 
 function isItemStackable(item: PresetCraftableItem): boolean {
-  if (item.jobId && STACKABLE_JOB_IDS.has(item.jobId)) return true;
-  return false;
+  const cat = getItemMarketCategory(item);
+  return cat === 'consumables' || cat === 'resources';
 }
 
 function calculateItemSlots(isStackable: boolean, units: number): number {
@@ -139,10 +254,11 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
   const [budget, setBudget] = useState<number>(10_000_000);
   const [budgetInput, setBudgetInput] = useState<string>('10000000');
   const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>('balanced');
-  const [marketChannel, setMarketChannel] = useState<MarketChannel>('hybrid');
+  const [marketChannel, setMarketChannel] = useState<MarketChannel>('multichannel');
   const [targetDays, setTargetDays] = useState<number>(1.0);
   const [maxEquipSlots, setMaxEquipSlots] = useState<number>(150);
   const [maxConsumableSlots, setMaxConsumableSlots] = useState<number>(100);
+  const [maxResourceSlots, setMaxResourceSlots] = useState<number>(100);
   const [maxBudgetShare, setMaxBudgetShare] = useState<number>(0.35); // Max 35% del presupuesto en un solo ítem
   const [onlyMyJobs, setOnlyMyJobs] = useState<boolean>(true);
   const [requireSalesHistory, setRequireSalesHistory] = useState<boolean>(true);
@@ -219,6 +335,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       jobId: number;
       userJobLevel: number;
       canCraftItem: boolean;
+      category: MarketCategory;
       isStackable: boolean;
       craftCostUnit: number;
       rawSalePrice: number;
@@ -246,11 +363,14 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       if (excludedItemIds.has(item.id)) continue;
       if (!item.recipeData?.ingredientIds || item.recipeData.ingredientIds.length === 0) continue;
 
-      const isStackable = isItemStackable(item);
+      const category = getItemMarketCategory(item);
+      if (!category) continue;
+      const isStackable = category !== 'equipment';
 
       // Filtro por Canal de Mercadillo objetivo
-      if (marketChannel === 'equipment' && isStackable) continue;
-      if (marketChannel === 'consumables' && !isStackable) continue;
+      if (marketChannel === 'equipment' && category !== 'equipment') continue;
+      if (marketChannel === 'consumables' && category !== 'consumables') continue;
+      if (marketChannel === 'resources' && category !== 'resources') continue;
 
       // Filtro de oficio seleccionado
       if (selectedJobFilter !== 'all' && item.jobId !== selectedJobFilter) continue;
@@ -360,6 +480,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         jobId: item.jobId || 0,
         userJobLevel: userLevel,
         canCraftItem,
+        category,
         isStackable,
         craftCostUnit,
         rawSalePrice,
@@ -404,21 +525,24 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     optimizationMode,
   ]);
 
-  // 2. Algoritmo de Asignación de Presupuesto y Slots (Optimización de Cartera con Canales)
+  // 2. Algoritmo de Asignación de Presupuesto y Slots (Optimización con 3 Mercadillos Independientes)
   const plannedCrafts: PlannedCraftItem[] = useMemo(() => {
     if (budget <= 0 || candidatePool.length === 0) return [];
 
     let remainingBudget = budget;
-    let remainingEquipSlots = (marketChannel === 'consumables') ? 0 : maxEquipSlots;
-    let remainingConsumableSlots = (marketChannel === 'equipment') ? 0 : maxConsumableSlots;
+    const isMulti = marketChannel === 'multichannel' || marketChannel === 'hybrid';
+    let remainingEquipSlots = (isMulti || marketChannel === 'equipment') ? maxEquipSlots : 0;
+    let remainingConsumableSlots = (isMulti || marketChannel === 'consumables') ? maxConsumableSlots : 0;
+    let remainingResourceSlots = (isMulti || marketChannel === 'resources') ? maxResourceSlots : 0;
     const plan: PlannedCraftItem[] = [];
 
     for (const cand of candidatePool) {
       if (remainingBudget < cand.craftCostUnit) continue;
 
-      // Verificar slots disponibles según el canal del ítem
-      if (!cand.isStackable && remainingEquipSlots <= 0) continue;
-      if (cand.isStackable && remainingConsumableSlots <= 0) continue;
+      // Verificar slots disponibles según el canal de mercadillo del ítem
+      if (cand.category === 'equipment' && remainingEquipSlots <= 0) continue;
+      if (cand.category === 'consumables' && remainingConsumableSlots <= 0) continue;
+      if (cand.category === 'resources' && remainingResourceSlots <= 0) continue;
 
       // Si el usuario fijó manualmente una cantidad, respetarla
       const manualQty = manualUnitsOverride[cand.item.id];
@@ -427,16 +551,21 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         if (units > 0) {
           const cost = units * cand.craftCostUnit;
           const slots = calculateItemSlots(cand.isStackable, units);
-          const hasAvailableSlots = cand.isStackable
-            ? (slots <= remainingConsumableSlots)
-            : (slots <= remainingEquipSlots);
+          const maxAvail =
+            cand.category === 'equipment'
+              ? remainingEquipSlots
+              : cand.category === 'consumables'
+              ? remainingConsumableSlots
+              : remainingResourceSlots;
 
-          if (cost <= remainingBudget && hasAvailableSlots) {
+          if (cost <= remainingBudget && slots <= maxAvail) {
             remainingBudget -= cost;
-            if (cand.isStackable) {
+            if (cand.category === 'equipment') {
+              remainingEquipSlots -= slots;
+            } else if (cand.category === 'consumables') {
               remainingConsumableSlots -= slots;
             } else {
-              remainingEquipSlots -= slots;
+              remainingResourceSlots -= slots;
             }
 
             const dailyRev = cand.avgDailySales > 0 ? Math.min(units, cand.avgDailySales) * (cand.salePriceUnit - cand.saleTaxUnit) : 0;
@@ -449,6 +578,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               jobId: cand.jobId,
               userJobLevel: cand.userJobLevel,
               canCraft: cand.canCraftItem,
+              marketCategory: cand.category,
               isStackable: cand.isStackable,
               craftCostUnit: cand.craftCostUnit,
               salePriceUnit: cand.salePriceUnit,
@@ -500,11 +630,12 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
       let targetUnits = Math.min(maxMarketUnits, maxBudgetUnits, maxAffordableUnits);
 
-      if (!cand.isStackable) {
+      if (cand.category === 'equipment') {
         targetUnits = Math.min(targetUnits, remainingEquipSlots);
       } else {
+        const availableSlots = cand.category === 'consumables' ? remainingConsumableSlots : remainingResourceSlots;
         let slotsNeeded = calculateItemSlots(cand.isStackable, targetUnits);
-        while (slotsNeeded > remainingConsumableSlots && targetUnits > 0) {
+        while (slotsNeeded > availableSlots && targetUnits > 0) {
           if (targetUnits > 100) targetUnits -= 100;
           else if (targetUnits > 10) targetUnits -= 10;
           else targetUnits -= 1;
@@ -518,10 +649,12 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         const batchBreakdown = cand.isStackable ? calculateBatchBreakdown(targetUnits) : undefined;
 
         remainingBudget -= cost;
-        if (cand.isStackable) {
+        if (cand.category === 'equipment') {
+          remainingEquipSlots -= slots;
+        } else if (cand.category === 'consumables') {
           remainingConsumableSlots -= slots;
         } else {
-          remainingEquipSlots -= slots;
+          remainingResourceSlots -= slots;
         }
 
         const dailyRev = cand.avgDailySales > 0 ? Math.min(targetUnits, cand.avgDailySales) * (cand.salePriceUnit - cand.saleTaxUnit) : 0;
@@ -534,6 +667,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           jobId: cand.jobId,
           userJobLevel: cand.userJobLevel,
           canCraft: cand.canCraftItem,
+          marketCategory: cand.category,
           isStackable: cand.isStackable,
           craftCostUnit: cand.craftCostUnit,
           salePriceUnit: cand.salePriceUnit,
@@ -568,6 +702,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     budget,
     maxEquipSlots,
     maxConsumableSlots,
+    maxResourceSlots,
     marketChannel,
     candidatePool,
     targetDays,
@@ -580,12 +715,15 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     const totalCost = plannedCrafts.reduce((acc, curr) => acc + curr.totalCraftCost, 0);
     const totalProfit = plannedCrafts.reduce((acc, curr) => acc + curr.totalNetProfit, 0);
     const equipSlotsUsed = plannedCrafts
-      .filter((c) => !c.isStackable)
+      .filter((c) => c.marketCategory === 'equipment')
       .reduce((acc, curr) => acc + curr.estimatedSlots, 0);
     const consumableSlotsUsed = plannedCrafts
-      .filter((c) => c.isStackable)
+      .filter((c) => c.marketCategory === 'consumables')
       .reduce((acc, curr) => acc + curr.estimatedSlots, 0);
-    const totalSlots = equipSlotsUsed + consumableSlotsUsed;
+    const resourceSlotsUsed = plannedCrafts
+      .filter((c) => c.marketCategory === 'resources')
+      .reduce((acc, curr) => acc + curr.estimatedSlots, 0);
+    const totalSlots = equipSlotsUsed + consumableSlotsUsed + resourceSlotsUsed;
     const totalUnits = plannedCrafts.reduce((acc, curr) => acc + curr.recommendedUnits, 0);
     const overallRoi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
     const budgetUsedPercent = budget > 0 ? (totalCost / budget) * 100 : 0;
@@ -607,6 +745,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       totalProfit,
       equipSlotsUsed,
       consumableSlotsUsed,
+      resourceSlotsUsed,
       totalSlots,
       totalUnits,
       recipeCount: plannedCrafts.length,
@@ -797,19 +936,19 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               <Store className="w-3.5 h-3.5 text-amber-400" />
               Mercado:
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 bg-slate-900 p-0.5 border border-slate-800 rounded-lg">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-slate-900 p-0.5 border border-slate-800 rounded-lg">
               <button
                 type="button"
-                onClick={() => setMarketChannel('hybrid')}
+                onClick={() => setMarketChannel('multichannel')}
                 className={`py-1 px-2.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  marketChannel === 'hybrid'
+                  marketChannel === 'multichannel' || marketChannel === 'hybrid'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Combina equipables y consumibles aprovechando ambos mercadillos independientes"
+                title="Aprovecha los 3 mercadillos independientes de Dofus (Equipamiento, Consumibles y Recursos)"
               >
                 <Layers className="w-3.5 h-3.5 text-amber-400" />
-                <span>Multicanal (Equipos + Lotes)</span>
+                <span>Multicanal (3 HDVs)</span>
               </button>
 
               <button
@@ -834,16 +973,32 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Solo consumibles y recursos agrupados en lotes (x1, x10, x100)"
+                title="Solo consumibles (panes, carnes, pescados, llaves y pociones bebibles)"
               >
                 <Package className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Consumibles y Recursos</span>
+                <span>Consumibles</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMarketChannel('resources')}
+                className={`py-1 px-2.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  marketChannel === 'resources'
+                    ? 'bg-amber-400/25 text-amber-200 border border-amber-400/50 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Solo recursos crafteables (aleaciones, tablas, concentrados, harinas, aceites y pociones de oficio)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Recursos</span>
               </button>
             </div>
           </div>
 
           <span className="text-[11px] text-slate-500 font-mono">
-            {marketChannel === 'hybrid' ? '400 slots Equipamiento + 400 slots Consumibles' : 'Límite: 400 slots disponibles'}
+            {marketChannel === 'multichannel' || marketChannel === 'hybrid'
+              ? '400 Equipos + 400 Consumibles + 400 Recursos'
+              : 'Límite: 400 slots disponibles'}
           </span>
         </div>
 
@@ -980,7 +1135,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
           {/* 4. Límite de Slots HDV */}
           <div className="space-y-1">
-            {marketChannel === 'hybrid' ? (
+            {marketChannel === 'multichannel' || marketChannel === 'hybrid' ? (
               <div className="space-y-1.5">
                 <div>
                   <div className="flex items-center justify-between text-[11px]">
@@ -1037,6 +1192,34 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                     ))}
                   </div>
                 </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-300 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      Slots Recursos:
+                    </span>
+                    <span className="font-mono text-amber-300 font-bold text-[10px]">
+                      {maxResourceSlots} / 400
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-950 p-0.5 border border-slate-800 rounded-lg text-center mt-0.5">
+                    {[50, 100, 150, 400].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setMaxResourceSlots(s)}
+                        className={`py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer ${
+                          maxResourceSlots === s
+                            ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : marketChannel === 'equipment' ? (
               <div>
@@ -1066,7 +1249,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                   ))}
                 </div>
               </div>
-            ) : (
+            ) : marketChannel === 'consumables' ? (
               <div>
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
@@ -1086,6 +1269,34 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                       className={`py-1 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
                         maxConsumableSlots === s
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-amber-400" />
+                    Slots Recursos
+                  </label>
+                  <span className="text-[10px] font-mono text-amber-300 font-bold">
+                    {maxResourceSlots} / 400
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-lg text-center mt-1">
+                  {[50, 100, 150, 400].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setMaxResourceSlots(s)}
+                      className={`py-1 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                        maxResourceSlots === s
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                           : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
@@ -1285,12 +1496,18 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               Slots en Mercadillo
             </span>
             <span className="font-mono font-bold text-purple-300 text-[11px]">
-              {marketChannel === 'hybrid'
+              {marketChannel === 'multichannel' || marketChannel === 'hybrid'
                 ? `${summary.totalSlots} slots tot.`
-                : `${summary.totalSlots} / ${marketChannel === 'equipment' ? maxEquipSlots : maxConsumableSlots}`}
+                : `${summary.totalSlots} / ${
+                    marketChannel === 'equipment'
+                      ? maxEquipSlots
+                      : marketChannel === 'consumables'
+                      ? maxConsumableSlots
+                      : maxResourceSlots
+                  }`}
             </span>
           </div>
-          {marketChannel === 'hybrid' ? (
+          {marketChannel === 'multichannel' || marketChannel === 'hybrid' ? (
             <div className="space-y-0.5 text-xs font-mono">
               <div className="flex items-center justify-between">
                 <span className="text-slate-400 flex items-center gap-1">
@@ -1304,6 +1521,12 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                 </span>
                 <span className="font-bold text-emerald-300">{summary.consumableSlotsUsed} / {maxConsumableSlots}</span>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-400" /> Recursos:
+                </span>
+                <span className="font-bold text-amber-300">{summary.resourceSlotsUsed} / {maxResourceSlots}</span>
+              </div>
             </div>
           ) : (
             <div className="text-base sm:text-lg font-black text-purple-300 font-mono">
@@ -1311,7 +1534,9 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             </div>
           )}
           <span className="text-[10px] text-slate-500 block">
-            {marketChannel === 'hybrid' ? 'Canales independientes' : 'Capacidad asignada'}
+            {marketChannel === 'multichannel' || marketChannel === 'hybrid'
+              ? '3 canales independientes'
+              : 'Capacidad asignada'}
           </span>
         </div>
       </div>
@@ -1599,14 +1824,38 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                         </div>
                       </div>
 
-                      {/* HDV Slots info badge */}
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
-                        <Store className="w-3.5 h-3.5 text-purple-400" />
-                        <span>{craft.estimatedSlots} {craft.estimatedSlots === 1 ? 'slot' : 'slots'}</span>
+                      {/* HDV Channel & Slots info badge */}
+                      <div className="flex items-center gap-1.5 text-[11px] font-mono flex-wrap justify-end">
+                        {craft.marketCategory === 'equipment' ? (
+                          <span
+                            className="text-[10px] text-purple-300 font-sans px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 flex items-center gap-1"
+                            title="Mercadillo de Equipamiento (1 slot unitario por cada unidad)"
+                          >
+                            <Shield className="w-3 h-3 text-purple-400" />
+                            HDV Equipos ({craft.estimatedSlots}s)
+                          </span>
+                        ) : craft.marketCategory === 'consumables' ? (
+                          <span
+                            className="text-[10px] text-emerald-300 font-sans px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1"
+                            title={`Mercadillo de Consumibles (${craft.estimatedSlots} slots): lotes x1, x10, x100`}
+                          >
+                            <Package className="w-3 h-3 text-emerald-400" />
+                            HDV Consumibles ({craft.estimatedSlots}s)
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[10px] text-amber-300 font-sans px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 flex items-center gap-1"
+                            title={`Mercadillo de Recursos (${craft.estimatedSlots} slots): lotes x1, x10, x100`}
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-400" />
+                            HDV Recursos ({craft.estimatedSlots}s)
+                          </span>
+                        )}
+
                         {craft.isStackable && craft.batchBreakdown && (
                           <span
-                            className="text-[10px] text-emerald-400 font-sans px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
-                            title={`Desglose en lotes de HDV Consumibles: ${craft.batchBreakdown.lots100 > 0 ? `${craft.batchBreakdown.lots100}x [100] ` : ''}${craft.batchBreakdown.lots10 > 0 ? `${craft.batchBreakdown.lots10}x [10] ` : ''}${craft.batchBreakdown.lots1 > 0 ? `${craft.batchBreakdown.lots1}x [1]` : ''}`}
+                            className="text-[10px] text-slate-300 font-sans px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800"
+                            title={`Desglose en lotes puestos a la venta: ${craft.batchBreakdown.lots100 > 0 ? `${craft.batchBreakdown.lots100}x [100] ` : ''}${craft.batchBreakdown.lots10 > 0 ? `${craft.batchBreakdown.lots10}x [10] ` : ''}${craft.batchBreakdown.lots1 > 0 ? `${craft.batchBreakdown.lots1}x [1]` : ''}`}
                           >
                             {craft.batchBreakdown.lots100 > 0 ? `${craft.batchBreakdown.lots100}x100 ` : ''}
                             {craft.batchBreakdown.lots10 > 0 ? `${craft.batchBreakdown.lots10}x10 ` : ''}

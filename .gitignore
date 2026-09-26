@@ -25,6 +25,8 @@ sniffer.log
 # Local Databases
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 data/*.db
