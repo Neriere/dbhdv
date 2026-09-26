@@ -82,3 +82,68 @@ test('GlobalProfitRanking Filters: Estimación de tiempo de recuperación de cap
   assert.ok(paybackHours > 0);
   assert.equal(paybackHours, 8);
 });
+
+test('DailyCraftPlanner: Absorción estricta descarta ítems cuya rotación en el horizonte es < 0.5 unidades', () => {
+  // Ítem con 0.1 ventas/día (ej: Sombrero de Selección de Hoguarts)
+  const avgDailySales = 0.1;
+
+  // En horizonte de 0.5 días:
+  const targetDays05 = 0.5;
+  const expectedUnits05 = avgDailySales * targetDays05; // 0.05
+  const maxMarketUnits05 = Math.round(expectedUnits05); // 0
+  assert.equal(maxMarketUnits05, 0); // No se fabrica porque el mercado no absorbe ni 1 unidad
+
+  // En horizonte de 1.0 días:
+  const targetDays10 = 1.0;
+  const expectedUnits10 = avgDailySales * targetDays10; // 0.10
+  const maxMarketUnits10 = Math.round(expectedUnits10); // 0
+  assert.equal(maxMarketUnits10, 0); // Tampoco se fabrica
+
+  // Ítem con rotación activa (2.0 ventas/día) en 0.5 días:
+  const activeDailySales = 2.0;
+  const expectedUnitsActive = activeDailySales * targetDays05; // 1.0
+  const maxMarketUnitsActive = Math.round(expectedUnitsActive); // 1
+  assert.equal(maxMarketUnitsActive, 1); // Sí se fabrica 1 unidad
+});
+
+test('DailyCraftPlanner: Estrategia escalonada de absorción (Tier 1: 1-10 ventas -> 1-2 uds, Tier 2: >10 ventas -> porcentaje 5-20%)', () => {
+  const targetDays = 1.0;
+  const maxMarketShare10 = 0.10; // 10%
+  const maxMarketShare20 = 0.20; // 20%
+
+  function calculateUnits(avgDailySales: number, share: number) {
+    const totalHorizonAbsorption = avgDailySales * targetDays;
+    if (totalHorizonAbsorption < 0.5) return 0;
+
+    let units = 0;
+    if (avgDailySales <= 10) {
+      if (avgDailySales >= 5 && targetDays >= 1.0) {
+        units = 2;
+      } else {
+        units = 1;
+      }
+    } else {
+      const shareUnits = Math.round(totalHorizonAbsorption * share);
+      units = Math.max(2, shareUnits);
+    }
+    return Math.min(units, Math.max(1, Math.round(totalHorizonAbsorption)));
+  }
+
+  // Caso 1: Ítem con 2 ventas al día (Tier 1: 1 a 10) -> se fabrica exactamente 1 unidad
+  assert.equal(calculateUnits(2.0, maxMarketShare10), 1);
+
+  // Caso 2: Ítem con 7 ventas al día (Tier 1: entre 5 y 10) -> se fabrican 2 unidades
+  assert.equal(calculateUnits(7.0, maxMarketShare10), 2);
+
+  // Caso 3: Ítem de alta rotación con 50 ventas al día (Tier 2: > 10)
+  // Al 10%: se fabrican 5 unidades (el 10% de 50)
+  assert.equal(calculateUnits(50.0, maxMarketShare10), 5);
+  // Al 20%: se fabrican 10 unidades (el 20% de 50)
+  assert.equal(calculateUnits(50.0, maxMarketShare20), 10);
+
+  // Caso 4: Consumible con 100 ventas al día (Tier 2: > 10)
+  // Al 10%: 10 unidades
+  assert.equal(calculateUnits(100.0, maxMarketShare10), 10);
+  // Al 20%: 20 unidades
+  assert.equal(calculateUnits(100.0, maxMarketShare20), 20);
+});

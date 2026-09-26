@@ -260,11 +260,13 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
   const [maxConsumableSlots, setMaxConsumableSlots] = useState<number>(100);
   const [maxResourceSlots, setMaxResourceSlots] = useState<number>(100);
   const [maxBudgetShare, setMaxBudgetShare] = useState<number>(0.35); // Max 35% del presupuesto en un solo ítem
+  const [maxMarketShare, setMaxMarketShare] = useState<number>(0.10); // Cuota máx de mercado por ítem (10% por defecto)
   const [onlyMyJobs, setOnlyMyJobs] = useState<boolean>(true);
   const [requireSalesHistory, setRequireSalesHistory] = useState<boolean>(true);
   const [filterOutliers, setFilterOutliers] = useState<boolean>(true);
   const [selectedJobFilter, setSelectedJobFilter] = useState<number | 'all'>('all');
   const [minRoiFilter, setMinRoiFilter] = useState<number>(15); // Mínimo 15% ROI
+  const [minDailySales, setMinDailySales] = useState<number>(0); // Mínimo de ventas diarias (0 = cualquiera)
   const [excludedItemIds, setExcludedItemIds] = useState<Set<number>>(new Set());
   const [manualUnitsOverride, setManualUnitsOverride] = useState<Record<number, number>>({});
   const [isJobsModalOpen, setIsJobsModalOpen] = useState(false);
@@ -409,6 +411,11 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         continue;
       }
 
+      // Filtro explícito de rotación mínima diaria
+      if (minDailySales > 0 && salesAnalysis.avgDailySales < minDailySales) {
+        continue;
+      }
+
       // Verificación de precios inflados / exomagueos (antifraude)
       const median7d = vol?.median7d;
       const median30d = vol?.median30d;
@@ -518,6 +525,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     marketPrices,
     budget,
     minRoiFilter,
+    minDailySales,
     requireSalesHistory,
     filterOutliers,
     marketChannel,
@@ -610,10 +618,35 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         continue;
       }
 
-      // Límite por capacidad de absorción diaria del mercadillo
-      let maxMarketUnits = 1;
+      // Límite por capacidad de absorción diaria del mercadillo en el horizonte seleccionado
+      let maxMarketUnits = 0;
       if (cand.avgDailySales > 0) {
-        maxMarketUnits = Math.max(1, Math.round(cand.avgDailySales * targetDays));
+        // Absorción total proyectada en el horizonte de tiempo
+        const totalHorizonAbsorption = cand.avgDailySales * targetDays;
+
+        // Si el mercadillo no absorbe al menos 0.5 unidades en este horizonte (ej: 0.1 uds/día en 0.5d = 0.05),
+        // se descarta la recomendación para este periodo ya que tardaría mucho más del horizonte en venderse
+        if (totalHorizonAbsorption < 0.5) continue;
+
+        // ESTRATEGIA DE PENETRACIÓN SEGÚN VOLUMEN DE VENTAS DIARIAS:
+        if (cand.avgDailySales <= 10) {
+          // TIER 1: Ventas moderadas (entre 1 y 10 unidades/día)
+          // Se recomienda 1 o máximo 2 unidades (asumiendo que al menos 1 unidad se venderá al día)
+          if (cand.avgDailySales >= 5 && targetDays >= 1.0) {
+            maxMarketUnits = 2;
+          } else {
+            maxMarketUnits = 1;
+          }
+        } else {
+          // TIER 2: Ventas altas o masivas (>10 unidades/día, ej: 20, 50, 100+)
+          // Se calcula como un porcentaje estricto de las ventas diarias (5%, 10%, 15%, 20% máx)
+          const marketShareUnits = Math.round(totalHorizonAbsorption * maxMarketShare);
+          // Garantiza al menos 2 unidades al superar las 10 ventas/día del Tier 1
+          maxMarketUnits = Math.max(2, marketShareUnits);
+        }
+
+        // Techo de seguridad: nunca superar la absorción total proyectada en el periodo
+        maxMarketUnits = Math.min(maxMarketUnits, Math.max(1, Math.round(totalHorizonAbsorption)));
       } else {
         maxMarketUnits = cand.isStackable ? 50 : 1;
       }
@@ -707,6 +740,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     candidatePool,
     targetDays,
     maxBudgetShare,
+    maxMarketShare,
     manualUnitsOverride,
   ]);
 
@@ -1339,9 +1373,27 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               />
               <span className="font-semibold text-slate-300 flex items-center gap-1">
                 <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                Con historial de ventas
+                Con ventas
               </span>
             </label>
+
+            {/* Selector de Rotación Mínima */}
+            {requireSalesHistory && (
+              <div className="flex items-center gap-1">
+                <select
+                  value={minDailySales}
+                  onChange={(e) => setMinDailySales(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-slate-200 text-xs font-semibold outline-none cursor-pointer font-mono"
+                  title="Velocidad mínima de ventas al día exigida"
+                >
+                  <option value={0}>Todas (&gt;0/d)</option>
+                  <option value={0.2}>&ge; 0.2 uds/d</option>
+                  <option value={0.5}>&ge; 0.5 uds/d</option>
+                  <option value={1.0}>&ge; 1.0 uds/d</option>
+                  <option value={2.0}>&ge; 2.0 uds/d</option>
+                </select>
+              </div>
+            )}
 
             {/* Toggle Antifraude / Precios Inflados */}
             <label
@@ -1406,6 +1458,22 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                 <option value={0.35}>Media (Máx. 35% por ítem)</option>
                 <option value={0.50}>Baja (Máx. 50% por ítem)</option>
                 <option value={1.00}>Sin límite (100% por ítem)</option>
+              </select>
+            </div>
+
+            {/* Cuota de ventas diaria para alta rotación */}
+            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+              <span className="text-slate-400 font-medium">Cuota Ventas:</span>
+              <select
+                value={maxMarketShare}
+                onChange={(e) => setMaxMarketShare(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-slate-200 text-xs font-semibold outline-none cursor-pointer font-mono"
+                title="Para ítems de alta rotación (>10 uds/día), limita las unidades a fabricar a este porcentaje de las ventas (5%, 10%, 15% o 20% máx). Para 1-10 uds/día, limita a 1-2 unidades."
+              >
+                <option value={0.05}>5% máx/día</option>
+                <option value={0.10}>10% máx/día</option>
+                <option value={0.15}>15% máx/día</option>
+                <option value={0.20}>20% máx/día</option>
               </select>
             </div>
           </div>
