@@ -78,7 +78,7 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
 ===============================================================================
   - Búfer Asíncrono Multihilo: captura de paquetes sin latencia ni cuellos de botella.
   - Base de Datos Local (items_db.json): resolución de nombres en 0.001 ms.
-  - Micro-Batching con HTTP Keep-Alive hacia tu servidor Turso/Vercel.
+  - Micro-Batching con HTTP Keep-Alive hacia el servidor de base de datos.
   - Auto-Elevación en Windows y Auto-Instalación de dependencias.
 ===============================================================================
 """
@@ -676,7 +676,7 @@ def async_worker():
                 if res.status_code == 200:
                     data = res.json()
                     tot = data.get("total_processed", len(prepared_items))
-                    print(f"[{now_str}]  [LOTE PROCESADO] {tot} objetos sincronizados con Turso", flush=True)
+                    print(f"[{now_str}]  [LOTE PROCESADO] {tot} objetos sincronizados con la base de datos", flush=True)
                 else:
                     print(f"[{now_str}]  Error de lote {res.status_code}: {res.text}", flush=True)
         except Exception as e:
@@ -711,7 +711,7 @@ def main():
     print("      DOFUS UNITY -> MERCADILLO LIVE SNIFFER (MODO ESTRICTO)", flush=True)
     print(f"  Servidor Destino : {SERVER_NAME}", flush=True)
     print(f"  Token Calibrado  : '{CURRENT_TOKEN}' (filtrado estricto, sin basura)", flush=True)
-    print(f"  Base de Datos    : Turso / LibSQL Cloud", flush=True)
+    print(f"  Base de Datos    : SQL Remota / Local", flush=True)
     try:
         from scapy.all import conf
         if_desc = getattr(conf.iface, 'name', str(conf.iface))
@@ -1029,7 +1029,7 @@ pause
               <h3 className="text-lg font-black text-white flex items-center gap-2">
                 Sincronización Automática de Mercadillo (Sniffer)
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-wider">
-                  Turso / LibSQL Ready
+                  Sincronización en Tiempo Real
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1162,7 +1162,7 @@ pause
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Server className="w-3.5 h-3.5 text-amber-400" /> Endpoint de Actualización (Turso DB)
+                    <Server className="w-3.5 h-3.5 text-amber-400" /> Endpoint de Ingestión de Precios
                   </span>
                   <span className="text-xs font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
                     Servidor: {activeServerTarget}
@@ -1322,7 +1322,7 @@ pause
                     <Terminal className="w-4 h-4 text-emerald-400" /> Código Fuente Python (dofus_sniffer.py) &mdash; {activeServerTarget}
                   </h4>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Motor principal de captura en vivo, decodificación Protobuf y envío HTTP asíncrono a Turso.
+                    Motor principal de captura en vivo, decodificación y envío HTTP asíncrono a la base de datos.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

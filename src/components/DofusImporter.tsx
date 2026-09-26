@@ -101,7 +101,7 @@ export const DofusImporter: React.FC<{
       if (onSyncComplete) onSyncComplete(result.items);
     } catch (e) {
       console.error("Fast seed failed:", e);
-      alert(`Error al sembrar la base de datos en Turso: ${e instanceof Error ? e.message : String(e)}`);
+      alert(`Error al sincronizar la base de datos: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setIsFastSeeding(false);
     }
@@ -121,7 +121,7 @@ export const DofusImporter: React.FC<{
     } catch (e) {
       console.error("Import failed", e);
       alert(
-        `No se pudo completar el rastreo en vivo de DofusDB (${e instanceof Error ? e.message : String(e)}). Puedes usar el botón verde "Sincronizar Turso (Rápido)" para cargar la base completa instantáneamente.`
+        `No se pudo completar el rastreo en vivo de DofusDB (${e instanceof Error ? e.message : String(e)}). Puedes usar el botón "Sincronización Rápida" para cargar la base completa instantáneamente.`
       );
     }
   };
@@ -200,10 +200,10 @@ export const DofusImporter: React.FC<{
           <div>
             <h2 className="text-xl font-black text-white flex items-center gap-2">
               <Database className="w-5 h-5 text-amber-400" />
-              Base de Datos Local (SQLite / Turso)
+              Gestión de Base de Datos y Catálogo
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Sincroniza y almacena objetos, recetas y estadísticas en la base de datos persistente local de alta velocidad.
+              Administración y sincronización del catálogo de objetos, recetas y persistencia de cotizaciones.
             </p>
           </div>
 
@@ -249,7 +249,7 @@ export const DofusImporter: React.FC<{
             <button
               onClick={handleFastSeed}
               disabled={syncStatus.isLoading || isFastSeeding}
-              title="Sincronizar y poblar Turso instantáneamente con el paquete completo de objetos y recetas"
+              title="Sincronizar instantáneamente con el catálogo predefinido de objetos y recetas"
               className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all shrink-0 ${
                 syncStatus.isLoading || isFastSeeding
                   ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
@@ -259,12 +259,12 @@ export const DofusImporter: React.FC<{
               {isFastSeeding ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-emerald-300" />
-                  <span>Sembrando Turso...</span>
+                  <span>Sincronizando...</span>
                 </>
               ) : (
                 <>
                   <Zap className="w-4 h-4 text-emerald-200" />
-                  <span>Sincronizar Turso (Rápido)</span>
+                  <span>Sincronización Rápida</span>
                 </>
               )}
             </button>
@@ -467,7 +467,7 @@ export const DofusImporter: React.FC<{
         </div>
         <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
           <Server className="w-3.5 h-3.5" />
-          SQLite Local (Turso DB)
+          Base de Datos Relacional SQL
         </span>
       </div>
     </div>

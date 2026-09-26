@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Briefcase,
   TrendingUp,
@@ -21,6 +21,11 @@ import {
   ArrowRight,
   Package,
   Trash2,
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { useUserJobs } from '../hooks/useUserJobs';
 import { useMarketPrices } from '../hooks/useMarketPrices';
@@ -36,7 +41,7 @@ import {
   getItemName,
 } from '../services/dofusDbService';
 import { isOmittedItem, isClassItem, DOFUS_JOBS, isCrushableJob } from '../data/dofusJobs';
-import { getStoredSalesVolumeMap, analyzeSalesVolume, ItemSalesVolume } from '../services/salesVolumeService';
+import { getStoredSalesVolumeMap, analyzeSalesVolume, fetchAndSyncSalesVolume, ItemSalesVolume, SalesVolumeMap } from '../services/salesVolumeService';
 import { copyItemNameToClipboard } from '../utils/clipboardUtils';
 import { USER_JOBS_DEFINITIONS } from '../services/userJobsService';
 
@@ -46,7 +51,26 @@ interface DailyCraftPlannerProps {
   onNavigateToShopping?: () => void;
 }
 
-export type OptimizationMode = 'balanced' | 'max_profit' | 'max_roi';
+export type OptimizationMode = 'balanced' | 'fast_cashflow' | 'max_profit' | 'max_roi';
+export type MarketChannel = 'hybrid' | 'equipment' | 'consumables';
+
+export interface BatchBreakdown {
+  lots100: number;
+  lots10: number;
+  lots1: number;
+  totalSlots: number;
+}
+
+export function calculateBatchBreakdown(units: number): BatchBreakdown {
+  if (units <= 0) return { lots100: 0, lots10: 0, lots1: 0, totalSlots: 0 };
+  const lots100 = Math.floor(units / 100);
+  const rem100 = units % 100;
+  const lots10 = Math.floor(rem100 / 10);
+  const lots1 = rem100 % 10;
+  // En Dofus, cada lote puesto a la venta ocupa 1 slot en HDV
+  const totalSlots = lots100 + lots10 + (lots1 > 0 ? 1 : 0);
+  return { lots100, lots10, lots1, totalSlots };
+}
 
 export interface PlannedCraftItem {
   item: PresetCraftableItem;
@@ -61,6 +85,9 @@ export interface PlannedCraftItem {
   netProfitUnit: number;
   roiPercent: number;
   avgDailySales: number;
+  sales24h?: number;
+  sales7d?: number;
+  sales30d?: number;
   turnoverRating: 'alta' | 'media' | 'baja' | null;
   turnoverLabel: string | null;
   hasSalesData: boolean;
@@ -68,6 +95,13 @@ export interface PlannedCraftItem {
   totalCraftCost: number;
   totalNetProfit: number;
   estimatedSlots: number;
+  batchBreakdown?: BatchBreakdown;
+  paybackDays: number | null;
+  paybackHours: number | null;
+  isOutlierPrice: boolean;
+  outlierRatio: number;
+  referenceMedian: number | null;
+  originalSalePriceUnit: number;
   canCrush: boolean;
 }
 
@@ -84,14 +118,8 @@ function calculateItemSlots(isStackable: boolean, units: number): number {
     // Equipables ocupan 1 slot por cada unidad individual en HDV
     return units;
   }
-  // Consumibles / recursos se venden en lotes (ej. lotes de 10 o 100)
-  if (units >= 100) {
-    return Math.max(1, Math.ceil(units / 100));
-  }
-  if (units >= 10) {
-    return Math.max(1, Math.ceil(units / 10));
-  }
-  return 1;
+  // Consumibles / recursos se venden en lotes (1, 10 o 100)
+  return calculateBatchBreakdown(units).totalSlots;
 }
 
 const BUDGET_PRESETS = [
@@ -111,10 +139,14 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
   const [budget, setBudget] = useState<number>(10_000_000);
   const [budgetInput, setBudgetInput] = useState<string>('10000000');
   const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>('balanced');
+  const [marketChannel, setMarketChannel] = useState<MarketChannel>('hybrid');
   const [targetDays, setTargetDays] = useState<number>(1.0);
-  const [maxHdvSlots, setMaxHdvSlots] = useState<number>(150);
+  const [maxEquipSlots, setMaxEquipSlots] = useState<number>(150);
+  const [maxConsumableSlots, setMaxConsumableSlots] = useState<number>(100);
   const [maxBudgetShare, setMaxBudgetShare] = useState<number>(0.35); // Max 35% del presupuesto en un solo ítem
   const [onlyMyJobs, setOnlyMyJobs] = useState<boolean>(true);
+  const [requireSalesHistory, setRequireSalesHistory] = useState<boolean>(true);
+  const [filterOutliers, setFilterOutliers] = useState<boolean>(true);
   const [selectedJobFilter, setSelectedJobFilter] = useState<number | 'all'>('all');
   const [minRoiFilter, setMinRoiFilter] = useState<number>(15); // Mínimo 15% ROI
   const [excludedItemIds, setExcludedItemIds] = useState<Set<number>>(new Set());
@@ -122,10 +154,37 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
   const [isJobsModalOpen, setIsJobsModalOpen] = useState(false);
   const [copiedItemNameId, setCopiedItemNameId] = useState<number | null>(null);
   const [addedAllNotice, setAddedAllNotice] = useState(false);
+  const [showMaterialsDrawer, setShowMaterialsDrawer] = useState<boolean>(false);
+  const [copiedMaterialsNotice, setCopiedMaterialsNotice] = useState<boolean>(false);
 
   const { settings: userJobSettings, canCraft } = useUserJobs();
   const { marketPrices: basePrices } = useMarketPrices();
-  const salesVolumeMap = useMemo(() => getStoredSalesVolumeMap(), []);
+  const [salesVolumeMap, setSalesVolumeMap] = useState<SalesVolumeMap>(() => getStoredSalesVolumeMap());
+
+  useEffect(() => {
+    // Sincronizar volúmenes de ventas remotos desde la API / DB local
+    fetchAndSyncSalesVolume()
+      .then((remoteMap) => {
+        if (remoteMap && Object.keys(remoteMap).length > 0) {
+          setSalesVolumeMap(remoteMap);
+        }
+      })
+      .catch((err) => {
+        console.warn('[DailyCraftPlanner] Error sincronizando volúmenes:', err);
+      });
+
+    const handleSalesVolumeUpdate = () => {
+      setSalesVolumeMap(getStoredSalesVolumeMap());
+    };
+
+    window.addEventListener('dofus_sales_volume_updated', handleSalesVolumeUpdate);
+    window.addEventListener('dofus_database_updated', handleSalesVolumeUpdate);
+
+    return () => {
+      window.removeEventListener('dofus_sales_volume_updated', handleSalesVolumeUpdate);
+      window.removeEventListener('dofus_database_updated', handleSalesVolumeUpdate);
+    };
+  }, []);
 
   const marketPrices = useMemo(
     () => ({ ...DEFAULT_INGREDIENT_PRICES, ...basePrices }),
@@ -162,21 +221,36 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       canCraftItem: boolean;
       isStackable: boolean;
       craftCostUnit: number;
+      rawSalePrice: number;
       salePriceUnit: number;
       saleTaxUnit: number;
       netProfitUnit: number;
       roiPercent: number;
       avgDailySales: number;
+      sales24h?: number;
+      sales7d?: number;
+      sales30d?: number;
       turnoverRating: 'alta' | 'media' | 'baja' | null;
       turnoverLabel: string | null;
       hasSalesData: boolean;
       score: number;
       canCrush: boolean;
+      paybackDays: number | null;
+      paybackHours: number | null;
+      isOutlierPrice: boolean;
+      outlierRatio: number;
+      referenceMedian: number | null;
     }> = [];
 
     for (const item of allCraftableItems) {
       if (excludedItemIds.has(item.id)) continue;
       if (!item.recipeData?.ingredientIds || item.recipeData.ingredientIds.length === 0) continue;
+
+      const isStackable = isItemStackable(item);
+
+      // Filtro por Canal de Mercadillo objetivo
+      if (marketChannel === 'equipment' && isStackable) continue;
+      if (marketChannel === 'consumables' && !isStackable) continue;
 
       // Filtro de oficio seleccionado
       if (selectedJobFilter !== 'all' && item.jobId !== selectedJobFilter) continue;
@@ -203,40 +277,81 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
       if (craftCostUnit <= 0 || craftCostUnit > budget) continue;
 
-      const salePriceUnit = marketPrices[item.id] || 0;
-      if (salePriceUnit <= 0) continue;
+      const rawSalePrice = marketPrices[item.id] || 0;
+      if (rawSalePrice <= 0) continue;
 
-      const saleTaxUnit = Math.ceil(salePriceUnit * 0.02);
-      const netProfitUnit = salePriceUnit - saleTaxUnit - craftCostUnit;
+      // Análisis de volumen de ventas
+      const vol = salesVolumeMap[item.id];
+      const salesAnalysis = analyzeSalesVolume(rawSalePrice, vol);
+
+      // Si se exige historial de ventas (24h, 7d, 30d o promedio diario) y el ítem no tiene datos:
+      if (requireSalesHistory && (!salesAnalysis.hasData || salesAnalysis.avgDailySales <= 0)) {
+        continue;
+      }
+
+      // Verificación de precios inflados / exomagueos (antifraude)
+      const median7d = vol?.median7d;
+      const median30d = vol?.median30d;
+      const suggestedPrice = vol?.suggestedPrice;
+      const referenceMedian = (median7d && median7d > 0)
+        ? median7d
+        : (median30d && median30d > 0)
+        ? median30d
+        : (suggestedPrice && suggestedPrice > 0)
+        ? suggestedPrice
+        : null;
+
+      let isOutlierPrice = false;
+      let outlierRatio = 1;
+      let effectiveSalePrice = rawSalePrice;
+
+      if (referenceMedian && referenceMedian > 0) {
+        outlierRatio = rawSalePrice / referenceMedian;
+        if (outlierRatio > 1.45) {
+          isOutlierPrice = true;
+          // Si la protección antifraude está activa, usar la mediana histórica real
+          if (filterOutliers) {
+            effectiveSalePrice = Math.round(referenceMedian);
+          }
+        }
+      }
+
+      const saleTaxUnit = Math.ceil(effectiveSalePrice * 0.02);
+      const netProfitUnit = effectiveSalePrice - saleTaxUnit - craftCostUnit;
       if (netProfitUnit <= 0) continue;
 
       const roiPercent = (netProfitUnit / craftCostUnit) * 100;
       if (roiPercent < minRoiFilter) continue;
 
-      // Análisis de volumen de ventas
-      const vol = salesVolumeMap[item.id];
-      const salesAnalysis = analyzeSalesVolume(salePriceUnit, vol);
-      const isStackable = isItemStackable(item);
-
       const jobMeta = DOFUS_JOBS.find((j) => j.id === item.jobId);
       const jobName = jobMeta?.nameEs || userJobDef?.nameEs || 'Oficio';
-
       const canCrush = isCrushableJob(item.jobId) && Array.isArray(item.possibleEffects) && item.possibleEffects.length > 0;
+
+      // Tiempo de recuperación de capital (Cashflow / Payback)
+      const hasVerifiedSales = salesAnalysis.hasData && salesAnalysis.avgDailySales > 0;
+      const dailySpeed = hasVerifiedSales ? salesAnalysis.avgDailySales : 0.05;
+      const dailyRevenue = dailySpeed * (effectiveSalePrice - saleTaxUnit);
+      const paybackDays = (dailyRevenue > 0 && craftCostUnit > 0) ? (craftCostUnit / dailyRevenue) : null;
+      const paybackHours = paybackDays !== null ? Math.round(paybackDays * 24) : null;
 
       // Calcular puntuación heurística según el modo
       let score = 0;
-      const dailySpeed = salesAnalysis.avgDailySales > 0 ? salesAnalysis.avgDailySales : 0.5;
 
       if (optimizationMode === 'balanced') {
-        // Balance entre kamas netos y rotación diaria
-        // Items que se venden bien diariamente y tienen buen beneficio reciben mayor prioridad
         score = netProfitUnit * Math.log10(dailySpeed * 10 + 1) * (1 + roiPercent / 200);
+      } else if (optimizationMode === 'fast_cashflow') {
+        // Priorizar velocidad de retorno del dinero (menor tiempo de recuperación y mayor rotación)
+        const dailyRecoveryRate = paybackDays ? (1 / Math.max(0.1, paybackDays)) : 0.1;
+        score = netProfitUnit * dailyRecoveryRate * (1 + roiPercent / 100);
       } else if (optimizationMode === 'max_profit') {
-        // Priorizar retorno absoluto en kamas por crafteo
         score = netProfitUnit;
       } else {
-        // Priorizar mayor ROI porcentual
         score = roiPercent;
+      }
+
+      // Si no tiene ventas históricas comprobadas, penalizar la puntuación fuertemente
+      if (!hasVerifiedSales) {
+        score *= 0.15;
       }
 
       candidates.push({
@@ -247,16 +362,25 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         canCraftItem,
         isStackable,
         craftCostUnit,
-        salePriceUnit,
+        rawSalePrice,
+        salePriceUnit: effectiveSalePrice,
         saleTaxUnit,
         netProfitUnit,
         roiPercent,
         avgDailySales: salesAnalysis.avgDailySales,
+        sales24h: salesAnalysis.sales24h,
+        sales7d: salesAnalysis.sales7d,
+        sales30d: salesAnalysis.sales30d,
         turnoverRating: salesAnalysis.turnoverRating,
         turnoverLabel: salesAnalysis.turnoverLabel,
         hasSalesData: salesAnalysis.hasData,
         score,
         canCrush,
+        paybackDays,
+        paybackHours,
+        isOutlierPrice,
+        outlierRatio,
+        referenceMedian,
       });
     }
 
@@ -273,20 +397,28 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     marketPrices,
     budget,
     minRoiFilter,
+    requireSalesHistory,
+    filterOutliers,
+    marketChannel,
     salesVolumeMap,
     optimizationMode,
   ]);
 
-  // 2. Algoritmo de Asignación de Presupuesto y Slots (Optimización de Cartera)
+  // 2. Algoritmo de Asignación de Presupuesto y Slots (Optimización de Cartera con Canales)
   const plannedCrafts: PlannedCraftItem[] = useMemo(() => {
     if (budget <= 0 || candidatePool.length === 0) return [];
 
     let remainingBudget = budget;
-    let remainingSlots = maxHdvSlots;
+    let remainingEquipSlots = (marketChannel === 'consumables') ? 0 : maxEquipSlots;
+    let remainingConsumableSlots = (marketChannel === 'equipment') ? 0 : maxConsumableSlots;
     const plan: PlannedCraftItem[] = [];
 
     for (const cand of candidatePool) {
-      if (remainingBudget < cand.craftCostUnit || remainingSlots <= 0) break;
+      if (remainingBudget < cand.craftCostUnit) continue;
+
+      // Verificar slots disponibles según el canal del ítem
+      if (!cand.isStackable && remainingEquipSlots <= 0) continue;
+      if (cand.isStackable && remainingConsumableSlots <= 0) continue;
 
       // Si el usuario fijó manualmente una cantidad, respetarla
       const manualQty = manualUnitsOverride[cand.item.id];
@@ -295,9 +427,22 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         if (units > 0) {
           const cost = units * cand.craftCostUnit;
           const slots = calculateItemSlots(cand.isStackable, units);
-          if (cost <= remainingBudget && slots <= remainingSlots) {
+          const hasAvailableSlots = cand.isStackable
+            ? (slots <= remainingConsumableSlots)
+            : (slots <= remainingEquipSlots);
+
+          if (cost <= remainingBudget && hasAvailableSlots) {
             remainingBudget -= cost;
-            remainingSlots -= slots;
+            if (cand.isStackable) {
+              remainingConsumableSlots -= slots;
+            } else {
+              remainingEquipSlots -= slots;
+            }
+
+            const dailyRev = cand.avgDailySales > 0 ? Math.min(units, cand.avgDailySales) * (cand.salePriceUnit - cand.saleTaxUnit) : 0;
+            const itemPaybackDays = (cost > 0 && dailyRev > 0) ? (cost / dailyRev) : null;
+            const itemPaybackHours = itemPaybackDays !== null ? Math.round(itemPaybackDays * 24) : null;
+
             plan.push({
               item: cand.item,
               jobName: cand.jobName,
@@ -311,6 +456,9 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               netProfitUnit: cand.netProfitUnit,
               roiPercent: cand.roiPercent,
               avgDailySales: cand.avgDailySales,
+              sales24h: cand.sales24h,
+              sales7d: cand.sales7d,
+              sales30d: cand.sales30d,
               turnoverRating: cand.turnoverRating,
               turnoverLabel: cand.turnoverLabel,
               hasSalesData: cand.hasSalesData,
@@ -318,6 +466,13 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               totalCraftCost: cost,
               totalNetProfit: units * cand.netProfitUnit,
               estimatedSlots: slots,
+              batchBreakdown: cand.isStackable ? calculateBatchBreakdown(units) : undefined,
+              paybackDays: itemPaybackDays,
+              paybackHours: itemPaybackHours,
+              isOutlierPrice: cand.isOutlierPrice,
+              outlierRatio: cand.outlierRatio,
+              referenceMedian: cand.referenceMedian,
+              originalSalePriceUnit: cand.rawSalePrice,
               canCrush: cand.canCrush,
             });
           }
@@ -330,8 +485,6 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       if (cand.avgDailySales > 0) {
         maxMarketUnits = Math.max(1, Math.round(cand.avgDailySales * targetDays));
       } else {
-        // Si no tiene datos de ventas, aplicamos un límite seguro:
-        // 1 unidad si es equipable (para no arriesgar), o 50 unidades si es consumible/recurso
         maxMarketUnits = cand.isStackable ? 50 : 1;
       }
 
@@ -345,25 +498,35 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       const maxAffordableUnits = Math.floor(remainingBudget / cand.craftCostUnit);
       if (maxAffordableUnits <= 0) continue;
 
-      // Calcular unidades a asignar
       let targetUnits = Math.min(maxMarketUnits, maxBudgetUnits, maxAffordableUnits);
 
-      // Si es equipable, limitar además por slots disponibles restantes
       if (!cand.isStackable) {
-        targetUnits = Math.min(targetUnits, remainingSlots);
+        targetUnits = Math.min(targetUnits, remainingEquipSlots);
       } else {
-        const slotsNeeded = calculateItemSlots(cand.isStackable, targetUnits);
-        if (slotsNeeded > remainingSlots) {
-          targetUnits = Math.max(1, Math.floor(targetUnits * (remainingSlots / slotsNeeded)));
+        let slotsNeeded = calculateItemSlots(cand.isStackable, targetUnits);
+        while (slotsNeeded > remainingConsumableSlots && targetUnits > 0) {
+          if (targetUnits > 100) targetUnits -= 100;
+          else if (targetUnits > 10) targetUnits -= 10;
+          else targetUnits -= 1;
+          slotsNeeded = calculateItemSlots(cand.isStackable, targetUnits);
         }
       }
 
       if (targetUnits > 0) {
         const cost = targetUnits * cand.craftCostUnit;
         const slots = calculateItemSlots(cand.isStackable, targetUnits);
+        const batchBreakdown = cand.isStackable ? calculateBatchBreakdown(targetUnits) : undefined;
 
         remainingBudget -= cost;
-        remainingSlots -= slots;
+        if (cand.isStackable) {
+          remainingConsumableSlots -= slots;
+        } else {
+          remainingEquipSlots -= slots;
+        }
+
+        const dailyRev = cand.avgDailySales > 0 ? Math.min(targetUnits, cand.avgDailySales) * (cand.salePriceUnit - cand.saleTaxUnit) : 0;
+        const itemPaybackDays = (cost > 0 && dailyRev > 0) ? (cost / dailyRev) : null;
+        const itemPaybackHours = itemPaybackDays !== null ? Math.round(itemPaybackDays * 24) : null;
 
         plan.push({
           item: cand.item,
@@ -378,6 +541,9 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           netProfitUnit: cand.netProfitUnit,
           roiPercent: cand.roiPercent,
           avgDailySales: cand.avgDailySales,
+          sales24h: cand.sales24h,
+          sales7d: cand.sales7d,
+          sales30d: cand.sales30d,
           turnoverRating: cand.turnoverRating,
           turnoverLabel: cand.turnoverLabel,
           hasSalesData: cand.hasSalesData,
@@ -385,6 +551,13 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           totalCraftCost: cost,
           totalNetProfit: targetUnits * cand.netProfitUnit,
           estimatedSlots: slots,
+          batchBreakdown,
+          paybackDays: itemPaybackDays,
+          paybackHours: itemPaybackHours,
+          isOutlierPrice: cand.isOutlierPrice,
+          outlierRatio: cand.outlierRatio,
+          referenceMedian: cand.referenceMedian,
+          originalSalePriceUnit: cand.rawSalePrice,
           canCrush: cand.canCrush,
         });
       }
@@ -393,33 +566,134 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     return plan;
   }, [
     budget,
-    maxHdvSlots,
+    maxEquipSlots,
+    maxConsumableSlots,
+    marketChannel,
     candidatePool,
     targetDays,
     maxBudgetShare,
     manualUnitsOverride,
   ]);
 
-  // Resumen de KPIs
+  // Resumen de KPIs y Métricas de Liquidez
   const summary = useMemo(() => {
     const totalCost = plannedCrafts.reduce((acc, curr) => acc + curr.totalCraftCost, 0);
     const totalProfit = plannedCrafts.reduce((acc, curr) => acc + curr.totalNetProfit, 0);
-    const totalSlots = plannedCrafts.reduce((acc, curr) => acc + curr.estimatedSlots, 0);
+    const equipSlotsUsed = plannedCrafts
+      .filter((c) => !c.isStackable)
+      .reduce((acc, curr) => acc + curr.estimatedSlots, 0);
+    const consumableSlotsUsed = plannedCrafts
+      .filter((c) => c.isStackable)
+      .reduce((acc, curr) => acc + curr.estimatedSlots, 0);
+    const totalSlots = equipSlotsUsed + consumableSlotsUsed;
     const totalUnits = plannedCrafts.reduce((acc, curr) => acc + curr.recommendedUnits, 0);
     const overallRoi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
     const budgetUsedPercent = budget > 0 ? (totalCost / budget) * 100 : 0;
 
+    // Flujo diario estimado de entrada de kamas según absorción
+    const dailyInflow = plannedCrafts.reduce((acc, c) => {
+      if (c.avgDailySales > 0) {
+        const unitsPerDay = Math.min(c.recommendedUnits, c.avgDailySales);
+        return acc + unitsPerDay * (c.salePriceUnit - c.saleTaxUnit);
+      }
+      return acc;
+    }, 0);
+
+    const paybackDays = (totalCost > 0 && dailyInflow > 0) ? (totalCost / dailyInflow) : null;
+    const paybackHours = paybackDays !== null ? Math.round(paybackDays * 24) : null;
+
     return {
       totalCost,
       totalProfit,
+      equipSlotsUsed,
+      consumableSlotsUsed,
       totalSlots,
       totalUnits,
       recipeCount: plannedCrafts.length,
       overallRoi,
       budgetUsedPercent,
       remainingBudget: Math.max(0, budget - totalCost),
+      dailyInflow,
+      paybackDays,
+      paybackHours,
     };
   }, [plannedCrafts, budget]);
+
+  // Desglose de Materiales Agregados & Cuellos de Botella
+  const materialsSummary = useMemo(() => {
+    if (plannedCrafts.length === 0) return null;
+
+    const map = new Map<number, {
+      id: number;
+      name: string;
+      totalQty: number;
+      unitPrice: number;
+      totalCost: number;
+      recipesUsing: number;
+    }>();
+
+    let grandTotalCost = 0;
+
+    for (const craft of plannedCrafts) {
+      if (!craft.item.recipeData?.ingredientIds) continue;
+      const { ingredientIds, quantities } = craft.item.recipeData;
+
+      ingredientIds.forEach((ingId, idx) => {
+        const qtyPerCraft = quantities[idx] || 1;
+        const totalQtyForCraft = qtyPerCraft * craft.recommendedUnits;
+        const price = marketPrices[ingId] || 0;
+        const cost = price * totalQtyForCraft;
+        grandTotalCost += cost;
+
+        const existing = map.get(ingId);
+        if (existing) {
+          existing.totalQty += totalQtyForCraft;
+          existing.totalCost += cost;
+          existing.recipesUsing += 1;
+        } else {
+          const name = getItemName({ id: ingId } as any) || `Recurso #${ingId}`;
+          map.set(ingId, {
+            id: ingId,
+            name,
+            totalQty: totalQtyForCraft,
+            unitPrice: price,
+            totalCost: cost,
+            recipesUsing: 1,
+          });
+        }
+      });
+    }
+
+    const list = Array.from(map.values()).sort((a, b) => b.totalCost - a.totalCost);
+    // Identificar cuellos de botella (recursos que acaparan más del 20% del costo total)
+    const bottlenecks = list.filter((m) => grandTotalCost > 0 && (m.totalCost / grandTotalCost) >= 0.20);
+
+    return {
+      list,
+      totalIngredientsCount: list.length,
+      grandTotalCost,
+      bottlenecks,
+    };
+  }, [plannedCrafts, marketPrices]);
+
+  const handleCopyMaterialsList = () => {
+    if (!materialsSummary) return;
+    const lines = [
+      `🛒 LISTA DE COMPRAS - PLAN CRAFTEO DOFUS (${plannedCrafts.length} recetas, ${summary.totalUnits} unidades)`,
+      `Presupuesto total: ${summary.totalCost.toLocaleString('es-ES')} K | Ganancia neta: +${summary.totalProfit.toLocaleString('es-ES')} K (+${summary.overallRoi.toFixed(0)}% ROI)`,
+      '',
+      '--- MATERIALES NECESARIOS ---',
+      ...materialsSummary.list.map((m) => {
+        const share = materialsSummary.grandTotalCost > 0 ? ((m.totalCost / materialsSummary.grandTotalCost) * 100).toFixed(0) : '0';
+        return `• ${m.totalQty.toLocaleString('es-ES')}x ${m.name} (~${m.totalCost.toLocaleString('es-ES')} K, ${share}%)`;
+      }),
+      '',
+      `Copiado desde Calculadora HDV Dofus`
+    ];
+    copyItemNameToClipboard(lines.join('\n'));
+    setCopiedMaterialsNotice(true);
+    setTimeout(() => setCopiedMaterialsNotice(false), 2000);
+  };
 
   // Acciones
   const handleAddAllToShoppingList = () => {
@@ -471,22 +745,22 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
   return (
     <div className="space-y-4 pb-12">
       {/* Encabezado Principal */}
-      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-            <Briefcase className="w-6 h-6" />
+      <div className="bg-slate-900 border border-slate-800 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Briefcase className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-white tracking-tight">
-                Planificador de Crafteo Diario
+              <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Planificador de Fabricación y Rotación
               </h1>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider">
-                Cartera Rentable
+              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold uppercase tracking-wider">
+                Cartera Activa
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Optimiza qué craftear hoy según tus oficios, presupuesto y absorción de ventas en mercadillo.
+            <p className="text-xs text-slate-400">
+              Asignación presupuestaria y optimización de lotes según absorción diaria en mercadillos.
             </p>
           </div>
         </div>
@@ -495,7 +769,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           <button
             type="button"
             onClick={() => setIsJobsModalOpen(true)}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
             <span>Mis Oficios</span>
@@ -505,44 +779,101 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             <button
               type="button"
               onClick={handleAddAllToShoppingList}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg cursor-pointer"
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
             >
               {addedAllNotice ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-              <span>{addedAllNotice ? '¡Añadido al Carrito!' : 'Añadir Todo al Carrito'}</span>
+              <span>{addedAllNotice ? '¡Añadido a Compras!' : 'Añadir a Compras'}</span>
             </button>
           )}
         </div>
       </div>
 
       {/* Controles de Configuración del Plan */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-md space-y-3.5">
+        {/* Selector de Canal / Mercadillos */}
+        <div className="bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 shrink-0">
+              <Store className="w-3.5 h-3.5 text-amber-400" />
+              Mercado:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 bg-slate-900 p-0.5 border border-slate-800 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setMarketChannel('hybrid')}
+                className={`py-1 px-2.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  marketChannel === 'hybrid'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Combina equipables y consumibles aprovechando ambos mercadillos independientes"
+              >
+                <Layers className="w-3.5 h-3.5 text-amber-400" />
+                <span>Multicanal (Equipos + Lotes)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMarketChannel('equipment')}
+                className={`py-1 px-2.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  marketChannel === 'equipment'
+                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Solo equipamiento (1 slot unitario por pieza)"
+              >
+                <Shield className="w-3.5 h-3.5 text-purple-400" />
+                <span>Equipamiento</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMarketChannel('consumables')}
+                className={`py-1 px-2.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  marketChannel === 'consumables'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Solo consumibles y recursos agrupados en lotes (x1, x10, x100)"
+              >
+                <Package className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Consumibles y Recursos</span>
+              </button>
+            </div>
+          </div>
+
+          <span className="text-[11px] text-slate-500 font-mono">
+            {marketChannel === 'hybrid' ? '400 slots Equipamiento + 400 slots Consumibles' : 'Límite: 400 slots disponibles'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* 1. Presupuesto */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Coins className="w-4 h-4 text-amber-400" />
-              Presupuesto de Inversión
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
+              Presupuesto
             </label>
             <div className="relative">
               <input
                 type="text"
                 value={budgetInput}
                 onChange={(e) => handleBudgetChange(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm outline-none transition-all pr-12"
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-2.5 py-1.5 text-white font-mono font-bold text-xs outline-none transition-all pr-12"
                 placeholder="10000000"
               />
-              <span className="absolute right-3 top-2.5 text-xs text-amber-400 font-bold font-mono">
-                Kamas
+              <span className="absolute right-2.5 top-1.5 text-xs text-amber-400 font-bold font-mono">
+                K
               </span>
             </div>
             {/* Presets de presupuesto */}
-            <div className="flex flex-wrap gap-1 pt-1">
+            <div className="flex flex-wrap gap-1 pt-0.5">
               {BUDGET_PRESETS.map((p) => (
                 <button
                   key={p.value}
                   type="button"
                   onClick={() => handleApplyPresetBudget(p.value)}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
                     budget === p.value
                       ? 'bg-amber-500 text-slate-950 shadow-sm'
                       : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -555,21 +886,21 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           </div>
 
           {/* 2. Modo de Optimización */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4 text-indigo-400" />
-              Estrategia de Optimización
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-indigo-400" />
+              Estrategia
             </label>
-            <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-xl">
+            <div className="grid grid-cols-2 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-lg">
               <button
                 type="button"
                 onClick={() => setOptimizationMode('balanced')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                className={`py-1 px-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   optimizationMode === 'balanced'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Equilibrio entre ganancia en kamas y velocidad de venta diaria"
+                title="Equilibrio entre beneficio total y velocidad de venta"
               >
                 <Flame className="w-3 h-3 text-amber-400" />
                 <span>Equilibrio</span>
@@ -577,8 +908,22 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
               <button
                 type="button"
+                onClick={() => setOptimizationMode('fast_cashflow')}
+                className={`py-1 px-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  optimizationMode === 'fast_cashflow'
+                    ? 'bg-amber-400/25 text-amber-200 border border-amber-400/50 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Mayor velocidad de retorno de kamas (menor tiempo en mercadillo)"
+              >
+                <Zap className="w-3 h-3 text-amber-300" />
+                <span>Flujo Rápido</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setOptimizationMode('max_profit')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                className={`py-1 px-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   optimizationMode === 'max_profit'
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -592,81 +937,164 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               <button
                 type="button"
                 onClick={() => setOptimizationMode('max_roi')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                className={`py-1 px-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   optimizationMode === 'max_roi'
                     ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Maximiza el margen porcentual de retorno sobre la inversión"
+                title="Mayor rentabilidad porcentual sobre el costo"
               >
                 <Sparkles className="w-3 h-3 text-sky-400" />
                 <span>Mayor ROI</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-500 leading-tight">
-              {optimizationMode === 'balanced' && 'Prioriza objetos rentables que se venden rápido cada día.'}
-              {optimizationMode === 'max_profit' && 'Prioriza el retorno bruto más alto en kamas totales.'}
-              {optimizationMode === 'max_roi' && 'Prioriza el porcentaje de ganancia sobre los kamas invertidos.'}
-            </p>
           </div>
 
           {/* 3. Absorción y Días de Rotación */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-emerald-400" />
-              Horizonte de Ventas (Días)
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-emerald-400" />
+              Horizonte de Absorción
             </label>
-            <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-xl text-center">
+            <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-lg text-center">
               {[0.5, 1.0, 2.0, 3.0].map((d) => (
                 <button
                   key={d}
                   type="button"
                   onClick={() => setTargetDays(d)}
-                  className={`py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  className={`py-1 rounded text-xs font-mono font-bold transition-all cursor-pointer ${
                     targetDays === d
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
+                  title={`Tope de unidades ajustado a las ventas estimadas de ${d} ${d === 1 ? 'día' : 'días'}`}
                 >
                   {d}d
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-slate-500 leading-tight">
-              Máx. unidades crafteadas según las ventas de {targetDays} {targetDays === 1 ? 'día' : 'días'}.
-            </p>
+            <span className="text-[10px] text-slate-500 block pt-0.5">
+              Tope: ventas de {targetDays} {targetDays === 1 ? 'día' : 'días'}
+            </span>
           </div>
 
-          {/* 4. Límite de Slots HDV y Diversificación */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Store className="w-4 h-4 text-amber-400" />
-                Límite Slots HDV
-              </label>
-              <span className="text-[10px] font-mono text-amber-400 font-bold">
-                {maxHdvSlots} / 400
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-xl text-center">
-              {[50, 100, 150, 400].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setMaxHdvSlots(s)}
-                  className={`py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                    maxHdvSlots === s
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {s} slots
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-slate-500 leading-tight">
-              Equipables = 1 slot/u. Consumibles = 1 slot por lote.
-            </p>
+          {/* 4. Límite de Slots HDV */}
+          <div className="space-y-1">
+            {marketChannel === 'hybrid' ? (
+              <div className="space-y-1.5">
+                <div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-300 flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-purple-400" />
+                      Slots Equipos:
+                    </span>
+                    <span className="font-mono text-purple-300 font-bold text-[10px]">
+                      {maxEquipSlots} / 400
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-950 p-0.5 border border-slate-800 rounded-lg text-center mt-0.5">
+                    {[50, 100, 150, 400].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setMaxEquipSlots(s)}
+                        className={`py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer ${
+                          maxEquipSlots === s
+                            ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-300 flex items-center gap-1">
+                      <Package className="w-3 h-3 text-emerald-400" />
+                      Slots Consumibles:
+                    </span>
+                    <span className="font-mono text-emerald-300 font-bold text-[10px]">
+                      {maxConsumableSlots} / 400
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-950 p-0.5 border border-slate-800 rounded-lg text-center mt-0.5">
+                    {[50, 100, 150, 400].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setMaxConsumableSlots(s)}
+                        className={`py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer ${
+                          maxConsumableSlots === s
+                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : marketChannel === 'equipment' ? (
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-purple-400" />
+                    Slots Equipos
+                  </label>
+                  <span className="text-[10px] font-mono text-purple-300 font-bold">
+                    {maxEquipSlots} / 400
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-lg text-center mt-1">
+                  {[50, 100, 150, 400].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setMaxEquipSlots(s)}
+                      className={`py-1 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                        maxEquipSlots === s
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-emerald-400" />
+                    Slots Consumibles
+                  </label>
+                  <span className="text-[10px] font-mono text-emerald-300 font-bold">
+                    {maxConsumableSlots} / 400
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-800 rounded-lg text-center mt-1">
+                  {[50, 100, 150, 400].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setMaxConsumableSlots(s)}
+                      className={`py-1 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                        maxConsumableSlots === s
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -674,16 +1102,50 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-3">
             {/* Toggle Solo mis oficios */}
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={onlyMyJobs}
                 onChange={(e) => setOnlyMyJobs(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-400/50 cursor-pointer"
+                className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-400/50 cursor-pointer"
               />
-              <span className="font-bold text-slate-300 flex items-center gap-1">
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
                 <Shield className="w-3.5 h-3.5 text-amber-400" />
-                Solo oficios que puedo craftear
+                Solo mis oficios
+              </span>
+            </label>
+
+            {/* Toggle Solo con historial de ventas */}
+            <label
+              className="inline-flex items-center gap-1.5 cursor-pointer select-none pl-2 border-l border-slate-800"
+              title="Excluir objetos sin ventas registradas en HDV"
+            >
+              <input
+                type="checkbox"
+                checked={requireSalesHistory}
+                onChange={(e) => setRequireSalesHistory(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-400/50 cursor-pointer"
+              />
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
+                <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                Con historial de ventas
+              </span>
+            </label>
+
+            {/* Toggle Antifraude / Precios Inflados */}
+            <label
+              className="inline-flex items-center gap-1.5 cursor-pointer select-none pl-2 border-l border-slate-800"
+              title="Ajusta el precio a la mediana histórica cuando la oferta en mercadillo está anormalmente inflada"
+            >
+              <input
+                type="checkbox"
+                checked={filterOutliers}
+                onChange={(e) => setFilterOutliers(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-400/50 cursor-pointer"
+              />
+              <span className="font-semibold text-slate-300 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                Filtrar anomalías de precio
               </span>
             </label>
 
@@ -752,89 +1214,241 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       {/* KPI Cards de Resumen del Plan */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* KPI 1: Inversión / Presupuesto */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md space-y-1.5">
+        <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-md space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1.5">
-              <Coins className="w-4 h-4 text-amber-400" />
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
               Capital Invertido
             </span>
             <span className="font-mono font-bold text-amber-300">
               {summary.budgetUsedPercent.toFixed(1)}%
             </span>
           </div>
-          <div className="text-lg font-black text-white font-mono">
+          <div className="text-base sm:text-lg font-black text-white font-mono">
             <KamaDisplay amount={summary.totalCost} />
           </div>
-          {/* Progress bar */}
-          <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+          <div className="w-full h-1 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
             <div
               className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-500"
               style={{ width: `${Math.min(100, summary.budgetUsedPercent)}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
             <span>Presupuesto: {budget.toLocaleString('es-ES')} K</span>
-            <span>Restante: {summary.remainingBudget.toLocaleString('es-ES')} K</span>
+            <span>Remanente: {summary.remainingBudget.toLocaleString('es-ES')} K</span>
           </div>
         </div>
 
         {/* KPI 2: Ganancia Neta Estimada */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md space-y-1.5">
+        <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-md space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
-              Ganancia Neta Estimada
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+              Beneficio Neto Proyectado
             </span>
-            <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+            <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 text-[10px]">
               +{summary.overallRoi.toFixed(1)}% ROI
             </span>
           </div>
-          <div className="text-lg font-black text-emerald-400 font-mono">
+          <div className="text-base sm:text-lg font-black text-emerald-400 font-mono">
             +<KamaDisplay amount={summary.totalProfit} />
           </div>
-          <p className="text-[11px] text-slate-400">
-            Ya descuenta el 2% de tasa mercadillo HDV.
-          </p>
+          <span className="text-[10px] text-slate-500 block">
+            Tasa de venta (2%) deducida
+          </span>
         </div>
 
         {/* KPI 3: Variedad y Objetos */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md space-y-1.5">
+        <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-md space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1.5">
-              <Package className="w-4 h-4 text-sky-400" />
-              Volumen de Crafteo
+              <Package className="w-3.5 h-3.5 text-sky-400" />
+              Volumen de Producción
             </span>
-            <span className="text-sky-300 font-bold font-mono">
-              {summary.recipeCount} recetas distintas
+            <span className="text-sky-300 font-bold font-mono text-[11px]">
+              {summary.recipeCount} recetas
             </span>
           </div>
-          <div className="text-lg font-black text-white font-mono">
+          <div className="text-base sm:text-lg font-black text-white font-mono">
             {summary.totalUnits} {summary.totalUnits === 1 ? 'unidad' : 'unidades'}
           </div>
-          <p className="text-[11px] text-slate-400">
-            Diversificación para vender múltiples cosas al día.
-          </p>
+          <span className="text-[10px] text-slate-500 block">
+            Distribución multiobjeto
+          </span>
         </div>
 
         {/* KPI 4: Slots de Mercadillo */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md space-y-1.5">
+        <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-md space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1.5">
-              <Store className="w-4 h-4 text-purple-400" />
-              Slots Mercadillo (HDV)
+              <Store className="w-3.5 h-3.5 text-purple-400" />
+              Slots en Mercadillo
             </span>
-            <span className="font-mono font-bold text-purple-300">
-              {summary.totalSlots} / {maxHdvSlots}
+            <span className="font-mono font-bold text-purple-300 text-[11px]">
+              {marketChannel === 'hybrid'
+                ? `${summary.totalSlots} slots tot.`
+                : `${summary.totalSlots} / ${marketChannel === 'equipment' ? maxEquipSlots : maxConsumableSlots}`}
             </span>
           </div>
-          <div className="text-lg font-black text-purple-300 font-mono">
-            {summary.totalSlots} slots ocupados
-          </div>
-          <p className="text-[11px] text-slate-400">
-            De un promedio estándar de 400 slots disponibles.
-          </p>
+          {marketChannel === 'hybrid' ? (
+            <div className="space-y-0.5 text-xs font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Shield className="w-3 h-3 text-purple-400" /> Equipos:
+                </span>
+                <span className="font-bold text-purple-300">{summary.equipSlotsUsed} / {maxEquipSlots}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Package className="w-3 h-3 text-emerald-400" /> Consumibles:
+                </span>
+                <span className="font-bold text-emerald-300">{summary.consumableSlotsUsed} / {maxConsumableSlots}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-base sm:text-lg font-black text-purple-300 font-mono">
+              {summary.totalSlots} slots ocupados
+            </div>
+          )}
+          <span className="text-[10px] text-slate-500 block">
+            {marketChannel === 'hybrid' ? 'Canales independientes' : 'Capacidad asignada'}
+          </span>
         </div>
       </div>
+
+      {/* KPI Barra de Liquidez y Retorno de Inversión */}
+      {summary.dailyInflow > 0 && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 shrink-0">
+              <Zap className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="font-medium text-slate-300">
+                Retorno de Inversión Proyectado:
+              </span>
+              <span className="font-mono font-bold text-amber-300 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[11px]">
+                {summary.paybackHours !== null ? `~${summary.paybackHours} h` : `~${summary.paybackDays?.toFixed(1)} d`}
+              </span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                (Flujo: <span className="text-emerald-400 font-bold">~{summary.dailyInflow.toLocaleString('es-ES')} K/día</span>)
+              </span>
+            </div>
+          </div>
+
+          <div className="text-xs font-mono">
+            {summary.paybackHours !== null && summary.paybackHours <= 24 && (
+              <span className="text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-[10px]">
+                Retorno rápido (&lt; 24h)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Desglose Agregado de Materiales y Cuellos de Botella */}
+      {materialsSummary && materialsSummary.list.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg transition-all">
+          <div
+            onClick={() => setShowMaterialsDrawer(!showMaterialsDrawer)}
+            className="p-3.5 bg-slate-950/70 hover:bg-slate-950 flex items-center justify-between cursor-pointer border-b border-slate-800/60 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Package className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold text-white text-xs flex items-center gap-2">
+                  Desglose Agregado de Materiales & Cuellos de Botella
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                    {materialsSummary.totalIngredientsCount} recursos necesarios
+                  </span>
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  {materialsSummary.bottlenecks.length > 0
+                    ? `⚠️ ${materialsSummary.bottlenecks.length} cuello(s) de botella acaparan la mayor parte del presupuesto`
+                    : 'Gasto de materiales bien distribuido sin dependencias críticas'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyMaterialsList();
+                }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                title="Copiar lista de compras en formato texto para compartir o pegar en Dofus"
+              >
+                {copiedMaterialsNotice ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                <span>{copiedMaterialsNotice ? '¡Copiado!' : 'Copiar Lista'}</span>
+              </button>
+              {showMaterialsDrawer ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </div>
+          </div>
+
+          {showMaterialsDrawer && (
+            <div className="p-4 space-y-3 bg-slate-900/60">
+              {materialsSummary.bottlenecks.length > 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-200">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold text-amber-300">Cuellos de botella detectados en la cartera:</span>
+                    <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                      {materialsSummary.bottlenecks.map((b) => {
+                        const pct = ((b.totalCost / materialsSummary.grandTotalCost) * 100).toFixed(0);
+                        return `"${b.name}" (${b.totalQty.toLocaleString('es-ES')}x = ${b.totalCost.toLocaleString('es-ES')} K, ~${pct}% del gasto total)`;
+                      }).join(' • ')}
+                      . Vigila la disponibilidad y precio de estos recursos antes de empezar a craftear.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
+                {materialsSummary.list.map((mat) => {
+                  const pct = materialsSummary.grandTotalCost > 0 ? (mat.totalCost / materialsSummary.grandTotalCost) * 100 : 0;
+                  const isBottleneck = pct >= 20;
+
+                  return (
+                    <div
+                      key={mat.id}
+                      className={`p-2 rounded-xl border flex items-center justify-between text-xs font-mono ${
+                        isBottleneck
+                          ? 'bg-amber-950/20 border-amber-500/40 text-amber-200'
+                          : 'bg-slate-950 border-slate-800/80 text-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-bold truncate text-white" title={mat.name}>
+                          {mat.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-sans">
+                          {mat.totalQty.toLocaleString('es-ES')}x • {mat.unitPrice.toLocaleString('es-ES')} K/u
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-bold text-amber-300">
+                          {mat.totalCost.toLocaleString('es-ES')} K
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {pct.toFixed(0)}% del gasto
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Lista / Cartera Recomendada */}
       {plannedCrafts.length === 0 ? (
@@ -846,7 +1460,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             <h3 className="text-base font-bold text-white">No se encontraron crafteos viables con los filtros actuales</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
               Intenta incrementar el presupuesto, bajar el filtro de ROI mínimo, o desactivar temporalmente
-              &ldquo;Solo oficios que puedo craftear&rdquo; para ver recetas de mayor nivel.
+              &ldquo;Solo oficios que puedo craftear&rdquo; {requireSalesHistory ? 'o "Solo con historial de ventas"' : ''} para ampliar las opciones.
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
@@ -864,6 +1478,15 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             >
               Quitar ROI mínimo
             </button>
+            {requireSalesHistory && (
+              <button
+                type="button"
+                onClick={() => setRequireSalesHistory(false)}
+                className="px-3 py-1.5 bg-slate-800 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-700"
+              >
+                Permitir sin historial de ventas
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsJobsModalOpen(true)}
@@ -876,13 +1499,10 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              Cartera de Crafteo Recomendada ({plannedCrafts.length} recetas)
+            <h2 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Cartera Recomendada ({plannedCrafts.length} recetas)
             </h2>
-            <span className="text-xs text-slate-400">
-              Haz clic en <span className="text-rose-400 font-semibold">Descartar</span> para probar otra receta con ese presupuesto.
-            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -893,7 +1513,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               return (
                 <div
                   key={craft.item.id}
-                  className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 shadow-md flex flex-col justify-between gap-3 transition-all relative overflow-hidden group"
+                  className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-3.5 shadow-md flex flex-col justify-between gap-2.5 transition-all relative overflow-hidden group"
                 >
                   {/* Decorative badge */}
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full pointer-events-none" />
@@ -980,16 +1600,40 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                       </div>
 
                       {/* HDV Slots info badge */}
-                      <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
                         <Store className="w-3.5 h-3.5 text-purple-400" />
                         <span>{craft.estimatedSlots} {craft.estimatedSlots === 1 ? 'slot' : 'slots'}</span>
-                        {craft.isStackable && (
-                          <span className="text-[10px] text-slate-500" title="Se agrupa en lotes (consumible/recurso)">
-                            (Lote)
+                        {craft.isStackable && craft.batchBreakdown && (
+                          <span
+                            className="text-[10px] text-emerald-400 font-sans px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                            title={`Desglose en lotes de HDV Consumibles: ${craft.batchBreakdown.lots100 > 0 ? `${craft.batchBreakdown.lots100}x [100] ` : ''}${craft.batchBreakdown.lots10 > 0 ? `${craft.batchBreakdown.lots10}x [10] ` : ''}${craft.batchBreakdown.lots1 > 0 ? `${craft.batchBreakdown.lots1}x [1]` : ''}`}
+                          >
+                            {craft.batchBreakdown.lots100 > 0 ? `${craft.batchBreakdown.lots100}x100 ` : ''}
+                            {craft.batchBreakdown.lots10 > 0 ? `${craft.batchBreakdown.lots10}x10 ` : ''}
+                            {craft.batchBreakdown.lots1 > 0 ? `${craft.batchBreakdown.lots1}x1` : ''}
                           </span>
                         )}
                       </div>
                     </div>
+
+                    {/* Outlier / Exomagueo Protection notice if applicable */}
+                    {craft.isOutlierPrice && (
+                      craft.originalSalePriceUnit !== craft.salePriceUnit ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 font-mono">
+                          <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <span className="leading-tight">
+                            Precio protegido: calculando con mediana ({craft.salePriceUnit.toLocaleString('es-ES')} K)
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[10px] text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20 font-mono">
+                          <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span className="leading-tight">
+                            Anomalía: +{((craft.outlierRatio - 1) * 100).toFixed(0)}% sobre mediana ({craft.referenceMedian?.toLocaleString('es-ES')} K)
+                          </span>
+                        </div>
+                      )
+                    )}
 
                     {/* Breakdown Numbers */}
                     <div className="grid grid-cols-2 gap-2 text-xs font-mono pt-1">
@@ -1016,30 +1660,54 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                       </div>
                     </div>
 
-                    {/* Market Velocity Indicator */}
-                    <div className="flex items-center justify-between text-[11px] bg-slate-950/40 px-2.5 py-1.5 rounded-xl border border-slate-800/40">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        Ventas diarias HDV:
-                      </span>
-                      {craft.hasSalesData && craft.avgDailySales > 0 ? (
-                        <span className="font-bold text-amber-300 font-mono flex items-center gap-1">
-                          ~{craft.avgDailySales.toFixed(1)} uds/día
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              craft.turnoverRating === 'alta'
-                                ? 'bg-emerald-400'
-                                : craft.turnoverRating === 'media'
-                                ? 'bg-amber-400'
-                                : 'bg-rose-400'
-                            }`}
-                            title={craft.turnoverLabel || ''}
-                          />
+                    {/* Market Velocity & Cashflow Indicators */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] bg-slate-950/40 px-2.5 py-1.5 rounded-xl border border-slate-800/40">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-amber-400" />
+                          Ventas diarias HDV:
                         </span>
-                      ) : (
-                        <span className="text-slate-500 font-medium">
-                          Sin histórico (tope seguro 1x)
-                        </span>
+                        {craft.hasSalesData && craft.avgDailySales > 0 ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-amber-300 font-mono flex items-center gap-1">
+                              ~{craft.avgDailySales.toFixed(1)} uds/día
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  craft.turnoverRating === 'alta'
+                                    ? 'bg-emerald-400'
+                                    : craft.turnoverRating === 'media'
+                                    ? 'bg-amber-400'
+                                    : 'bg-rose-400'
+                                }`}
+                                title={craft.turnoverLabel || ''}
+                              />
+                            </span>
+                            {(craft.sales24h || craft.sales7d || craft.sales30d) ? (
+                              <span
+                                className="text-[10px] text-slate-400 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800"
+                                title={`Historial HDV: 24h: ${craft.sales24h ?? '-'} | 7d: ${craft.sales7d ?? '-'} | 30d: ${craft.sales30d ?? '-'}`}
+                              >
+                                {craft.sales24h ? `${craft.sales24h} (24h)` : craft.sales7d ? `${craft.sales7d} (7d)` : `${craft.sales30d} (30d)`}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-rose-400/90 font-medium bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 text-[10px]">
+                            Sin histórico HDV (tope seguro 1x)
+                          </span>
+                        )}
+                      </div>
+
+                      {craft.paybackHours !== null && (
+                        <div className="flex items-center justify-between text-[11px] bg-slate-950/40 px-2.5 py-1 rounded-xl border border-slate-800/40 font-mono">
+                          <span className="text-slate-400 flex items-center gap-1 font-sans">
+                            <Zap className="w-3 h-3 text-amber-400" />
+                            Retorno capital:
+                          </span>
+                          <span className="text-amber-300 font-bold">
+                            ~{craft.paybackHours}h ({craft.paybackDays?.toFixed(1)}d)
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>

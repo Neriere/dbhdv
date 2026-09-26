@@ -40,6 +40,7 @@ scratch/
 scripts/items_db.json
 
 # Internal Development History & Notes
+PLAN_INTERNACIONALIZACION.txt
 HISTORIAL_SNIFFER_CAMBIOS.md
 HISTORIAL_SNIFFER_ALMACEN.md
 instructions.txt

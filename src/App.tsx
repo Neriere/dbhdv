@@ -257,7 +257,7 @@ export default function App() {
             >
               DofusDB
             </a>{' '}
-            &amp; Turso SQLite
+            &amp; Base de Datos SQL
           </p>
         </div>
       </footer>

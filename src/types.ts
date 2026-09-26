@@ -170,6 +170,15 @@ export interface PriceHistoryEntry {
   timestamp: number;
 }
 
+export interface PriceChangeInfo {
+  itemId: number;
+  price: number;
+  oldPrice: number;
+  difference: number;
+  percentageChange: number;
+  timestamp: number;
+}
+
 export interface ItemPriceHistorySummary {
   itemId: number;
   history: PriceHistoryEntry[];

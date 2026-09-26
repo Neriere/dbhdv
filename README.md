@@ -1,211 +1,191 @@
-# Dofus Craft & Market Explorer (DofusDB HDV)
+# Dofus Craft & Market Explorer
 
-Plataforma web para análisis económico, optimización de crafteo, gestión de inventario y seguimiento de precios en tiempo real para Dofus y Dofus Unity.
-
----
-
-## Resumen del Proyecto
-
-Dofus Craft combina una interfaz en React 19 con un servidor Node.js/Express, funciones serverless para despliegues en Vercel y persistencia en SQLite (`local.db`) con soporte opcional para bases de datos remotas en Turso (LibSQL).
-
-Capacidades principales:
-1. Analizar la rentabilidad de recetas con desglose jerarquico de subcrafteos.
-2. Identificar recetas fabricables a partir del inventario disponible en el banco (crafteo inverso).
-3. Simular el machacado de equipamiento para la obtencion de runas de forjamagia y consultar coeficientes de rotura.
-4. Analizar la rentabilidad de consumibles de caracteristicas de protectores y canje de sebuscalines por pergaminos.
-5. Evaluar cacerias legendarias (BYC) y la decision comercial entre vender el recurso crudo o fabricar equipables.
-6. Filtrar globalmente todas las secciones segun los niveles reales de oficio del usuario ("Mis Oficios").
-7. Capturar precios de mercadillo en tiempo real mediante un sniffer de red pasivo para Dofus Unity.
-8. Importar y cotizar builds completas de Dofusbook, comparando el costo de compra frente al costo de crafteo.
-9. Consultar el historial de fluctuaciones, velocidad de rotacion (24h/7d/30d) y gestionar perfiles independientes por servidor.
+Plataforma de análisis económico, modelado de rentabilidad de recetas, simulación de forjamagia y seguimiento de mercados para Dofus.
 
 ---
 
-## Modulos y Funcionalidades
+## Descripción General
+
+Dofus Craft es una aplicación web analítica construida con React 19, Node.js/Express, funciones serverless y una capa de persistencia relacional SQL. Su propósito es optimizar la toma de decisiones comerciales, el cálculo de costos de fabricación artesanal y la gestión de inventario en economías de juego activas.
+
+### Capacidades Principales
+- **Análisis de Rentabilidad y Subcrafteo**: Cálculo del costo directo y óptimo mediante resolución recursiva de ingredientes.
+- **Planificación de Fabricación y Rotación**: Optimización de lotes de producción según presupuesto, canales de venta y absorción diaria estimada.
+- **Gestión de Inventario (Mi Banco)**: Cruce de existencias locales contra el catálogo de recetas para identificar oportunidades de fabricación inmediata.
+- **Simulador de Machacado de Runas**: Cálculo de producción de runas de forjamagia y coeficientes de rotura con aislamiento estricto por servidor.
+- **Consumibles y Cacerías (BYC)**: Análisis de progresión de estadísticas, evaluación de pergaminos y comparativa de adquisición en cacerías legendarias.
+- **Filtro Global por Oficios**: Restricción transversal de interfaces en función de las competencias y niveles de oficio configurados por el usuario.
+- **Ingestión Pasiva de Cotizaciones**: Captura y sincronización de precios de mercadillo en tiempo real mediante análisis pasivo de paquetes de red.
+- **Perfiles Aislados por Servidor**: Soporte para múltiples perfiles de juego independientes con reactividad inmediata y preservación histórica.
+
+---
+
+## Módulos del Sistema
 
 ### 1. Calculadora de Recetas y Subcrafteo Multinivel
-- Catalogo de recetas de todos los oficios (Forjador, Escultor, Sastre, Zapatero, Joyero, Alquimista, etc.).
-- Exclusion automatica de los 97 objetos de clase y sus 20 panoplias para evitar items sin demanda comercial ni generacion de runas.
-- Modos de calculo del arbol de ingredientes:
-  - Compra directa: Costo total comprando los ingredientes inmediatos en mercadillo.
-  - Subcrafteo total: Desglose recursivo hasta materias primas basicas.
-  - Modo optimo: Selecciona de forma automatica la opcion mas economica entre comprar o fabricar cada sub-ingrediente.
-- Metricas de rentabilidad:
-  - Costo de fabricacion frente a precio de venta estimado.
-  - Margen neto en kamas y porcentaje de retorno de inversion (ROI).
-  - Calculo automatico de la tasa de impuestos de venta en mercadillo.
+- Catálogo exhaustivo de recetas para todos los oficios de fabricación (Forjador, Escultor, Sastre, Zapatero, Joyero, Alquimista, etc.).
+- Exclusión automática de equipamiento de clase y panoplias cosméticas sin demanda comercial.
+- Modos de resolución de costos:
+  - **Compra directa**: Valoración según el precio inmediato de cada ingrediente en mercadillo.
+  - **Subcrafteo total**: Desglose jerárquico hasta materias primas base.
+  - **Modo óptimo**: Selección automatizada de la ruta más económica entre compra y fabricación intermedia.
+- Métricas financieras:
+  - Costo de producción vs. cotización de venta.
+  - Margen neto en kamas y retorno porcentual sobre la inversión (ROI).
+  - Deducción automática de la tasa de puesta en venta en mercadillo (2%).
 
-### 2. Gestion de Inventario y Crafteo Inverso (Mi Banco)
-- Carga rapida o pegado de listas de recursos disponibles en el banco o inventario del personaje.
-- Cruce del inventario contra el catalogo de recetas para clasificar objetos en:
-  - Completamente crafteables con recursos propios.
-  - Fabricables comprando pocos ingredientes faltantes.
-  - Oportunidades de alto ROI potencial.
-- Filtros por oficio, nivel, categoria de objeto y restriccion opcional segun los oficios del usuario.
+### 2. Planificador de Fabricación y Rotación
+- Asignación presupuestaria orientada a maximizar la rentabilidad sin saturar la capacidad de mercadillo.
+- Soporte para canales de venta independientes:
+  - **Multicanal**: Asignación simultánea en mercadillos de equipamiento y consumibles.
+  - **Equipamiento**: Lotes unitarios por pieza (armas, armaduras y trofeos).
+  - **Consumibles / Recursos**: Agrupación automática en lotes comerciales (x1, x10, x100).
+- Métricas de flujo de capital:
+  - Proyección de retorno de inversión (*cashflow payback* en horas/días).
+  - Identificación de cuellos de botella presupuestarios en materias primas.
+  - Filtrado estadístico de cotizaciones atípicas o infladas mediante cálculo de mediana.
 
-### 3. Simulador de Machacado de Runas y Coeficientes
-- Estimacion de tipos y cantidades de runas obtenidas al machacar equipamiento (niveles 1 al 200).
-- Calculos basados en formulas oficiales de peso de efectos (`dofusRuneWeights.ts`).
-- Soporte para coeficientes de rotura personalizados con aislamiento estricto por servidor (Draconiros, Talok, etc.).
-- Comparacion entre el costo de fabricacion del objeto y el valor de venta proyectado de las runas resultantes.
+### 3. Gestión de Inventario y Fabricación Inversa (Mi Banco)
+- Carga e importación rápida del inventario disponible en banco o personajes.
+- Cruce matricial contra el árbol de recetas:
+  - Objetos completamente fabricables con existencias actuales.
+  - Fabricables adquiriendo un número reducido de ingredientes faltantes.
+  - Clasificación por retorno potencial de capital.
 
-### 4. Ranking Global de Rentabilidad
-- Tabla clasificatoria de recetas ordenadas por margen comercial y ROI.
-- Filtros configurables por rango de nivel, oficio, categoria de objeto, beneficio minimo en kamas y porcentaje de ROI.
-- Acceso directo hacia la Calculadora de Recetas o hacia el Simulador de Machacado.
-- Compatibilidad directa con el filtro de oficios personales.
+### 4. Simulador de Machacado de Runas y Coeficientes
+- Estimación determinista de tipos y cantidades de runas generadas según el nivel del objeto (1 a 200) y fórmulas oficiales de peso de características (`dofusRuneWeights.ts`).
+- Registro y actualización de coeficientes de rotura con persistencia aislada por perfil de servidor.
+- Comparativa financiera entre el costo de fabricación del objeto y la valoración estimada de las runas obtenidas.
 
-### 5. Consumibles de Caracteristicas y Pergaminos
-- Modulo especializado para consumibles permanentes de recoleccion (Cazador, Pescador, Campesino, Alquimista) derivados de protectores de recursos.
-- Analisis comparativo de vias de progresion (0 a 100 de estadistica): coste de subir con consumibles frente al uso exclusivo de pergaminos.
-- Comparador de rentabilidad de pergaminos frente al valor de referencia seguro (Turmalina a 200 sebuscalines).
-- Metricas de rotacion en 24h, 7d y ratio de kamas generadas por cada sebuscalin invertido.
-- Simulador de canje optimo con asignacion automatica de unidades segun el saldo de sebuscalines disponible.
+### 5. Clasificación y Ranking de Rentabilidad
+- Tabla consolidada de oportunidades comerciales ordenadas por margen neto, porcentaje de ROI o velocidad de absorción.
+- Filtros por rango de nivel, categoría de objeto, oficio requerido y umbrales mínimos de rentabilidad.
 
-### 6. Cacerias Legendarias y Mapas de Se Busca (BYC)
-- Base de datos completa de las 45 cacerias legendarias de Se Busca con precios aislados por servidor.
-- Decision comercial automatizada: vender el recurso crudo del jefe en mercadillo frente a fabricar el equipable asociado.
-- Evaluacion de las 3 vias de adquisicion de cada equipable:
-  - Via 1: Compra de fragmentos, realizacion de la caceria y craft del objeto.
-  - Via 2: Compra directa del mapa completo en mercadillo, caceria y craft.
-  - Via 3: Compra directa del recurso del jefe en mercadillo y craft.
-- Exportador a libros de Excel con 4 hojas analiticas y formulas nativas.
+### 6. Consumibles de Características y Optimización de Pergaminos
+- Módulo especializado en vías de progresión de características base (0 a 100).
+- Comparativa entre consumibles derivados de protectores de recursos y pergaminos de características.
+- Modelado de rentabilidad por sebuscalín frente a referencias comerciales de mercado.
 
-### 7. Filtro Global de Niveles de Oficio (Mis Oficios)
-- Configuracion y persistencia 100% local en el navegador (`localStorage`) para los 20 oficios del juego:
-  - Recoleccion: Alquimista, Campesino, Cazador, Lenador, Minero, Pescador.
-  - Crafteo: Joyero, Sastre, Zapatero, Herrero, Escultor, Fabricante, Manitas, Pescadero/Panadero.
-  - Forjamagia: Joyeromago, Sastremago, Zapateromago, Forjamago de armas, Escultormago, Forjamago de escudos.
-- Interruptor maestro para activar o desactivar el filtrado global con un solo clic.
-- Integracion en cascada: Recetas, Rompedora (requiere crafteo o forjamagia), Ranking de Rentabilidad, Mi Banco, Consumibles y Cacerias BYC.
+### 7. Cacerías Legendarias y Análisis Comercial (BYC)
+- Catálogo de cacerías legendarias y mapas de búsqueda.
+- Análisis de decisión: venta del recurso directo del jefe vs. fabricación de los equipables asociados.
+- Evaluación de rutas de adquisición:
+  - Adquisición de fragmentos, resolución de cacería y fabricación.
+  - Adquisición directa de mapa en mercadillo, resolución y fabricación.
+  - Compra directa del recurso final y fabricación.
+- Exportación estructurada a hojas de cálculo con fórmulas dinámicas.
 
-### 8. Calculadora de Sets de Dofusbook
-- Importacion mediante enlace publico o identificador de build (incluyendo enlaces cortos `d-bk.net`).
-- Deteccion automatica del equipamiento asignado a los slots principales.
-- Comparacion de costos entre compra directa y fabricacion artesanal con calculo de ahorro estimado.
-- Generacion de lista de compras consolidada.
+### 8. Filtro Global de Competencias (Mis Oficios)
+- Configuración persistente a nivel local (`localStorage`) para los 20 oficios de recolección, fabricación y forjamagia.
+- Activación transversal en un clic para restringir recetas, cálculo de machacado y clasificaciones únicamente a objetos que el usuario puede elaborar.
 
-### 9. Planificador de Lista de Compras
-- Agrupacion y suma de materiales requeridos para lotes de fabricacion de uno o multiples objetos.
-- Clasificacion de ingredientes segun el mercadillo correspondiente.
-- Calculo del presupuesto total estimado en kamas para completar las compras.
+### 9. Integración con Dofusbook
+- Importación de sets mediante enlace público o identificador de equipamiento.
+- Detección automática de piezas asignadas y balance comparativo entre compra directa y fabricación artesanal.
+- Exportación consolidada a la lista de compras.
 
-### 10. Gestor de Precios de Mercadillo e Historial
-- Perfiles de precios independientes por servidor de juego con reactividad inmediata y aislamiento estricto.
-- Scope pre-filtro: visualizacion diferenciada de solo recursos puros sin receta, solo crafteables o catalogo completo.
-- Panel de metricas de demanda: volumen de ventas en 24h, 7d, 30d y promedio diario estimado.
-- Ordenacion avanzada por velocidad de rotacion y volumen de ventas.
-- Historial de variaciones de cotizaciones y herramientas de respaldo JSON.
+### 10. Planificador de Compras
+- Consolidación y agregación de ingredientes para lotes simples o múltiples.
+- Desglose por mercadillo de destino y estimación de presupuesto total requerido.
 
-### 11. Sniffer de Mercadillo para Dofus Unity
-- Script en Python (`scripts/sniffer_standalone.py`) que analiza pasivamente paquetes TCP en el puerto 5555 del juego utilizando `scapy`.
-- Operacion directa sin intermediarios ni almacenamiento de credenciales.
-- Resolucion de nombres de objetos mediante diccionario indexado local (`/api/market/items-dictionary`).
-- Descarga automatizada de paquetes preconfigurados para Windows.
+### 11. Gestión de Cotizaciones y Métricas de Demanda
+- Perfiles de precios independientes por servidor con aislamiento estricto de cotizaciones.
+- Panel de métricas de absorción: volumen de ventas en 24h, 7d, 30d y tasa diaria de rotación.
+- Historial de fluctuaciones y herramientas de exportación/importación JSON.
 
-### 12. Integracion con DofusDB y Dofocus
-- Sincronizacion directa con la API publica de DofusDB (`https://api.dofusdb.fr`) para items, recetas y tipos de objetos.
-- Exclusion de objetos cosmeticos, apariencias y objetos de clase.
-- Consulta de coeficientes por servidor mediante endpoints de Dofocus.
+### 12. Ingestión Pasiva de Paquetes de Red (Sniffer)
+- Script en Python (`scripts/sniffer_standalone.py`) para inspección pasiva de tráfico TCP en el puerto del cliente del juego.
+- Operación autónoma sin manipulación de memoria ni almacenamiento de credenciales.
+- Sincronización asíncrona por lotes vía HTTP hacia el endpoint de la API.
 
 ---
 
-## Temas de Interfaz
-
-La aplicacion dispone de cuatro esquemas de color:
-- Bonta: Tonos azul pizarra y blanco frio.
-- Brakmar: Tonos grafito oscuro y acentos carmesi.
-- Pandala: Tonos verde esmeralda y jade.
-- Calm: Paleta neutra de contraste suave con iluminacion calida.
-
----
-
-## Arquitectura Tecnica
+## Arquitectura Técnica
 
 ```
 ├── client (Frontend)
 │   ├── React 19 + TypeScript + Vite 6
 │   ├── Tailwind CSS v4
-│   ├── TanStack Virtual (renderizado virtual para volumenes amplios de datos)
+│   ├── TanStack Virtual (virtualización para catálogos extensos)
 │   └── Lucide Icons
 │
 ├── server (Backend Express / Local)
-│   ├── server.ts (Punto de entrada con middleware Vite en desarrollo y estaticos en produccion)
-│   ├── src/server/expressApp.ts (Rutas de la API, ingestion por lotes y sincronizacion)
-│   └── src/server/localDataStore.ts (Capa de datos y logica de negocio en SQLite)
+│   ├── server.ts (Punto de entrada: Vite en desarrollo, estáticos en producción)
+│   ├── src/server/expressApp.ts (Endpoints de API, ingestión y sincronización)
+│   └── src/server/localDataStore.ts (Capa de datos y lógica de persistencia SQL)
 │
-├── api (Serverless Functions para despliegues en Vercel)
-│   ├── api/dofusbook/analyze.ts (Analisis de builds y recetas de Dofusbook)
-│   ├── api/dofocus/* (Servidores y coeficientes de rotura)
-│   ├── api/market/* (Actualizacion y consulta de precios de mercadillo)
-│   └── api/local-db/coefficients/bulk.ts (Actualizacion masiva de coeficientes)
+├── api (Serverless Functions)
+│   ├── api/dofusbook/analyze.ts (Análisis de sets externos)
+│   ├── api/dofocus/* (Integración de coeficientes y servidores)
+│   ├── api/market/* (Ingestión y consulta de cotizaciones)
+│   └── api/local-db/* (Endpoints de persistencia relacional)
 │
 └── database (Persistencia)
-    ├── local.db (Base de datos SQLite local predeterminada)
-    └── Turso / LibSQL (Persistencia remota opcional mediante variable TURSO_DATABASE_URL)
+    ├── local.db (Base de datos SQL local predeterminada - SQLite)
+    └── Base de datos SQL remota (Configurable mediante DATABASE_URL)
 ```
 
 ---
 
 ## Endpoints de la API
 
-| Metodo | Endpoint | Descripcion |
+| Método | Endpoint | Descripción |
 |---|---|---|
-| `GET` | `/api/health` | Verificacion de estado del servidor. |
-| `GET` | `/api/local-db/bootstrap` | Carga inicial consolidada (items, recetas, precios, perfiles y ajustes). |
-| `GET` | `/api/local-db/meta` | Resumen de registros almacenados en la base de datos. |
-| `GET` | `/api/local-db/items/:id` | Consulta de un objeto por ID con fallback a DofusDB. |
-| `GET` | `/api/local-db/recipes/:resultId` | Consulta de receta por ID del objeto resultante. |
-| `PUT` | `/api/local-db/prices/:itemId` | Actualizacion del precio de un objeto en el perfil activo. |
-| `PUT` | `/api/local-db/prices` | Actualizacion masiva de precios en el perfil activo. |
-| `GET` | `/api/local-db/price-history` | Consulta paginada del historial de precios. |
-| `GET` | `/api/local-db/coefficients` | Obtencion de coeficientes de machacado guardados. |
+| `GET` | `/api/health` | Verificación de estado del servicio. |
+| `GET` | `/api/local-db/bootstrap` | Carga inicial consolidada (catálogo, recetas, precios, perfiles y configuración). |
+| `GET` | `/api/local-db/meta` | Resumen de registros y estadísticas de la base de datos. |
+| `GET` | `/api/local-db/items/:id` | Consulta de un objeto por identificador numérico. |
+| `GET` | `/api/local-db/recipes/:resultId` | Consulta de receta asociada al objeto resultante. |
+| `PUT` | `/api/local-db/prices/:itemId` | Actualización de cotización para un objeto en el perfil activo. |
+| `PUT` | `/api/local-db/prices` | Actualización masiva de cotizaciones en el perfil activo. |
+| `GET` | `/api/local-db/price-history` | Consulta paginada del historial cronológico de precios. |
+| `GET` | `/api/local-db/coefficients` | Consulta de coeficientes de machacado guardados. |
 | `POST` | `/api/local-db/coefficients/bulk` | Guardado en lote de coeficientes de machacado. |
-| `POST` | `/api/market/update` | Ingestion individual de precios enviada por el sniffer. |
-| `POST` | `/api/market/batch-update` | Ingestion por lotes de precios enviada por el sniffer. |
-| `GET` | `/api/market/latest-prices` | Precios mas recientes registrados. |
-| `GET` | `/api/market/items-dictionary` | Diccionario indexado ID -> Nombre para el sniffer. |
-| `GET` | `/api/market/download-items-db` | Descarga de `items_db.json`. |
-| `GET` | `/api/market/sniffer-script` | Generacion del script `dofus_sniffer.py` configurado con el host actual. |
-| `GET` | `/api/market/download-bat` | Descarga del archivo `ejecutar_sniffer.bat` para Windows. |
-| `POST` | `/api/dofusbook/analyze` | Analisis de equipamiento, costos y crafteo de un set de Dofusbook. |
-| `GET` | `/api/dofocus/servers` | Listado de servidores disponibles en Dofocus. |
-| `GET` | `/api/dofocus/coefficients/:serverName` | Coeficientes de machacado por servidor desde Dofocus. |
-| `GET` | `/api/dofocus/item/:itemId` | Coeficiente de rotura de un objeto especifico desde Dofocus. |
+| `POST` | `/api/market/update` | Ingestión individual de precios enviada por el sniffer. |
+| `POST` | `/api/market/batch-update` | Ingestión en lote de cotizaciones enviadas por el sniffer. |
+| `GET` | `/api/market/latest-prices` | Consulta de las cotizaciones más recientes. |
+| `GET` | `/api/market/items-dictionary` | Diccionario indexado ID -> Nombre para resolución local en el sniffer. |
+| `GET` | `/api/market/download-items-db` | Descarga de base local de nombres (`items_db.json`). |
+| `GET` | `/api/market/sniffer-script` | Generación dinámica del script de captura configurado para el host activo. |
+| `GET` | `/api/market/download-bat` | Descarga del script lanzador para entornos Windows. |
+| `POST` | `/api/dofusbook/analyze` | Análisis de equipamiento, costos y crafteo para builds externas. |
+| `GET` | `/api/dofocus/servers` | Consulta de servidores disponibles en DoFocus. |
+| `GET` | `/api/dofocus/coefficients/:serverName` | Consulta de coeficientes de rotura por servidor. |
+| `GET` | `/api/dofocus/item/:itemId` | Coeficiente de rotura específico para un objeto. |
 
 ---
 
-## Variables de Entorno
+## Configuración del Entorno
 
-Definidas en el archivo `.env.example`:
+Variables de entorno configurables en `.env`:
 
 ```env
-# Configuracion del Servidor y Autenticacion Basica (Opcionales)
+# Configuración del Servidor y Control de Acceso (Opcionales)
 APP_HOST=0.0.0.0
 APP_BASIC_AUTH_USER=
 APP_BASIC_AUTH_PASSWORD=
-APP_BASIC_AUTH_REALM=Acceso Privado DofusDB
+APP_BASIC_AUTH_REALM=Acceso Privado
 
-# Sniffer de Mercadillo (Opcional)
+# Autenticación del Sniffer de Mercadillo (Opcional)
 MARKET_SNIFFER_SECRET=
 
-# Base de Datos Turso / LibSQL (Opcional - si no se define, se utiliza local.db)
-TURSO_DATABASE_URL=
-TURSO_AUTH_TOKEN=
+# Persistencia SQL Remota (Opcional - por defecto utiliza SQLite local en local.db)
+DATABASE_URL=
+DATABASE_AUTH_TOKEN=
 ```
 
 ---
 
-## Instalacion y Ejecucion
+## Instalación y Despliegue
 
-### Requisitos previos
-- Node.js version 20 o superior
-- npm version 10 o superior
-- Python version 3.9 o superior (exclusivamente para la ejecucion local del sniffer)
+### Requisitos Previos
+- **Node.js**: Versión 20 o superior
+- **npm**: Versión 10 o superior
+- **Python**: Versión 3.9 o superior (requerido únicamente para la ejecución local del sniffer)
 
-### Pasos de instalacion
+### Pasos de Instalación
 
-1. Instalar dependencias:
+1. Instalar dependencias del proyecto:
    ```bash
    npm install
    ```
@@ -215,13 +195,13 @@ TURSO_AUTH_TOKEN=
    cp .env.example .env
    ```
 
-3. Iniciar el entorno de desarrollo:
+3. Iniciar entorno de desarrollo:
    ```bash
    npm run dev
    ```
-   El servicio queda accesible en `http://localhost:3000`.
+   La aplicación estará disponible en `http://localhost:3000`.
 
-4. Compilar e iniciar en modo produccion:
+4. Compilar y ejecutar en modo producción:
    ```bash
    npm run build
    npm run start
@@ -229,10 +209,10 @@ TURSO_AUTH_TOKEN=
 
 ---
 
-## Uso del Sniffer de Mercadillo
+## Operación del Sniffer de Mercadillo
 
-1. En la aplicacion web, abrir la opcion de Sniffer de Mercadillo en la barra superior.
-2. Seleccionar el servidor de juego activo.
-3. Descargar el archivo `ejecutar_sniffer.bat` o utilizar el comando de terminal correspondiente.
-4. Ejecutar el archivo con permisos de administrador en el mismo equipo donde se ejecuta el cliente de Dofus Unity.
-5. Al consultar cualquier mercadillo dentro del juego, los precios se capturaran y sincronizaran automaticamente con la base de datos.
+1. En la barra superior de la aplicación web, acceder a la opción **Sniffer de Mercadillo**.
+2. Seleccionar el perfil de servidor de juego correspondiente.
+3. Descargar el archivo lanzador `.bat` o el script `dofus_sniffer.py`.
+4. Ejecutar el script en el equipo donde se ejecuta el cliente de juego.
+5. Al consultar los mercadillos dentro del juego, las cotizaciones se registrarán y sincronizarán automáticamente con la base de datos de la plataforma.

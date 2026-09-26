@@ -8,6 +8,7 @@ import {
   DofusTheme,
   MarketPriceMap,
   PriceHistoryEntry,
+  PriceChangeInfo,
   ItemPriceHistorySummary,
   PriceProfile,
   PriceUpdatedAtMap,
@@ -2752,7 +2753,7 @@ export async function performFullItemImport(
   };
 
   try {
-    updateProgress(5, "Iniciando importación", "Conectando con DofusDB y preparando base de datos en Turso...");
+    updateProgress(5, "Iniciando importación", "Conectando con DofusDB y preparando base de datos...");
     await requestJson(`${LOCAL_DB_API_BASE}/import-chunk/init`, { method: "POST" });
 
     // Step 1: Fetch recipes from DofusDB
@@ -2893,7 +2894,7 @@ export async function performFullItemImport(
     }
 
     // Step 3: Finalize
-    updateProgress(95, "Paso 3/3: Finalizando en Turso", "Calculando estadísticas y verificando base de datos...");
+    updateProgress(95, "Paso 3/3: Finalizando sincronización", "Calculando estadísticas y verificando base de datos...");
     const response = await requestJson<BootstrapResponse>(
       `${LOCAL_DB_API_BASE}/import-chunk/finalize`,
       { method: "POST" }
@@ -2910,7 +2911,7 @@ export async function performFullItemImport(
       activePriceProfileId: response.activePriceProfileId,
     });
 
-    updateProgress(100, "Completado", `¡Importación en vivo finalizada con éxito (${response.items.length.toLocaleString()} objetos y ${Object.keys(response.recipes).length.toLocaleString()} recetas guardadas en Turso)!`);
+    updateProgress(100, "Completado", `¡Importación en vivo finalizada con éxito (${response.items.length.toLocaleString()} objetos y ${Object.keys(response.recipes).length.toLocaleString()} recetas guardadas)!`);
     return { items: getImportedItems(), status: syncStatusMemoryCache };
   } catch (error) {
     syncStatusMemoryCache = {
@@ -2946,7 +2947,7 @@ export async function triggerFastSeedDatabase(
   };
 
   try {
-    updateProgress(5, "Iniciando Turso", "Preparando y limpiando tablas en Turso Cloud...");
+    updateProgress(5, "Iniciando base de datos", "Preparando y verificando tablas en la base de datos...");
 
     // 1. Init
     const initRes = await requestJson<{
@@ -2964,7 +2965,7 @@ export async function triggerFastSeedDatabase(
       const count = Math.min((i + 1) * 400, totalItems);
       updateProgress(
         chunkPct,
-        `Paso 1/2: Guardando objetos en Turso (${i + 1}/${itemChunks})`,
+        `Paso 1/2: Guardando objetos (${i + 1}/${itemChunks})`,
         `Guardando objetos y estadísticas: ${count.toLocaleString()} / ${totalItems.toLocaleString()}...`
       );
       await requestJson(`${LOCAL_DB_API_BASE}/seed-step/items`, {
@@ -2979,7 +2980,7 @@ export async function triggerFastSeedDatabase(
       const count = Math.min((i + 1) * 400, totalRecipes);
       updateProgress(
         chunkPct,
-        `Paso 2/2: Guardando recetas en Turso (${i + 1}/${recipeChunks})`,
+        `Paso 2/2: Guardando recetas (${i + 1}/${recipeChunks})`,
         `Guardando recetas de crafteo: ${count.toLocaleString()} / ${totalRecipes.toLocaleString()}...`
       );
       await requestJson(`${LOCAL_DB_API_BASE}/seed-step/recipes`, {
@@ -3677,6 +3678,21 @@ export async function fetchItemPriceHistory(
   return await requestJson<ItemPriceHistorySummary>(
     `${LOCAL_DB_API_BASE}/price-history/item/${itemId}${query}`
   );
+}
+
+export async function fetchLatestPriceChanges(
+  profileId?: number
+): Promise<Record<number, PriceChangeInfo>> {
+  const pid = profileId || activePriceProfileIdMemoryCache || getActivePriceProfileId() || 1;
+  const query = `?profileId=${pid}`;
+  try {
+    return await requestJson<Record<number, PriceChangeInfo>>(
+      `${LOCAL_DB_API_BASE}/price-history/latest-changes${query}`
+    );
+  } catch (err) {
+    console.warn("fetchLatestPriceChanges warning:", err);
+    return {};
+  }
 }
 
 export async function revertPriceHistory(

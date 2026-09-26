@@ -36,6 +36,7 @@ import {
   analyzeDofusbookBuild,
   getPriceHistory,
   getItemPriceHistory,
+  getLatestPriceChanges,
   revertPriceHistoryEntry,
   clearPriceHistory,
   getProfileCoefficients,
@@ -577,6 +578,22 @@ app.get("/api/local-db/price-history/item/:id", async (req, res) => {
       error instanceof Error
         ? error.message
         : "Failed to fetch item price history";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/local-db/price-history/latest-changes", async (req, res) => {
+  try {
+    const profileId = req.query.profileId
+      ? Number(req.query.profileId)
+      : undefined;
+    const result = await getLatestPriceChanges(profileId);
+    res.json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to fetch latest price changes";
     res.status(500).json({ error: message });
   }
 });

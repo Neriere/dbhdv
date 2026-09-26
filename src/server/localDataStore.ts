@@ -24,6 +24,7 @@ import {
   ItemSalesVolume,
   MarketPriceMap,
   PriceHistoryEntry,
+  PriceChangeInfo,
   ItemPriceHistorySummary,
   PriceProfile,
   PriceUpdatedAtMap,
@@ -1857,6 +1858,42 @@ export async function clearPriceHistory(profileId?: number, itemId?: number) {
     });
   }
   return { success: true };
+}
+
+export async function getLatestPriceChanges(
+  profileId?: number
+): Promise<Record<number, PriceChangeInfo>> {
+  const pid = profileId || (await getActivePriceProfileId());
+  try {
+    const res = await database.execute({
+      sql: `
+        SELECT h.item_id, h.price, h.old_price, h.difference, h.percentage_change, h.timestamp
+        FROM price_history h
+        INNER JOIN (
+          SELECT item_id, MAX(id) as max_id
+          FROM price_history
+          WHERE profile_id = ?
+          GROUP BY item_id
+        ) latest ON h.id = latest.max_id
+      `,
+      args: [pid],
+    });
+    const map: Record<number, PriceChangeInfo> = {};
+    for (const row of res.rows) {
+      map[Number(row.item_id)] = {
+        itemId: Number(row.item_id),
+        price: Number(row.price),
+        oldPrice: Number(row.old_price),
+        difference: Number(row.difference),
+        percentageChange: Number(row.percentage_change),
+        timestamp: Number(row.timestamp),
+      };
+    }
+    return map;
+  } catch (err) {
+    console.warn("[getLatestPriceChanges] Error querying latest price changes:", err);
+    return {};
+  }
 }
 
 async function getAllItems(): Promise<DofusItem[]> {
