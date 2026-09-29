@@ -834,6 +834,54 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertIsNotNone(suggested)
         self.assertTrue(25000 <= suggested <= 28000, f"Precio sugerido {suggested} debe ser ~26.5k y no 645k")
 
+    def test_quotation_zero_sales_in_24h_doctor_menor(self):
+        """
+        Simula el caso del usuario con Doctor menor (#13754):
+        24h: 0 ventas
+        7d: 3 ventas (medio 97,499k, mediano 93,999k)
+        30d: 8 ventas (medio 68,436k, mediano 39,999k)
+        Debe enviar explícitamente sales24h: 0, price24h: 0, median24h: 0,
+        para no conservar valores viejos de 24h que inflen la rotación.
+        """
+        base_d = datetime(2026, 8, 1, 12, 0, 0)
+        # 30 días de historial diario en el Campo #2:
+        # Los primeros 22 días tienen 5 ventas en total (ej: 1, 2, 2)
+        # Los últimos 8 días (ventana 7d) tienen 3 ventas en total
+        # En la ventana de 24h no hay ventas (sales24h = 0)
+        daily_vols = [0] * 30
+        daily_vols[2] = 1
+        daily_vols[5] = 2
+        daily_vols[12] = 2
+        # Ventana 7d (últimos 8 puntos: índices 22 a 29)
+        daily_vols[25] = 1
+        daily_vols[26] = 1
+        daily_vols[27] = 1
+        # Índice 29 (hoy / últimas 24h) = 0
+        
+        inner = bytearray()
+        for i, v in enumerate(daily_vols):
+            d = (base_d + timedelta(days=i)).isoformat() + 'Z'
+            p = 97499 if i in (25, 26, 27) else 39999
+            b = make_quotation_entry(v, d, p, 13754)
+            inner.append(0x12)
+            inner.extend(encode_varint(len(b)))
+            inner.extend(b)
+
+        header = b'type.ankama.com/iuk'
+        payload = bytearray(header)
+        payload.append(0x12)
+        payload.extend(encode_varint(len(inner)))
+        payload.extend(inner)
+
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(payload))
+        self.assertEqual(iid, 13754)
+        self.assertEqual(sales_data.get('sales24h'), 0, "sales24h debe ser 0 explícitamente")
+        self.assertEqual(sales_data.get('price24h'), 0)
+        self.assertEqual(sales_data.get('median24h'), 0)
+        self.assertEqual(sales_data.get('sales7d'), 3)
+        self.assertEqual(sales_data.get('sales30d'), 8)
+        self.assertEqual(sales_data.get('avgDailySales'), round(8 / 30.0, 1))
+
     def test_calculate_quick_price_resource(self):
         # Recurso con escalera limpia [2000, 19500, 190000, 1850000]
         p = sniffer_standalone.calculate_quick_price(False, [2000, 19500, 190000, 1850000])

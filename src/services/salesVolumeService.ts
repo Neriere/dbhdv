@@ -31,9 +31,15 @@ export function handleRemoteVolumeUpdate(itemId: number, remoteVolume: ItemSales
 
   // Solo se actualiza si la cotización remota es más reciente o igual a la local
   if (remoteTime >= localTime || !existing) {
+    const isQuotation = remoteVolume.sales7d !== undefined || remoteVolume.sales30d !== undefined;
+    const resolvedSales24h = remoteVolume.sales24h !== undefined ? remoteVolume.sales24h : (isQuotation ? 0 : existing?.sales24h);
+    const resolvedSales7d = remoteVolume.sales7d !== undefined ? remoteVolume.sales7d : (isQuotation ? 0 : existing?.sales7d);
+
     current[itemId] = {
       ...existing,
       ...remoteVolume,
+      sales24h: resolvedSales24h,
+      sales7d: resolvedSales7d,
       updatedAt: remoteTime || Date.now(),
     };
     try {
@@ -70,7 +76,16 @@ export function syncRemoteSalesVolume(remoteMap: SalesVolumeMap): SalesVolumeMap
       const remoteTime = remoteVol.updatedAt || 0;
 
       if (!localVol || remoteTime >= localTime) {
-        current[itemId] = remoteVol;
+        const isQuotation = remoteVol.sales7d !== undefined || remoteVol.sales30d !== undefined;
+        const resolvedSales24h = remoteVol.sales24h !== undefined ? remoteVol.sales24h : (isQuotation ? 0 : localVol?.sales24h);
+        const resolvedSales7d = remoteVol.sales7d !== undefined ? remoteVol.sales7d : (isQuotation ? 0 : localVol?.sales7d);
+
+        current[itemId] = {
+          ...localVol,
+          ...remoteVol,
+          sales24h: resolvedSales24h,
+          sales7d: resolvedSales7d,
+        };
         hasLocalUpdates = true;
       } else {
         // La versión local es más reciente: conservar y marcar para sincronizar al servidor

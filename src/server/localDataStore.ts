@@ -2610,8 +2610,9 @@ export async function setItemSalesVolume(
     // Ignore
   }
 
-  const s24 = volume.sales24h != null ? Math.max(0, Math.trunc(volume.sales24h)) : null;
-  const s7 = volume.sales7d != null ? Math.max(0, Math.trunc(volume.sales7d)) : null;
+  const isQuotation = volume.sales7d != null || volume.sales30d != null;
+  const s24 = volume.sales24h != null ? Math.max(0, Math.trunc(volume.sales24h)) : (isQuotation ? 0 : null);
+  const s7 = volume.sales7d != null ? Math.max(0, Math.trunc(volume.sales7d)) : (isQuotation ? 0 : null);
   const s30 = volume.sales30d != null ? Math.max(0, Math.trunc(volume.sales30d)) : null;
   const avg = volume.avgDailySales != null ? Math.max(0, Number(volume.avgDailySales)) : null;
   const sug = volume.suggestedPrice != null ? Math.max(0, Math.trunc(volume.suggestedPrice)) : null;
@@ -2668,8 +2669,9 @@ export async function bulkSetItemSalesVolume(
     const itemId = Number(idStr);
     if (!itemId || !vol) continue;
     const now = vol.updatedAt && vol.updatedAt > 0 ? vol.updatedAt : Date.now();
-    const s24 = vol.sales24h != null ? Math.max(0, Math.trunc(vol.sales24h)) : null;
-    const s7 = vol.sales7d != null ? Math.max(0, Math.trunc(vol.sales7d)) : null;
+    const isQuotation = vol.sales7d != null || vol.sales30d != null;
+    const s24 = vol.sales24h != null ? Math.max(0, Math.trunc(vol.sales24h)) : (isQuotation ? 0 : null);
+    const s7 = vol.sales7d != null ? Math.max(0, Math.trunc(vol.sales7d)) : (isQuotation ? 0 : null);
     const s30 = vol.sales30d != null ? Math.max(0, Math.trunc(vol.sales30d)) : null;
     const avg = vol.avgDailySales != null ? Math.max(0, Number(vol.avgDailySales)) : null;
     const sug = vol.suggestedPrice != null ? Math.max(0, Math.trunc(vol.suggestedPrice)) : null;

@@ -1073,26 +1073,20 @@ def parse_quotation_message(payload):
             suggested_price = get_robust_period_price(price24h, median24h) or get_robust_period_price(price7d, median7d) or get_robust_period_price(price30d, median30d)
 
         sales_data = {
+            "sales24h": sales24h,
+            "price24h": price24h if sales24h > 0 else 0,
+            "median24h": median24h if sales24h > 0 else 0,
+            "sales7d": sales7d,
+            "price7d": price7d if sales7d > 0 else 0,
+            "median7d": median7d if sales7d > 0 else 0,
+            "sales30d": sales30d,
+            "price30d": price30d if sales30d > 0 else 0,
+            "median30d": median30d if sales30d > 0 else 0,
             "avgDailySales": avg_daily,
             "suggestedPrice": suggested_price,
-            "medianPrice": median24h or median7d or median30d,
+            "medianPrice": median24h or median7d or median30d or 0,
             "updatedAt": int(time.time() * 1000)
         }
-        
-        if sales24h > 0:
-            sales_data["sales24h"] = sales24h
-            sales_data["price24h"] = price24h
-            sales_data["median24h"] = median24h
-            
-        if sales7d > 0:
-            sales_data["sales7d"] = sales7d
-            sales_data["price7d"] = price7d
-            sales_data["median7d"] = median7d
-            
-        if sales30d > 0:
-            sales_data["sales30d"] = sales30d
-            sales_data["price30d"] = price30d
-            sales_data["median30d"] = median30d
 
         return item_id_found, sales_data, entries_30d or entries_24h, "all"
     except Exception:
@@ -1180,12 +1174,18 @@ def process_single_message(payload):
                 if s24 > 0:
                     exo_tag24 = " (Exomagia/Outlier filtrado)" if (m24 > 0 and p24 > m24 * 1.8) else ""
                     print(f"            • 24 Horas : {s24:,} ventas | Medio: {p24:,} k | Mediano: {m24:,} k{exo_tag24}", flush=True)
+                else:
+                    print(f"            • 24 Horas : 0 ventas (Sin rotación en 24h)", flush=True)
                 if s7 > 0:
                     exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
                     print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
+                else:
+                    print(f"            • 7 Días   : 0 ventas", flush=True)
                 if s30 > 0:
                     exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
                     print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
+                else:
+                    print(f"            • 30 Días  : 0 ventas (Sincronizado)", flush=True)
 
                 def send_quotation(t_id=target_id, s_data=quotation_data):
                     try:

@@ -179,4 +179,69 @@ test('analyzeSalesVolume: Neutraliza exomagueos en cotizaciones (Máscara de Tor
   );
 });
 
+test('handleRemoteVolumeUpdate y syncRemoteSalesVolume: cotización sin ventas en 24h actualiza sales24h a 0 y sobrescribe valor obsoleto', () => {
+  localStorage.clear();
+
+  // Caso Doctor menor (#13754):
+  // Ayer se registró 1 venta en 24h (T = 1000)
+  const localDoctorMenor: ItemSalesVolume = {
+    sales24h: 1,
+    sales7d: 4,
+    sales30d: 9,
+    updatedAt: 1000,
+  };
+  localStorage.setItem('dofus_sales_volume_v1', JSON.stringify({ 13754: localDoctorMenor }));
+
+  // Hoy llega una cotización más reciente (T = 2000) donde hoy no hubo ventas (sales24h = 0)
+  const newQuotationDoctorMenor: ItemSalesVolume = {
+    sales24h: 0,
+    price24h: 0,
+    median24h: 0,
+    sales7d: 3,
+    price7d: 97499,
+    median7d: 93999,
+    sales30d: 8,
+    price30d: 68436,
+    median30d: 39999,
+    updatedAt: 2000,
+  };
+
+  const wasUpdated = handleRemoteVolumeUpdate(13754, newQuotationDoctorMenor);
+  assert.equal(wasUpdated, true);
+
+  const stored = JSON.parse(localStorage.getItem('dofus_sales_volume_v1') || '{}');
+  assert.equal(stored[13754].sales24h, 0, 'sales24h debe actualizarse a 0 y no retener el 1 de ayer');
+  assert.equal(stored[13754].sales7d, 3);
+  assert.equal(stored[13754].sales30d, 8);
+
+  // Probar también caso donde el payload remoto omite la propiedad sales24h pero es una cotización (tiene sales7d/30d)
+  const quotationOmitted24h: ItemSalesVolume = {
+    sales7d: 3,
+    sales30d: 8,
+    updatedAt: 3000,
+  };
+  handleRemoteVolumeUpdate(13754, quotationOmitted24h);
+  const storedAfterOmission = JSON.parse(localStorage.getItem('dofus_sales_volume_v1') || '{}');
+  assert.equal(storedAfterOmission[13754].sales24h, 0, 'Incluso si sales24h viniera omitido en la cotización, debe resolverse a 0');
+
+  // Probar con syncRemoteSalesVolume
+  const syncMap: SalesVolumeMap = {
+    13754: {
+      sales24h: 0,
+      sales7d: 3,
+      sales30d: 8,
+      updatedAt: 4000,
+    },
+  };
+  const synced = syncRemoteSalesVolume(syncMap);
+  assert.equal(synced[13754].sales24h, 0);
+
+  // Analizar volumen: con sales24h = 0, no debe superar 0.5 de rotación diaria
+  const analysis = analyzeSalesVolume(93999, synced[13754]);
+  // weightedDaily = 0*0.5 + (3/7)*0.35 + (8/30)*0.15 = 0 + 0.15 + 0.04 = ~0.19
+  assert.ok(analysis.avgDailySales < 0.5, 'La rotación diaria con 0 ventas en 24h debe ser ~0.19 y menor a 0.5');
+  assert.equal(analysis.sales24h, 0);
+});
+
+
 
