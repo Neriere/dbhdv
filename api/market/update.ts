@@ -343,6 +343,17 @@ export default async function handler(req: any, res: any) {
         const sItemId = Number(sId);
         const sv = svRaw as any;
         if (sItemId > 0 && sv && typeof sv === "object") {
+          let s24 = sv.sales24h != null ? Number(sv.sales24h) : null;
+          let s7 = sv.sales7d != null ? Number(sv.sales7d) : null;
+          let s30 = sv.sales30d != null ? Number(sv.sales30d) : null;
+
+          if (s24 != null && s7 != null && s24 > s7) {
+            s7 = s24;
+          }
+          if (s7 != null && s30 != null && s7 > s30) {
+            s30 = s7;
+          }
+
           requests.push({
             type: "execute",
             stmt: {
@@ -359,9 +370,9 @@ export default async function handler(req: any, res: any) {
               args: [
                 { type: "integer", value: String(profileId) },
                 { type: "integer", value: String(sItemId) },
-                sv.sales24h != null ? { type: "integer", value: String(sv.sales24h) } : { type: "null" },
-                sv.sales7d != null ? { type: "integer", value: String(sv.sales7d) } : { type: "null" },
-                sv.sales30d != null ? { type: "integer", value: String(sv.sales30d) } : { type: "null" },
+                s24 != null ? { type: "integer", value: String(s24) } : { type: "null" },
+                s7 != null ? { type: "integer", value: String(s7) } : { type: "null" },
+                s30 != null ? { type: "integer", value: String(s30) } : { type: "null" },
                 sv.avgDailySales != null ? { type: "float", value: Number(sv.avgDailySales) } : { type: "null" },
                 sv.suggestedPrice != null ? { type: "integer", value: String(sv.suggestedPrice) } : { type: "null" },
                 sv.priceStrategy ? { type: "text", value: String(sv.priceStrategy) } : { type: "null" },

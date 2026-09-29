@@ -984,6 +984,11 @@ export default async function handler(req: any, res: any) {
           if (itemId <= 0 || !vol || typeof vol !== "object") continue;
           const v = vol as any;
           const updatedAt = Number(v.updatedAt) || now;
+          let s24 = v.sales24h != null ? Math.max(0, Math.trunc(v.sales24h)) : 0;
+          let s7 = v.sales7d != null ? Math.max(0, Math.trunc(v.sales7d)) : 0;
+          let s30 = v.sales30d != null ? Math.max(0, Math.trunc(v.sales30d)) : 0;
+          if (s24 > s7) s7 = s24;
+          if (s7 > s30) s30 = s7;
 
           requests.push({
             type: "execute",
@@ -1001,9 +1006,9 @@ export default async function handler(req: any, res: any) {
               args: [
                 { type: "integer", value: String(profileId) },
                 { type: "integer", value: String(itemId) },
-                { type: "integer", value: String(v.sales24h ?? 0) },
-                { type: "integer", value: String(v.sales7d ?? 0) },
-                { type: "integer", value: String(v.sales30d ?? 0) },
+                { type: "integer", value: String(s24) },
+                { type: "integer", value: String(s7) },
+                { type: "integer", value: String(s30) },
                 { type: "float", value: Number(v.avgDailySales ?? 0) },
                 { type: "integer", value: String(v.suggestedPrice ?? 0) },
                 { type: "text", value: String(v.priceStrategy || "") },
@@ -1047,6 +1052,12 @@ export default async function handler(req: any, res: any) {
 
       if (endpoint) {
         const v = volume as any;
+        let s24 = v.sales24h != null ? Math.max(0, Math.trunc(v.sales24h)) : 0;
+        let s7 = v.sales7d != null ? Math.max(0, Math.trunc(v.sales7d)) : 0;
+        let s30 = v.sales30d != null ? Math.max(0, Math.trunc(v.sales30d)) : 0;
+        if (s24 > s7) s7 = s24;
+        if (s7 > s30) s30 = s7;
+
         await queryTurso(endpoint, dbToken, [
           {
             type: "execute",
@@ -1064,9 +1075,9 @@ export default async function handler(req: any, res: any) {
               args: [
                 { type: "integer", value: String(profileId) },
                 { type: "integer", value: String(itemId) },
-                { type: "integer", value: String(v.sales24h ?? 0) },
-                { type: "integer", value: String(v.sales7d ?? 0) },
-                { type: "integer", value: String(v.sales30d ?? 0) },
+                { type: "integer", value: String(s24) },
+                { type: "integer", value: String(s7) },
+                { type: "integer", value: String(s30) },
                 { type: "float", value: Number(v.avgDailySales ?? 0) },
                 { type: "integer", value: String(v.suggestedPrice ?? 0) },
                 { type: "text", value: String(v.priceStrategy || "") },

@@ -965,7 +965,9 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertEqual(iid, 13748)
         self.assertEqual(sales_data.get('sales24h'), 1, "24h debe capturar la venta de 1 unidad de las 17:43")
         self.assertEqual(sales_data.get('price24h'), 108880)
-        self.assertEqual(sales_data.get('sales7d'), 0, "7d debe ser 0 porque todas las ventas previas fueron hace > 15 días")
+        self.assertEqual(sales_data.get('sales7d'), 1, "7d debe ser como mínimo igual a 24h (invariante 24h ⊆ 7d)")
+        self.assertEqual(sales_data.get('price7d'), 108880)
+        self.assertEqual(sales_data.get('median7d'), 108880)
         self.assertEqual(sales_data.get('sales30d'), 16)
 
     def test_calculate_quick_price_resource(self):

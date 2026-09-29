@@ -36,21 +36,41 @@ export function handleRemoteVolumeUpdate(itemId: number, remoteVolume: ItemSales
       remoteVolume.sales30d !== undefined ||
       remoteVolume.sales24h !== undefined ||
       remoteVolume.suggestedPrice !== undefined;
-    const resolvedSales24h = remoteVolume.sales24h !== undefined ? remoteVolume.sales24h : (isQuotation ? 0 : existing?.sales24h);
-    const resolvedSales7d = remoteVolume.sales7d !== undefined ? remoteVolume.sales7d : (isQuotation ? 0 : existing?.sales7d);
+    let resolvedSales24h = remoteVolume.sales24h !== undefined ? remoteVolume.sales24h : (isQuotation ? 0 : existing?.sales24h);
+    let resolvedSales7d = remoteVolume.sales7d !== undefined ? remoteVolume.sales7d : (isQuotation ? 0 : existing?.sales7d);
+    let resolvedSales30d = remoteVolume.sales30d !== undefined ? remoteVolume.sales30d : (isQuotation ? 0 : existing?.sales30d);
+
+    // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+    if (resolvedSales24h != null && resolvedSales7d != null && resolvedSales24h > resolvedSales7d) {
+      resolvedSales7d = resolvedSales24h;
+    }
+    if (resolvedSales7d != null && resolvedSales30d != null && resolvedSales7d > resolvedSales30d) {
+      resolvedSales30d = resolvedSales7d;
+    }
+
     const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
       ? 0
       : (remoteVolume.avgDailySales !== undefined ? remoteVolume.avgDailySales : existing?.avgDailySales);
+
+    const p24 = resolvedSales24h === 0 ? 0 : (remoteVolume.price24h ?? existing?.price24h);
+    const m24 = resolvedSales24h === 0 ? 0 : (remoteVolume.median24h ?? existing?.median24h);
+    let p7 = resolvedSales7d === 0 ? 0 : (remoteVolume.price7d ?? existing?.price7d);
+    let m7 = resolvedSales7d === 0 ? 0 : (remoteVolume.median7d ?? existing?.median7d);
+    if (resolvedSales7d > 0 && !p7 && p24) {
+      p7 = p24;
+      m7 = m24;
+    }
 
     current[itemId] = {
       ...existing,
       ...remoteVolume,
       sales24h: resolvedSales24h,
       sales7d: resolvedSales7d,
-      price24h: resolvedSales24h === 0 ? 0 : (remoteVolume.price24h ?? existing?.price24h),
-      median24h: resolvedSales24h === 0 ? 0 : (remoteVolume.median24h ?? existing?.median24h),
-      price7d: resolvedSales7d === 0 ? 0 : (remoteVolume.price7d ?? existing?.price7d),
-      median7d: resolvedSales7d === 0 ? 0 : (remoteVolume.median7d ?? existing?.median7d),
+      sales30d: resolvedSales30d,
+      price24h: p24,
+      median24h: m24,
+      price7d: p7,
+      median7d: m7,
       avgDailySales: resolvedAvgDaily,
       updatedAt: remoteTime || Date.now(),
     };
@@ -93,21 +113,41 @@ export function syncRemoteSalesVolume(remoteMap: SalesVolumeMap): SalesVolumeMap
           remoteVol.sales30d !== undefined ||
           remoteVol.sales24h !== undefined ||
           remoteVol.suggestedPrice !== undefined;
-        const resolvedSales24h = remoteVol.sales24h !== undefined ? remoteVol.sales24h : (isQuotation ? 0 : localVol?.sales24h);
-        const resolvedSales7d = remoteVol.sales7d !== undefined ? remoteVol.sales7d : (isQuotation ? 0 : localVol?.sales7d);
+        let resolvedSales24h = remoteVol.sales24h !== undefined ? remoteVol.sales24h : (isQuotation ? 0 : localVol?.sales24h);
+        let resolvedSales7d = remoteVol.sales7d !== undefined ? remoteVol.sales7d : (isQuotation ? 0 : localVol?.sales7d);
+        let resolvedSales30d = remoteVol.sales30d !== undefined ? remoteVol.sales30d : (isQuotation ? 0 : localVol?.sales30d);
+
+        // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+        if (resolvedSales24h != null && resolvedSales7d != null && resolvedSales24h > resolvedSales7d) {
+          resolvedSales7d = resolvedSales24h;
+        }
+        if (resolvedSales7d != null && resolvedSales30d != null && resolvedSales7d > resolvedSales30d) {
+          resolvedSales30d = resolvedSales7d;
+        }
+
         const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
           ? 0
           : (remoteVol.avgDailySales !== undefined ? remoteVol.avgDailySales : localVol?.avgDailySales);
+
+        const p24 = resolvedSales24h === 0 ? 0 : (remoteVol.price24h ?? localVol?.price24h);
+        const m24 = resolvedSales24h === 0 ? 0 : (remoteVol.median24h ?? localVol?.median24h);
+        let p7 = resolvedSales7d === 0 ? 0 : (remoteVol.price7d ?? localVol?.price7d);
+        let m7 = resolvedSales7d === 0 ? 0 : (remoteVol.median7d ?? localVol?.median7d);
+        if (resolvedSales7d > 0 && !p7 && p24) {
+          p7 = p24;
+          m7 = m24;
+        }
 
         current[itemId] = {
           ...localVol,
           ...remoteVol,
           sales24h: resolvedSales24h,
           sales7d: resolvedSales7d,
-          price24h: resolvedSales24h === 0 ? 0 : (remoteVol.price24h ?? localVol?.price24h),
-          median24h: resolvedSales24h === 0 ? 0 : (remoteVol.median24h ?? localVol?.median24h),
-          price7d: resolvedSales7d === 0 ? 0 : (remoteVol.price7d ?? localVol?.price7d),
-          median7d: resolvedSales7d === 0 ? 0 : (remoteVol.median7d ?? localVol?.median7d),
+          sales30d: resolvedSales30d,
+          price24h: p24,
+          median24h: m24,
+          price7d: p7,
+          median7d: m7,
           avgDailySales: resolvedAvgDaily,
         };
         hasLocalUpdates = true;
@@ -267,8 +307,8 @@ export function analyzeSalesVolume(
   }
 
   const s24h = Math.max(0, v24h || 0);
-  const s7d = Math.max(0, v7d || 0);
-  const s30d = Math.max(0, v30d || 0);
+  const s7d = Math.max(s24h, v7d || 0);
+  const s30d = Math.max(s7d, v30d || 0);
   const hasRecentSales = s24h > 0 || s7d > 0 || (hasDirectDaily && directDaily! > 0);
 
   // Estimación de ventas diarias ponderadas:

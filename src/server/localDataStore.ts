@@ -2615,9 +2615,18 @@ export async function setItemSalesVolume(
     volume.sales30d != null ||
     volume.sales24h != null ||
     volume.suggestedPrice != null;
-  const s24 = volume.sales24h != null ? Math.max(0, Math.trunc(volume.sales24h)) : (isQuotation ? 0 : null);
-  const s7 = volume.sales7d != null ? Math.max(0, Math.trunc(volume.sales7d)) : (isQuotation ? 0 : null);
-  const s30 = volume.sales30d != null ? Math.max(0, Math.trunc(volume.sales30d)) : null;
+  let s24 = volume.sales24h != null ? Math.max(0, Math.trunc(volume.sales24h)) : (isQuotation ? 0 : null);
+  let s7 = volume.sales7d != null ? Math.max(0, Math.trunc(volume.sales7d)) : (isQuotation ? 0 : null);
+  let s30 = volume.sales30d != null ? Math.max(0, Math.trunc(volume.sales30d)) : null;
+
+  // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+  if (s24 != null && s7 != null && s24 > s7) {
+    s7 = s24;
+  }
+  if (s7 != null && s30 != null && s7 > s30) {
+    s30 = s7;
+  }
+
   const avg = (s24 === 0 && s7 === 0)
     ? 0
     : (volume.avgDailySales != null ? Math.max(0, Number(volume.avgDailySales)) : null);
@@ -2680,9 +2689,18 @@ export async function bulkSetItemSalesVolume(
       vol.sales30d != null ||
       vol.sales24h != null ||
       vol.suggestedPrice != null;
-    const s24 = vol.sales24h != null ? Math.max(0, Math.trunc(vol.sales24h)) : (isQuotation ? 0 : null);
-    const s7 = vol.sales7d != null ? Math.max(0, Math.trunc(vol.sales7d)) : (isQuotation ? 0 : null);
-    const s30 = vol.sales30d != null ? Math.max(0, Math.trunc(vol.sales30d)) : null;
+    let s24 = vol.sales24h != null ? Math.max(0, Math.trunc(vol.sales24h)) : (isQuotation ? 0 : null);
+    let s7 = vol.sales7d != null ? Math.max(0, Math.trunc(vol.sales7d)) : (isQuotation ? 0 : null);
+    let s30 = vol.sales30d != null ? Math.max(0, Math.trunc(vol.sales30d)) : null;
+
+    // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+    if (s24 != null && s7 != null && s24 > s7) {
+      s7 = s24;
+    }
+    if (s7 != null && s30 != null && s7 > s30) {
+      s30 = s7;
+    }
+
     const avg = (s24 === 0 && s7 === 0)
       ? 0
       : (vol.avgDailySales != null ? Math.max(0, Number(vol.avgDailySales)) : null);

@@ -290,6 +290,57 @@ test('handleRemoteVolumeUpdate y syncRemoteSalesVolume: cotización sin ventas e
   assert.equal(analysis.avgDailySales, 0, 'Velocidad diaria 0 para evitar gasto de presupuesto');
 });
 
+test('Invariante temporal 24h ⊆ 7d ⊆ 30d: si hay 1 venta en 24h, 7d no puede ser 0', () => {
+  localStorage.clear();
+
+  // Caso Bloqueador menor: venta aislada hoy a las 17:43 (sales24h = 1)
+  // Si un payload remoto llegase con sales24h = 1 y sales7d = 0 por desfasaje de días cerrados
+  const quotationWith1In24h: ItemSalesVolume = {
+    sales24h: 1,
+    sales7d: 0,
+    sales30d: 17,
+    price24h: 108880,
+    median24h: 108880,
+    price7d: 0,
+    median7d: 0,
+    price30d: 68215,
+    median30d: 50000,
+    updatedAt: 5000,
+  };
+
+  handleRemoteVolumeUpdate(13748, quotationWith1In24h);
+  const stored = JSON.parse(localStorage.getItem('dofus_sales_volume_v1') || '{}');
+  assert.equal(stored[13748].sales24h, 1);
+  assert.equal(stored[13748].sales7d, 1, '7d debe ser al menos 1 porque 24h es un subconjunto de 7d');
+  assert.equal(stored[13748].price7d, 108880, 'price7d debe heredar price24h si 7d no tenía ventas previas');
+  assert.equal(stored[13748].sales30d, 17);
+
+  // Probar también en syncRemoteSalesVolume
+  localStorage.clear();
+  const synced = syncRemoteSalesVolume({
+    13748: {
+      sales24h: 2,
+      sales7d: 0,
+      sales30d: 1,
+      updatedAt: 6000,
+    },
+  });
+  assert.equal(synced[13748].sales24h, 2);
+  assert.equal(synced[13748].sales7d, 2, '7d debe elevarse a 2');
+  assert.equal(synced[13748].sales30d, 2, '30d debe ser al menos igual a 7d');
+
+  // analyzeSalesVolume también debe respetar la invariante
+  const analysis = analyzeSalesVolume(100000, {
+    sales24h: 3,
+    sales7d: 0,
+    sales30d: 1,
+  });
+  assert.equal(analysis.sales24h, 3);
+  assert.equal(analysis.sales7d, 3, 'analyzeSalesVolume eleva 7d a 3');
+  assert.equal(analysis.sales30d, 3, 'analyzeSalesVolume eleva 30d a 3');
+});
+
+
 
 
 

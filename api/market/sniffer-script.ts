@@ -1059,6 +1059,20 @@ def parse_quotation_message(payload, now_ts=None):
         pairs_7 = [(e["price"], e["volume"]) for e in entries_7d if e["price"] > 0 and e["volume"] > 0]
         median7d = calculate_weighted_median(pairs_7) if pairs_7 else price7d
 
+        # Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+        # Las últimas 24 horas están estrictamente contenidas dentro de los últimos 7 días.
+        # Todo lo vendido en 24 horas es por definición una venta de los últimos 7 días y 30 días.
+        if sales24h > sales7d:
+            sales7d = sales24h
+            if price7d == 0 and price24h > 0:
+                price7d = price24h
+                median7d = median24h
+        if sales7d > sales30d:
+            sales30d = sales7d
+            if price30d == 0 and price7d > 0:
+                price30d = price7d
+                median30d = median7d
+
         # Estimación promedio diario
         if sales24h == 0 and sales7d == 0:
             avg_daily = 0.0
