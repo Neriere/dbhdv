@@ -897,7 +897,7 @@ QUOTATION_BUFFERS = {}
 QUOTATION_LOCK = threading.Lock()
 
 
-def parse_quotation_message(payload):
+def parse_quotation_message(payload, now_ts=None):
     """
     Decodifica paquetes Ankama Protobuf Any ('type.ankama.com/iuk' o 'type.ankama.com/ive')
     de la ventana de Cotizaciones del Mercado. Extrae simultáneamente las series temporales
@@ -959,7 +959,7 @@ def parse_quotation_message(payload):
                 else:
                     break
 
-            if date_str and (price > 0 or vol > 0):
+            if date_str:
                 ts = 0
                 try:
                     cleaned = date_str.split(".")[0].replace("Z", "+00:00")
@@ -1018,11 +1018,14 @@ def parse_quotation_message(payload):
         median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
 
         # 3. Métricas 7 Días
-        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
-        if len(entries_30d) >= 8:
+        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios).
+        # Si la serie diaria está completa (>=28 puntos diarios), los últimos 8 puntos corresponden a la ventana de 7d.
+        if len(entries_30d) >= 28:
             entries_7d = entries_30d[-8:]
-        elif entries_30d and any(e.get("ts", 0) > 0 for e in entries_30d):
-            cutoff_7d = time.time() - (7 * 86400 + 3600)
+        elif any(e.get("ts", 0) > 0 for e in entries_30d):
+            # Si la serie es dispersa (solo días con ventas), filtrar por ventana de tiempo real
+            ref_now = now_ts if now_ts is not None else time.time()
+            cutoff_7d = ref_now - (7 * 86400 + 3600)
             entries_7d = [e for e in entries_30d if e.get("ts", 0) >= cutoff_7d]
         else:
             entries_7d = []
@@ -1143,7 +1146,7 @@ def process_single_message(payload):
 
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
         if b"type.ankama.com/iuk" in payload:
-            q_item_id, quotation_data, _, _ = parse_quotation_message(payload)
+            q_item_id, quotation_data, _, _ = parse_quotation_message(payload, now_ts=time.time())
             target_id = q_item_id or LAST_MARKET_ITEM_ID
             if quotation_data and target_id > 0:
                 target_name = get_item_name(target_id)

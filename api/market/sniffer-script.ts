@@ -912,7 +912,7 @@ QUOTATION_BUFFERS = {}
 QUOTATION_LOCK = threading.Lock()
 
 
-def parse_quotation_message(payload):
+def parse_quotation_message(payload, now_ts=None):
     """
     Decodifica paquetes Ankama Protobuf Any ('type.ankama.com/iuk' o 'type.ankama.com/ive')
     de la ventana de Cotizaciones del Mercado. Extrae simultáneamente las series temporales
@@ -1003,6 +1003,14 @@ def parse_quotation_message(payload):
         if entries_30d:
             entries_30d.sort(key=lambda e: e.get("ts", 0))
 
+        all_ts = [e["ts"] for e in (entries_24h + entries_30d) if e.get("ts", 0) > 0]
+        max_ts = max(all_ts) if all_ts else 0
+
+        # Ancla temporal: en vivo se provee time.time(), en tests mock se ancla a max_ts
+        ref_now = now_ts if now_ts is not None else (max_ts if max_ts > 0 else time.time())
+        cutoff_7d = ref_now - (7 * 86400 + 3600)
+        cutoff_24h = ref_now - (24 * 3600 + 1800)
+
         def calculate_weighted_median(items):
             sorted_items = sorted(items, key=lambda x: x[0])
             total_vol = sum(x[1] for x in sorted_items)
@@ -1015,9 +1023,12 @@ def parse_quotation_message(payload):
             return sorted_items[-1][0] if sorted_items else 0
 
         # 1. Métricas 24 Horas
-        # En la gráfica de 24h de Dofus Unity, la ventana mostrada en la interfaz abarca
-        # las últimas 22 marcas horarias (entries_24h[-22:]):
-        calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
+        # Si las entradas horarias tienen marca de tiempo, filtrar estrictamente la ventana de 24h
+        if any(e.get("ts", 0) > 0 for e in entries_24h):
+            calc_24h = [e for e in entries_24h if e.get("ts", 0) >= cutoff_24h]
+        else:
+            calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
+
         sales24h = sum(e["volume"] for e in calc_24h)
         w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
         price24h = (w_sum_24 // sales24h) if sales24h > 0 else 0
@@ -1033,12 +1044,12 @@ def parse_quotation_message(payload):
         median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
 
         # 3. Métricas 7 Días
-        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
-        if len(entries_30d) >= 8:
-            entries_7d = entries_30d[-8:]
-        elif entries_30d and any(e.get("ts", 0) > 0 for e in entries_30d):
-            cutoff_7d = time.time() - (7 * 86400 + 3600)
+        # Filtrar estrictamente las entradas que hayan ocurrido en los últimos 7 días.
+        # Si no tienen marcas de tiempo y la serie está completa (>=28 días), los últimos 8 puntos son 7d.
+        if any(e.get("ts", 0) > 0 for e in entries_30d):
             entries_7d = [e for e in entries_30d if e.get("ts", 0) >= cutoff_7d]
+        elif len(entries_30d) >= 28:
+            entries_7d = entries_30d[-8:]
         else:
             entries_7d = []
 
@@ -1158,7 +1169,7 @@ def process_single_message(payload):
 
         # 1. Probar si es paquete de cotizaciones (type.ankama.com/iuk)
         if b"type.ankama.com/iuk" in payload:
-            q_item_id, quotation_data, _, _ = parse_quotation_message(payload)
+            q_item_id, quotation_data, _, _ = parse_quotation_message(payload, now_ts=time.time())
             target_id = q_item_id or LAST_MARKET_ITEM_ID
             if quotation_data and target_id > 0:
                 target_name = get_item_name(target_id)

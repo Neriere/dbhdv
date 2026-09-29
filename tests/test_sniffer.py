@@ -916,6 +916,58 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertEqual(sales_data.get('sales30d'), 5)
         self.assertEqual(sales_data.get('avgDailySales'), 0.0, "avgDailySales debe ser 0.0 al no haber rotación en 7d")
 
+    def test_quotation_bloqueador_menor_sparse_stagnant_sales(self):
+        """
+        Caso reportado por el usuario con Bloqueador menor (#13748):
+        - 30d: 17 artículos vendidos en total (16 ventas entre 30-08 y 14-09, 1 venta hoy a 108,880 k).
+        - 7d: 0 ventas en la ventana de 7 días (Dofus Unity muestra 'No hay información disponible').
+        - 24h: 1 venta registrada a las 17:43 a 108,880 k.
+        El sniffer NO debe sumar las 13 ventas de hace más de 15 días a la métrica de 7 días.
+        """
+        base_d = datetime(2026, 8, 30, 0, 0, 0)
+        # 10 días de ventas dispersas entre el día 0 (30-08) y el día 15 (14-09)
+        sparse_entries = [
+            (2, (base_d + timedelta(days=1)).isoformat() + 'Z', 46463),
+            (2, (base_d + timedelta(days=3)).isoformat() + 'Z', 50000),
+            (2, (base_d + timedelta(days=5)).isoformat() + 'Z', 50000),
+            (2, (base_d + timedelta(days=7)).isoformat() + 'Z', 54000),
+            (2, (base_d + timedelta(days=9)).isoformat() + 'Z', 56000),
+            (2, (base_d + timedelta(days=11)).isoformat() + 'Z', 65000),
+            (2, (base_d + timedelta(days=13)).isoformat() + 'Z', 85000),
+            (2, (base_d + timedelta(days=14)).isoformat() + 'Z', 108880),
+        ]
+        # Total en 30d histórico = 16 ventas (todas antes del 14-09)
+        # Entre el 15-09 y 29-09 (15 días completos) no hubo ninguna venta en la serie diaria
+
+        inner = bytearray()
+        # Entrada 24h: 1 venta hoy a las 17:43 a 108,880 k
+        today_date = (base_d + timedelta(days=30, hours=17, minutes=43)).isoformat() + 'Z'
+        b_24 = make_quotation_entry(1, today_date, 108880, 13748)
+        inner.append(0x0a)
+        inner.extend(encode_varint(len(b_24)))
+        inner.extend(b_24)
+
+        for v, d, p in sparse_entries:
+            b = make_quotation_entry(v, d, p, 13748)
+            inner.append(0x12)
+            inner.extend(encode_varint(len(b)))
+            inner.extend(b)
+
+        header = b'type.ankama.com/iuk'
+        payload = bytearray(header)
+        payload.append(0x12)
+        payload.extend(encode_varint(len(inner)))
+        payload.extend(inner)
+
+        query_time = (base_d + timedelta(days=30, hours=18, minutes=10)).timestamp()
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(payload), now_ts=query_time)
+
+        self.assertEqual(iid, 13748)
+        self.assertEqual(sales_data.get('sales24h'), 1, "24h debe capturar la venta de 1 unidad de las 17:43")
+        self.assertEqual(sales_data.get('price24h'), 108880)
+        self.assertEqual(sales_data.get('sales7d'), 0, "7d debe ser 0 porque todas las ventas previas fueron hace > 15 días")
+        self.assertEqual(sales_data.get('sales30d'), 16)
+
     def test_calculate_quick_price_resource(self):
         # Recurso con escalera limpia [2000, 19500, 190000, 1850000]
         p = sniffer_standalone.calculate_quick_price(False, [2000, 19500, 190000, 1850000])
