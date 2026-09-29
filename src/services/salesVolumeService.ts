@@ -188,6 +188,7 @@ export interface SalesAnalysisResult {
   sales7d: number;
   sales30d: number;
   avgDailySales: number;
+  hasRecentSales: boolean;
   daysToSell: number | null;
   turnoverRating: "alta" | "media" | "baja" | null;
   turnoverLabel: string | null;
@@ -217,6 +218,7 @@ export function analyzeSalesVolume(
       sales7d: v7d ?? 0,
       sales30d: v30d ?? 0,
       avgDailySales: 0,
+      hasRecentSales: false,
       daysToSell: null,
       turnoverRating: null,
       turnoverLabel: null,
@@ -228,6 +230,7 @@ export function analyzeSalesVolume(
   const s24h = Math.max(0, v24h || 0);
   const s7d = Math.max(0, v7d || 0);
   const s30d = Math.max(0, v30d || 0);
+  const hasRecentSales = s24h > 0 || s7d > 0 || (hasDirectDaily && directDaily! > 0);
 
   // Estimación de ventas diarias ponderadas:
   // 50% peso a 24h, 35% peso a 7d (diario), 15% peso a 30d (diario)
@@ -255,6 +258,14 @@ export function analyzeSalesVolume(
   if (!hasPeriodData && hasDirectDaily) {
     avgDaily = directDaily!;
   }
+
+  // Si no hay ventas recientes (0 en 24h y 0 en 7d cuando se dispone de datos de periodo):
+  // El producto está estancado o inactivo. Las ventas antiguas de hace 30 días no deben computar
+  // como ventas diarias activas a corto plazo.
+  if (!hasRecentSales && (v24h !== undefined || v7d !== undefined)) {
+    avgDaily = 0;
+  }
+
   const daysToSell = avgDaily > 0 ? 1 / avgDaily : null;
 
   // Clasificación de rotación
@@ -367,6 +378,7 @@ function getRobustPeriodPrice(price?: number, median?: number): number {
     sales7d: s7d,
     sales30d: s30d,
     avgDailySales: Number(avgDaily.toFixed(2)),
+    hasRecentSales,
     daysToSell: daysToSell ? Number(daysToSell.toFixed(1)) : null,
     turnoverRating,
     turnoverLabel,
