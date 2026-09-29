@@ -31,15 +31,27 @@ export function handleRemoteVolumeUpdate(itemId: number, remoteVolume: ItemSales
 
   // Solo se actualiza si la cotización remota es más reciente o igual a la local
   if (remoteTime >= localTime || !existing) {
-    const isQuotation = remoteVolume.sales7d !== undefined || remoteVolume.sales30d !== undefined;
+    const isQuotation =
+      remoteVolume.sales7d !== undefined ||
+      remoteVolume.sales30d !== undefined ||
+      remoteVolume.sales24h !== undefined ||
+      remoteVolume.suggestedPrice !== undefined;
     const resolvedSales24h = remoteVolume.sales24h !== undefined ? remoteVolume.sales24h : (isQuotation ? 0 : existing?.sales24h);
     const resolvedSales7d = remoteVolume.sales7d !== undefined ? remoteVolume.sales7d : (isQuotation ? 0 : existing?.sales7d);
+    const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
+      ? 0
+      : (remoteVolume.avgDailySales !== undefined ? remoteVolume.avgDailySales : existing?.avgDailySales);
 
     current[itemId] = {
       ...existing,
       ...remoteVolume,
       sales24h: resolvedSales24h,
       sales7d: resolvedSales7d,
+      price24h: resolvedSales24h === 0 ? 0 : (remoteVolume.price24h ?? existing?.price24h),
+      median24h: resolvedSales24h === 0 ? 0 : (remoteVolume.median24h ?? existing?.median24h),
+      price7d: resolvedSales7d === 0 ? 0 : (remoteVolume.price7d ?? existing?.price7d),
+      median7d: resolvedSales7d === 0 ? 0 : (remoteVolume.median7d ?? existing?.median7d),
+      avgDailySales: resolvedAvgDaily,
       updatedAt: remoteTime || Date.now(),
     };
     try {
@@ -76,15 +88,27 @@ export function syncRemoteSalesVolume(remoteMap: SalesVolumeMap): SalesVolumeMap
       const remoteTime = remoteVol.updatedAt || 0;
 
       if (!localVol || remoteTime >= localTime) {
-        const isQuotation = remoteVol.sales7d !== undefined || remoteVol.sales30d !== undefined;
+        const isQuotation =
+          remoteVol.sales7d !== undefined ||
+          remoteVol.sales30d !== undefined ||
+          remoteVol.sales24h !== undefined ||
+          remoteVol.suggestedPrice !== undefined;
         const resolvedSales24h = remoteVol.sales24h !== undefined ? remoteVol.sales24h : (isQuotation ? 0 : localVol?.sales24h);
         const resolvedSales7d = remoteVol.sales7d !== undefined ? remoteVol.sales7d : (isQuotation ? 0 : localVol?.sales7d);
+        const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
+          ? 0
+          : (remoteVol.avgDailySales !== undefined ? remoteVol.avgDailySales : localVol?.avgDailySales);
 
         current[itemId] = {
           ...localVol,
           ...remoteVol,
           sales24h: resolvedSales24h,
           sales7d: resolvedSales7d,
+          price24h: resolvedSales24h === 0 ? 0 : (remoteVol.price24h ?? localVol?.price24h),
+          median24h: resolvedSales24h === 0 ? 0 : (remoteVol.median24h ?? localVol?.median24h),
+          price7d: resolvedSales7d === 0 ? 0 : (remoteVol.price7d ?? localVol?.price7d),
+          median7d: resolvedSales7d === 0 ? 0 : (remoteVol.median7d ?? localVol?.median7d),
+          avgDailySales: resolvedAvgDaily,
         };
         hasLocalUpdates = true;
       } else {

@@ -882,6 +882,40 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertEqual(sales_data.get('sales30d'), 8)
         self.assertEqual(sales_data.get('avgDailySales'), round(8 / 30.0, 1))
 
+    def test_quotation_zero_sales_in_24h_and_7d_stagnant(self):
+        """
+        Ítem estancado con ventas viejas en 30d (5 ventas hace 20 días)
+        pero 0 ventas en las últimas 24 horas y 0 ventas en los últimos 7 días.
+        Debe emitir sales24h: 0, sales7d: 0, sales30d: 5 y avgDailySales: 0.0.
+        """
+        base_d = datetime(2026, 8, 1, 12, 0, 0)
+        daily_vols = [0] * 30
+        daily_vols[2] = 2
+        daily_vols[8] = 3
+        # Los últimos 8 días (ventana 7d) tienen 0 ventas
+
+        inner = bytearray()
+        for i, v in enumerate(daily_vols):
+            d = (base_d + timedelta(days=i)).isoformat() + 'Z'
+            p = 50000 if v > 0 else 0
+            b = make_quotation_entry(v, d, p, 99991)
+            inner.append(0x12)
+            inner.extend(encode_varint(len(b)))
+            inner.extend(b)
+
+        header = b'type.ankama.com/iuk'
+        payload = bytearray(header)
+        payload.append(0x12)
+        payload.extend(encode_varint(len(inner)))
+        payload.extend(inner)
+
+        iid, sales_data, _, _ = sniffer_standalone.parse_quotation_message(bytes(payload))
+        self.assertEqual(iid, 99991)
+        self.assertEqual(sales_data.get('sales24h'), 0)
+        self.assertEqual(sales_data.get('sales7d'), 0)
+        self.assertEqual(sales_data.get('sales30d'), 5)
+        self.assertEqual(sales_data.get('avgDailySales'), 0.0, "avgDailySales debe ser 0.0 al no haber rotación en 7d")
+
     def test_calculate_quick_price_resource(self):
         # Recurso con escalera limpia [2000, 19500, 190000, 1850000]
         p = sniffer_standalone.calculate_quick_price(False, [2000, 19500, 190000, 1850000])

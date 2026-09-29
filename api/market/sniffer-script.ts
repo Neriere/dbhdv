@@ -1003,9 +1003,6 @@ def parse_quotation_message(payload):
         if entries_30d:
             entries_30d.sort(key=lambda e: e.get("ts", 0))
 
-        all_ts = [e["ts"] for e in entries_24h + entries_30d if e.get("ts")]
-        current_ts = max(all_ts) if all_ts else time.time()
-
         def calculate_weighted_median(items):
             sorted_items = sorted(items, key=lambda x: x[0])
             total_vol = sum(x[1] for x in sorted_items)
@@ -1018,7 +1015,9 @@ def parse_quotation_message(payload):
             return sorted_items[-1][0] if sorted_items else 0
 
         # 1. Métricas 24 Horas
-        calc_24h = [e for e in entries_24h if e.get("ts", 0) >= current_ts - 86400]
+        # En la gráfica de 24h de Dofus Unity, la ventana mostrada en la interfaz abarca
+        # las últimas 22 marcas horarias (entries_24h[-22:]):
+        calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
         sales24h = sum(e["volume"] for e in calc_24h)
         w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
         price24h = (w_sum_24 // sales24h) if sales24h > 0 else 0
@@ -1026,6 +1025,7 @@ def parse_quotation_message(payload):
         median24h = calculate_weighted_median(pairs_24) if pairs_24 else price24h
 
         # 2. Métricas 30 Días
+        # Toda la serie diaria completa del Campo #2
         sales30d = sum(e["volume"] for e in entries_30d)
         w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
         price30d = (w_sum_30 // sales30d) if sales30d > 0 else 0
@@ -1033,7 +1033,15 @@ def parse_quotation_message(payload):
         median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
 
         # 3. Métricas 7 Días
-        entries_7d = [e for e in entries_30d if e.get("ts", 0) >= current_ts - 7 * 86400]
+        # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
+        if len(entries_30d) >= 8:
+            entries_7d = entries_30d[-8:]
+        elif entries_30d and any(e.get("ts", 0) > 0 for e in entries_30d):
+            cutoff_7d = time.time() - (7 * 86400 + 3600)
+            entries_7d = [e for e in entries_30d if e.get("ts", 0) >= cutoff_7d]
+        else:
+            entries_7d = []
+
         sales7d = sum(e["volume"] for e in entries_7d)
         w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
         price7d = (w_sum_7 // sales7d) if sales7d > 0 else 0
@@ -1041,7 +1049,14 @@ def parse_quotation_message(payload):
         median7d = calculate_weighted_median(pairs_7) if pairs_7 else price7d
 
         # Estimación promedio diario
-        avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))
+        if sales24h == 0 and sales7d == 0:
+            avg_daily = 0.0
+        elif sales30d > 0:
+            avg_daily = round(sales30d / 30.0, 1)
+        elif sales7d > 0:
+            avg_daily = round(sales7d / 7.0, 1)
+        else:
+            avg_daily = float(sales24h)
 
         def get_robust_period_price(price, median):
             if median > 0 and price > 0:
@@ -1180,10 +1195,11 @@ def process_single_message(payload):
                     exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
                     print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
                 else:
-                    print(f"            • 7 Días   : 0 ventas", flush=True)
+                    print(f"            • 7 Días   : 0 ventas (Sin rotación en 7d)", flush=True)
                 if s30 > 0:
                     exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
-                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
+                    sync_tag = " (Sincronizado)" if (s24 > 0 or s7 > 0) else " (Sincronizado - Sin rotación en 7d)"
+                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k{sync_tag}{exo_tag30}", flush=True)
                 else:
                     print(f"            • 30 Días  : 0 ventas (Sincronizado)", flush=True)
 

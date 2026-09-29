@@ -1019,7 +1019,14 @@ def parse_quotation_message(payload):
 
         # 3. Métricas 7 Días
         # En la gráfica de 7d de Dofus Unity la ventana abarca desde hace 7 días hasta hoy (8 puntos diarios, ej: 03-09 al 10-09)
-        entries_7d = entries_30d[-8:] if len(entries_30d) >= 8 else entries_30d
+        if len(entries_30d) >= 8:
+            entries_7d = entries_30d[-8:]
+        elif entries_30d and any(e.get("ts", 0) > 0 for e in entries_30d):
+            cutoff_7d = time.time() - (7 * 86400 + 3600)
+            entries_7d = [e for e in entries_30d if e.get("ts", 0) >= cutoff_7d]
+        else:
+            entries_7d = []
+
         sales7d = sum(e["volume"] for e in entries_7d)
         w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
         price7d = (w_sum_7 // sales7d) if sales7d > 0 else 0
@@ -1027,7 +1034,14 @@ def parse_quotation_message(payload):
         median7d = calculate_weighted_median(pairs_7) if pairs_7 else price7d
 
         # Estimación promedio diario
-        avg_daily = round(sales30d / 30.0, 1) if sales30d > 0 else (round(sales7d / 7.0, 1) if sales7d > 0 else float(sales24h))
+        if sales24h == 0 and sales7d == 0:
+            avg_daily = 0.0
+        elif sales30d > 0:
+            avg_daily = round(sales30d / 30.0, 1)
+        elif sales7d > 0:
+            avg_daily = round(sales7d / 7.0, 1)
+        else:
+            avg_daily = float(sales24h)
 
         def get_robust_period_price(price, median):
             if median > 0 and price > 0:
@@ -1162,10 +1176,11 @@ def process_single_message(payload):
                     exo_tag7 = " (Exomagia/Outlier filtrado)" if (m7 > 0 and p7 > m7 * 1.8) else ""
                     print(f"            • 7 Días   : {s7:,} ventas | Medio: {p7:,} k | Mediano: {m7:,} k{exo_tag7}", flush=True)
                 else:
-                    print(f"            • 7 Días   : 0 ventas", flush=True)
+                    print(f"            • 7 Días   : 0 ventas (Sin rotación en 7d)", flush=True)
                 if s30 > 0:
                     exo_tag30 = " (Exomagia/Outlier filtrado)" if (m30 > 0 and p30 > m30 * 1.8) else ""
-                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k (Sincronizado){exo_tag30}", flush=True)
+                    sync_tag = " (Sincronizado)" if (s24 > 0 or s7 > 0) else " (Sincronizado - Sin rotación en 7d)"
+                    print(f"            • 30 Días  : {s30:,} ventas | Medio: {p30:,} k | Mediano: {m30:,} k{sync_tag}{exo_tag30}", flush=True)
                 else:
                     print(f"            • 30 Días  : 0 ventas (Sincronizado)", flush=True)
 

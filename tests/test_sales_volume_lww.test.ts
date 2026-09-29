@@ -243,5 +243,53 @@ test('handleRemoteVolumeUpdate y syncRemoteSalesVolume: cotización sin ventas e
   assert.equal(analysis.sales24h, 0);
 });
 
+test('handleRemoteVolumeUpdate y syncRemoteSalesVolume: cotización sin ventas en 24h ni en 7d pone ambos en 0 y avgDailySales en 0', () => {
+  localStorage.clear();
+
+  // Estado local previo: tenía 2 ventas en 24h y 5 en 7d de días anteriores (T = 1000)
+  const localOldItem: ItemSalesVolume = {
+    sales24h: 2,
+    sales7d: 5,
+    sales30d: 10,
+    avgDailySales: 1.2,
+    updatedAt: 1000,
+  };
+  localStorage.setItem('dofus_sales_volume_v1', JSON.stringify({ 77777: localOldItem }));
+
+  // Nueva cotización T = 2000 con 0 ventas en 24h y 0 en 7d (solo 4 ventas viejas en 30d)
+  const quotationStagnant: ItemSalesVolume = {
+    sales24h: 0,
+    sales7d: 0,
+    sales30d: 4,
+    updatedAt: 2000,
+  };
+
+  handleRemoteVolumeUpdate(77777, quotationStagnant);
+  const stored = JSON.parse(localStorage.getItem('dofus_sales_volume_v1') || '{}');
+  assert.equal(stored[77777].sales24h, 0, 'sales24h debe ser 0');
+  assert.equal(stored[77777].sales7d, 0, 'sales7d debe ser 0');
+  assert.equal(stored[77777].avgDailySales, 0, 'avgDailySales debe ser 0 al estar estancado');
+
+  // Test cuando sales24h y sales7d vienen omitidos en el payload (solo llega sales30d y suggestedPrice)
+  const quotationOmittedBoth: ItemSalesVolume = {
+    sales30d: 4,
+    suggestedPrice: 50000,
+    updatedAt: 3000,
+  };
+  handleRemoteVolumeUpdate(77777, quotationOmittedBoth);
+  const storedAfterOmission = JSON.parse(localStorage.getItem('dofus_sales_volume_v1') || '{}');
+  assert.equal(storedAfterOmission[77777].sales24h, 0, 'sales24h debe resolverse a 0 si se omite en cotización');
+  assert.equal(storedAfterOmission[77777].sales7d, 0, 'sales7d debe resolverse a 0 si se omite en cotización');
+  assert.equal(storedAfterOmission[77777].avgDailySales, 0);
+
+  // Análisis: debe catalogar hasRecentSales = false y avgDailySales = 0
+  const analysis = analyzeSalesVolume(50000, storedAfterOmission[77777]);
+  assert.equal(analysis.sales24h, 0);
+  assert.equal(analysis.sales7d, 0);
+  assert.equal(analysis.hasRecentSales, false, 'No tiene ventas recientes (estancado)');
+  assert.equal(analysis.avgDailySales, 0, 'Velocidad diaria 0 para evitar gasto de presupuesto');
+});
+
+
 
 
