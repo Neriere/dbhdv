@@ -378,9 +378,12 @@ export function analyzeSalesVolume(
     }
   }
 
-function getRobustPeriodPrice(price?: number, median?: number): number {
+function getRobustPeriodPrice(price?: number, median?: number, vol: number = 0): number {
   if (price && median && price > 0 && median > 0) {
     if (price > median * 1.8) return median;
+    if (vol >= 2 && median < price) {
+      return Math.round(median * 0.70 + price * 0.30);
+    }
     if (price < median * 0.5) return median;
     return price;
   }
@@ -389,10 +392,16 @@ function getRobustPeriodPrice(price?: number, median?: number): number {
 
   // Precio sugerido de venta: prioridad a la cotización histórica capturada (robusta ante exomagueos)
   let suggestedPrice: number | null = null;
+  const hasDowntrendOutlier = Boolean(
+    volume?.suggestedPrice &&
+    s24h >= 3 &&
+    volume?.median24h &&
+    volume.suggestedPrice > volume.median24h * 1.8
+  );
   const hasOutlierSuggestedPrice =
     Boolean(volume?.suggestedPrice &&
     volume?.median7d &&
-    volume.suggestedPrice > volume.median7d * 1.8);
+    volume.suggestedPrice > volume.median7d * 1.8) || hasDowntrendOutlier;
 
   if (volume?.suggestedPrice && volume.suggestedPrice > 0 && !hasOutlierSuggestedPrice) {
     suggestedPrice = Math.round(volume.suggestedPrice);
@@ -404,31 +413,40 @@ function getRobustPeriodPrice(price?: number, median?: number): number {
     (volume?.median7d && volume.median7d > 0) ||
     (volume?.median30d && volume.median30d > 0)
   ) {
+    const p24 = (volume?.price24h || volume?.median24h) && s24h > 0
+      ? getRobustPeriodPrice(volume.price24h, volume.median24h, s24h)
+      : 0;
+    const p7 = (volume?.price7d || volume?.median7d) && s7d > 0
+      ? getRobustPeriodPrice(volume.price7d, volume.median7d, s7d)
+      : 0;
+    const p30 = (volume?.price30d || volume?.median30d) && s30d > 0
+      ? getRobustPeriodPrice(volume.price30d, volume.median30d, s30d)
+      : 0;
+
+    const isDowntrend = s24h >= 3 && p24 > 0 && p7 > 0 && p24 < p7 * 0.65;
+
     let wSum = 0;
     let wTot = 0;
-    if ((volume?.price24h || volume?.median24h) && s24h > 0) {
-      const p = getRobustPeriodPrice(volume.price24h, volume.median24h);
-      if (p > 0) {
-        wSum += p * 0.45;
-        wTot += 0.45;
-      }
+    if (p24 > 0) {
+      const w = isDowntrend ? 0.80 : 0.45;
+      wSum += p24 * w;
+      wTot += w;
     }
-    if ((volume?.price7d || volume?.median7d) && s7d > 0) {
-      const p = getRobustPeriodPrice(volume.price7d, volume.median7d);
-      if (p > 0) {
-        wSum += p * 0.35;
-        wTot += 0.35;
-      }
+    if (p7 > 0) {
+      const w = isDowntrend ? 0.15 : 0.35;
+      wSum += p7 * w;
+      wTot += w;
     }
-    if ((volume?.price30d || volume?.median30d) && s30d > 0) {
-      const p = getRobustPeriodPrice(volume.price30d, volume.median30d);
-      if (p > 0) {
-        wSum += p * 0.20;
-        wTot += 0.20;
-      }
+    if (p30 > 0) {
+      const w = isDowntrend ? 0.05 : 0.20;
+      wSum += p30 * w;
+      wTot += w;
     }
     if (wTot > 0) {
       suggestedPrice = Math.round(wSum / wTot);
+      if (isDowntrend && suggestedPrice > p24 * 1.4) {
+        suggestedPrice = Math.round(p24 * 1.4);
+      }
     }
   }
 

@@ -1060,11 +1060,15 @@ def parse_quotation_message(payload, now_ts=None):
         else:
             avg_daily = float(sales24h)
 
-        def get_robust_period_price(price, median):
+        def get_robust_period_price(price, median, vol=0):
             if median > 0 and price > 0:
                 # Si la media supera 1.8x la mediana, hay contaminación por exomagueo/venta única
                 if price > median * 1.8:
                     return median
+                # Si hay múltiples ventas y la mediana es menor a la media:
+                # aproximar hacia la mediana (el suelo real donde compraron la mayoría de compradores)
+                if vol >= 2 and median < price:
+                    return round(median * 0.70 + price * 0.30)
                 # Si la media cae por debajo del 50% de la mediana, hay dump anómalo
                 if price < median * 0.5:
                     return median
@@ -1072,22 +1076,32 @@ def parse_quotation_message(payload, now_ts=None):
             return median if median > 0 else price
 
         # Cálculo de precio de referencia combinando la media/mediana robusta de ventas
+        p24_rep = get_robust_period_price(price24h, median24h, sales24h) if (sales24h > 0 and (price24h > 0 or median24h > 0)) else 0
+        p7_rep = get_robust_period_price(price7d, median7d, sales7d) if (sales7d > 0 and (price7d > 0 or median7d > 0)) else 0
+        p30_rep = get_robust_period_price(price30d, median30d, sales30d) if (sales30d > 0 and (price30d > 0 or median30d > 0)) else 0
+
+        # Si 24h tiene rotación activa (>= 3 ventas) y el precio cayó fuertemente respecto a 7d (p24 < p7 * 0.65):
+        # El mercado reciente ha bajado de precio de forma real y confirmada por compradores.
+        is_active_downtrend = sales24h >= 3 and p24_rep > 0 and p7_rep > 0 and p24_rep < p7_rep * 0.65
+
         vol_periods = []
-        if sales24h > 0 and (price24h > 0 or median24h > 0):
-            p24_rep = get_robust_period_price(price24h, median24h)
-            vol_periods.append({"w": 0.45, "p": p24_rep})
-        if sales7d > 0 and (price7d > 0 or median7d > 0):
-            p7_rep = get_robust_period_price(price7d, median7d)
-            vol_periods.append({"w": 0.35, "p": p7_rep})
-        if sales30d > 0 and (price30d > 0 or median30d > 0):
-            p30_rep = get_robust_period_price(price30d, median30d)
-            vol_periods.append({"w": 0.20, "p": p30_rep})
+        if p24_rep > 0:
+            w24 = 0.80 if is_active_downtrend else 0.45
+            vol_periods.append({"w": w24, "p": p24_rep})
+        if p7_rep > 0:
+            w7 = 0.15 if is_active_downtrend else 0.35
+            vol_periods.append({"w": w7, "p": p7_rep})
+        if p30_rep > 0:
+            w30 = 0.05 if is_active_downtrend else 0.20
+            vol_periods.append({"w": w30, "p": p30_rep})
 
         if vol_periods:
             tot_w = sum(vp["w"] for vp in vol_periods)
             suggested_price = int(round(sum(vp["p"] * vp["w"] for vp in vol_periods) / tot_w))
+            if is_active_downtrend and suggested_price > p24_rep * 1.4:
+                suggested_price = int(round(p24_rep * 1.4))
         else:
-            suggested_price = get_robust_period_price(price24h, median24h) or get_robust_period_price(price7d, median7d) or get_robust_period_price(price30d, median30d)
+            suggested_price = p24_rep or p7_rep or p30_rep or 0
 
         sales_data = {
             "sales24h": sales24h,

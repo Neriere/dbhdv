@@ -340,6 +340,30 @@ test('Invariante temporal 24h ⊆ 7d ⊆ 30d: si hay 1 venta en 24h, 7d no puede
   assert.equal(analysis.sales30d, 3, 'analyzeSalesVolume eleva 30d a 3');
 });
 
+test('Escudo del Báwbawo (#18672): caída de precio con 17 ventas en 24h a ~18k no se infla a 98k', () => {
+  const bawbawoVol: ItemSalesVolume = {
+    sales24h: 17,
+    price24h: 27980,
+    median24h: 18299,
+    sales7d: 145,
+    price7d: 170168,
+    median7d: 144489,
+    sales30d: 689,
+    price30d: 132885,
+    median30d: 104495,
+    updatedAt: 7000,
+  };
+
+  const analysis = analyzeSalesVolume(18480, bawbawoVol);
+  assert.ok(analysis.suggestedPrice !== null);
+  // No debe quedar en 98,727k inflando con precios viejos de semanas anteriores
+  assert.ok(
+    analysis.suggestedPrice! <= 55000,
+    `El precio sugerido ${analysis.suggestedPrice} debe acompañar la caída reciente a ~18k-27k y no estar inflado en ~98k`
+  );
+});
+
+
 
 
 

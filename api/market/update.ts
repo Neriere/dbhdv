@@ -381,15 +381,17 @@ export default async function handler(req: any, res: any) {
             },
           });
 
-          // Verificación retroactiva de precios troll / atípicos ya guardados en HDV
+          // Verificación retroactiva de precios troll / atípicos ya guardados en HDV:
+          // Solo corregir hacia abajo ofertas atípicas desproporcionadamente ALTAS (>= 3.0x de cotización).
+          // NUNCA inflar un precio de mercadillo más bajo hacia arriba, porque las ofertas más baratas
+          // en HDV son las que los compradores compran primero.
           const suggestedPrice = Number(sv.suggestedPrice || sv.suggested_price || 0);
           const currentRef = currentPriceMap.get(sItemId);
           const currentPrice = currentRef?.price || 0;
           if (suggestedPrice >= 1) {
             if (currentPrice > 0) {
               const isExaggerated = currentPrice >= suggestedPrice * 3.0;
-              const isExtremeDump = currentPrice <= suggestedPrice * 0.25;
-              if (isExaggerated || isExtremeDump) {
+              if (isExaggerated) {
                 const newPrice = Math.round(suggestedPrice);
                 correctedPrices.push({
                   item_id: sItemId,
