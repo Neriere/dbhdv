@@ -2123,6 +2123,7 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             onSaveCoefficient={handleSaveItemCoefficient}
             onResetStatsPreset={handleResetStatsToPreset}
             onSelectRecipeForCalculator={onSelectRecipeForCalculator}
+            onOpenCoeffManager={() => setIsDofocusModalOpen(true)}
           />
 
           {/* Main Content Layout: Left Compact Recipe | Right Main Runes Focus Table */}

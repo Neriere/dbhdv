@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Check,
   Save,
@@ -10,10 +10,7 @@ import {
   Target,
   TrendingUp,
   AlertTriangle,
-  RefreshCw,
   Sparkles,
-  ShieldCheck,
-  Info,
 } from 'lucide-react';
 import { DofusItem } from '../../types';
 import {
@@ -25,7 +22,6 @@ import {
 } from '../../services/dofusDbService';
 import { SafeImage } from '../SafeImage';
 import { TopFocusOption, formatCoeffBadgeDate } from '../../data/dofusRuneWeights';
-import { fetchDofocusItemCoefficient } from '../../services/dofocusService';
 
 interface CrushingStrategyHeroProps {
   selectedItem: CraftableItem;
@@ -48,6 +44,7 @@ interface CrushingStrategyHeroProps {
   ) => void;
   onResetStatsPreset: (preset: 'min' | 'avg' | 'max') => void;
   onSelectRecipeForCalculator?: (item: DofusItem) => void;
+  onOpenCoeffManager?: () => void;
 }
 
 export function formatTimeAgoText(ts: number | null | undefined): string {
@@ -92,6 +89,7 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
   onSaveCoefficient,
   onResetStatsPreset,
   onSelectRecipeForCalculator,
+  onOpenCoeffManager,
 }) => {
   const hdvProfit = marketSalePrice - craftCost;
   const bestProfit = bestFocusOption ? bestFocusOption.netProfit : normalNetProfit;
@@ -102,107 +100,11 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
       ? bestFocusOption.rune.name.replace('Runa ', '')
       : 'Sin Foco';
 
-  const [isFetchingDofocus, setIsFetchingDofocus] = useState(false);
-  const [dofocusFeedback, setDofocusFeedback] = useState<string | null>(null);
-  const [dofocusNotice, setDofocusNotice] = useState<{
-    type: 'protected' | 'success' | 'info' | 'error';
-    message: string;
-    dofocusCoeff?: number;
-    dofocusTs?: number;
-    canForceApply?: boolean;
-  } | null>(null);
-
-  // Clear notice when selected item changes
-  useEffect(() => {
-    setDofocusNotice(null);
-    setDofocusFeedback(null);
-  }, [selectedItem?.id]);
-
   const handleManualSave = () => {
     onSaveCoefficient(coefficientPercent, {
       timestamp: Date.now(),
       isManual: true,
     });
-    setDofocusNotice(null);
-  };
-
-  const handleFetchFromDofocus = async (forceApply = false) => {
-    if (!selectedItem?.id || isFetchingDofocus) return;
-    setIsFetchingDofocus(true);
-    setDofocusFeedback(null);
-    setDofocusNotice(null);
-
-    try {
-      const serverTarget = activeServerName || activeServerSlug || 'Draconiros';
-      const data = await fetchDofocusItemCoefficient(selectedItem.id, serverTarget);
-
-      if (!data || typeof data.coefficient !== 'number') {
-        setDofocusNotice({
-          type: 'info',
-          message: `Ítem sin datos registrados en DoFocus (${serverTarget}).`,
-        });
-        return;
-      }
-
-      let dofocusTs = 0;
-      if (data.dateUpdated) {
-        const parsed = new Date(data.dateUpdated).getTime();
-        if (!isNaN(parsed) && parsed > 0) dofocusTs = parsed;
-      }
-
-      const localTs = savedCoefficientTimestamp || 0;
-      const isManual = Boolean(isManualEdit);
-
-      // Date protection:
-      // If manual edit and DoFocus date is older or equal, OR local timestamp is newer:
-      const isProtected =
-        !forceApply &&
-        ((isManual && (dofocusTs <= localTs || dofocusTs === 0)) ||
-         (localTs > 0 && (dofocusTs === 0 || dofocusTs <= localTs)));
-
-      if (isProtected) {
-        const dofocusDateLabel = dofocusTs > 0 ? formatCoeffBadgeDate(dofocusTs) : 'sin fecha';
-        const localDateLabel = localTs > 0 ? formatCoeffBadgeDate(localTs) : 'actual';
-
-        setDofocusNotice({
-          type: 'protected',
-          message: `DoFocus (${dofocusDateLabel}): ${data.coefficient}% es anterior a tu valor guardado (${localDateLabel}). Coeficiente protegido.`,
-          dofocusCoeff: data.coefficient,
-          dofocusTs,
-          canForceApply: true,
-        });
-        setDofocusFeedback(`Protegido (${data.coefficient}%)`);
-        return;
-      }
-
-      // If newer or user requested force apply:
-      onCoefficientChange(data.coefficient);
-      onSaveCoefficient(data.coefficient, {
-        timestamp: dofocusTs || Date.now(),
-        isManual: false,
-      });
-
-      const dateLabel = dofocusTs > 0 ? formatCoeffBadgeDate(dofocusTs) : 'DoFocus';
-      setDofocusFeedback(`${data.coefficient}% (${dateLabel})`);
-      setDofocusNotice({
-        type: 'success',
-        message: `Coeficiente aplicado desde DoFocus (${dateLabel}): ${data.coefficient}%`,
-      });
-      setTimeout(() => {
-        setDofocusFeedback(null);
-        setDofocusNotice(null);
-      }, 3500);
-    } catch (err: any) {
-      console.error('Error fetching DoFocus coefficient:', err);
-      setDofocusFeedback('Error');
-      setDofocusNotice({
-        type: 'error',
-        message: err.message || 'Error al consultar DoFocus',
-      });
-      setTimeout(() => setDofocusFeedback(null), 2500);
-    } finally {
-      setIsFetchingDofocus(false);
-    }
   };
 
   return (
@@ -308,24 +210,6 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
               </button>
             </div>
 
-            {/* Quick DoFocus Server button */}
-            <button
-              type="button"
-              onClick={() => handleFetchFromDofocus(false)}
-              disabled={isFetchingDofocus}
-              title={`Obtener coeficiente actualizado de ${activeServerName || 'DoFocus'} en DoFocus`}
-              className={`px-2 py-1.5 rounded-lg border font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer ${
-                dofocusFeedback
-                  ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                  : 'bg-slate-900 hover:bg-sky-500/20 border-slate-700 hover:border-sky-500/40 text-slate-300 hover:text-sky-300'
-              }`}
-            >
-              <RefreshCw className={`w-3 h-3 text-sky-400 ${isFetchingDofocus ? 'animate-spin' : ''}`} />
-              <span className="font-mono">
-                {dofocusFeedback || 'DoFocus'}
-              </span>
-            </button>
-
             <button
               onClick={handleManualSave}
               title={`Guardar coeficiente (${formatFullDateText(savedCoefficientTimestamp)})`}
@@ -341,16 +225,20 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
 
           {/* Coeff origin indicator */}
           {savedCoefficientTimestamp ? (
-            <span
-              className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1.5 transition-all shadow-sm ${
+            <button
+              type="button"
+              onClick={onOpenCoeffManager}
+              className={`text-[10px] px-2.5 py-1 rounded-full font-bold border flex items-center gap-1.5 transition-all shadow-sm ${
+                onOpenCoeffManager ? 'cursor-pointer hover:border-amber-500/50' : 'cursor-default'
+              } ${
                 isManualEdit
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-emerald-950/30'
                   : 'bg-sky-500/15 text-sky-300 border-sky-500/40 shadow-sky-950/30'
               }`}
               title={
                 isManualEdit
-                  ? `Editado manualmente (${formatFullDateText(savedCoefficientTimestamp)}) - protegido contra DoFocus`
-                  : `Sincronizado desde DoFocus (${formatFullDateText(savedCoefficientTimestamp)})`
+                  ? `Editado manualmente (${formatFullDateText(savedCoefficientTimestamp)})${onOpenCoeffManager ? ' - Clic para abrir Gestor de Coeficientes' : ''}`
+                  : `Sincronizado (${formatFullDateText(savedCoefficientTimestamp)})${onOpenCoeffManager ? ' - Clic para abrir Gestor de Coeficientes' : ''}`
               }
             >
               <span
@@ -358,50 +246,14 @@ export const CrushingStrategyHero: React.FC<CrushingStrategyHeroProps> = ({
                   isManualEdit ? 'bg-emerald-400' : 'bg-sky-400'
                 }`}
               />
-              <span className="font-semibold">{isManualEdit ? 'Manual' : 'DoFocus'}</span>
+              <span className="font-semibold">{isManualEdit ? 'Manual' : 'Importado'}</span>
               <span className="font-mono text-[11px] font-bold">
                 {formatCoeffBadgeDate(savedCoefficientTimestamp)}
               </span>
-            </span>
+            </button>
           ) : null}
         </div>
       </div>
-
-      {/* DoFocus Notice Banner (Date protection or success feedback) */}
-      {dofocusNotice && (
-        <div
-          className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs border animate-fadeIn ${
-            dofocusNotice.type === 'protected'
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
-              : dofocusNotice.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-              : dofocusNotice.type === 'error'
-              ? 'bg-rose-500/10 border-rose-500/30 text-rose-200'
-              : 'bg-slate-800 border-slate-700 text-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {dofocusNotice.type === 'protected' ? (
-              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-            ) : dofocusNotice.type === 'success' ? (
-              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-            ) : (
-              <Info className="w-4 h-4 text-slate-400 shrink-0" />
-            )}
-            <span className="truncate">{dofocusNotice.message}</span>
-          </div>
-          {dofocusNotice.canForceApply && typeof dofocusNotice.dofocusCoeff === 'number' && (
-            <button
-              type="button"
-              onClick={() => handleFetchFromDofocus(true)}
-              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] rounded-lg shrink-0 transition-all cursor-pointer shadow-sm"
-              title="Aplicar el valor antiguo de DoFocus de todas formas"
-            >
-              Forzar {dofocusNotice.dofocusCoeff}%
-            </button>
-          )}
-        </div>
-      )}
 
       {/* 4 Strategic Comparison Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
