@@ -582,6 +582,7 @@
         body: JSON.stringify({
           server: state.server,
           coefficients: list,
+          forceOverwriteManual: true,
         }),
       });
 

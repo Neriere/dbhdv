@@ -288,7 +288,7 @@ export function importCoefficientsFromJson(
 
   const bulkResult = bulkSaveItemCoefficients(validEntries, {
     serverSlug,
-    protectNewerLocalEdits: true,
+    forceOverwriteManual: true,
   });
 
   const coeffs = getAllSavedItemCoefficients(serverSlug);
@@ -319,7 +319,7 @@ export function importCoefficientsFromJson(
     void fetch("/api/local-db/coefficients/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries: backendPayload, serverSlug, isManual: false }),
+      body: JSON.stringify({ entries: backendPayload, serverSlug, isManual: false, forceOverwriteManual: true }),
     }).catch(() => {});
   }
 

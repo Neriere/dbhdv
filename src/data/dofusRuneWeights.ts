@@ -2084,6 +2084,17 @@ export function parseFlexibleTimestamp(val: unknown): number {
     const parsed = new Date(year, month, day, hours, minutes, seconds).getTime();
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
+
+  // Soporte para formatos de frescura relativa de DoFocus (< 1 d, < 3 d, < 1 sem, < 1 mes)
+  const now = Date.now();
+  if (/< 1 (?:d|día|dia|day)/i.test(str)) return now - 12 * 60 * 60 * 1000;
+  if (/< 3 (?:d|día|dia|day)/i.test(str)) return now - 2 * 24 * 60 * 60 * 1000;
+  if (/< 1 (?:sem|semaine|week|w)/i.test(str)) return now - 5 * 24 * 60 * 60 * 1000;
+  if (/< 1 (?:mes|mois|month|m)/i.test(str)) return now - 15 * 24 * 60 * 60 * 1000;
+  if (/> 1 (?:mes|mois|month|m)/i.test(str)) return now - 45 * 24 * 60 * 60 * 1000;
+  if (/^(?:hoy|today)$/i.test(str)) return now - 4 * 60 * 60 * 1000;
+  if (/^(?:ayer|yesterday)$/i.test(str)) return now - 24 * 60 * 60 * 1000;
+
   const standard = Date.parse(str);
   if (!isNaN(standard) && standard > 0) return standard;
   return 0;
@@ -2168,25 +2179,17 @@ export function bulkSaveItemCoefficients(
 
       const isManual = Boolean(parsedManual[item.itemId]);
       const manualTs = parsedManual[item.itemId] ? Number(parsedManual[item.itemId]) : 0;
-      const localTs = parsedTs[item.itemId] ? Number(parsedTs[item.itemId]) : 0;
 
-      // Protect manual edits and newer local edits
-      if (protectManual) {
-        // 1. If user explicitly edited this item manually, PROTECT IT ALWAYS!
-        if (isManual || manualTs > 0) {
-          skippedCount++;
-          continue;
-        }
-
-        // 2. If user has a local timestamp (e.g. from an edit done before manualEdits key was separated)
-        // and local timestamp is newer or equal, or DoFocus has no timestamp -> protect it!
-        if (localTs > 0 && (dofocusTs === 0 || localTs >= dofocusTs)) {
-          // Retroactively mark as manual edit so it stays protected
-          parsedManual[item.itemId] = localTs;
+      // Proteger ediciones manuales reales del usuario sólo si son más recientes que DoFocus
+      if (protectManual && isManual && manualTs > 0) {
+        if (dofocusTs === 0 || manualTs >= dofocusTs) {
           skippedCount++;
           continue;
         }
       }
+
+      // Al actualizar desde DoFocus se limpia la marca manual previa
+      delete parsedManual[item.itemId];
 
       const validCoeff = Math.max(1, Math.min(10000, Number(item.coefficient) || 100));
       parsed[item.itemId] = validCoeff;

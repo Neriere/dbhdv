@@ -2923,6 +2923,7 @@ export async function bulkSaveProfileCoefficients(
   entries: Array<{ itemId: number; coefficient: number; updatedAt?: number; isManual?: boolean }>,
   profileId?: number,
   isManualBatch = false,
+  forceOverwriteManual = false,
 ) {
   invalidateServerBootstrapCache();
   const pid = profileId || (await getActivePriceProfileId());
@@ -2961,14 +2962,14 @@ export async function bulkSaveProfileCoefficients(
       : (Number(entry.updatedAt) > 0 ? Number(entry.updatedAt) : 0);
     const existing = existingMap.get(Number(entry.itemId));
 
-    if (!existing) {
+    if (forceOverwriteManual || !existing) {
       updatedCount++;
     } else if (isManualEntry) {
       updatedCount++;
-    } else if (entryTs > existing.updatedAt) {
-      updatedCount++;
-    } else {
+    } else if (existing.isManual === 1 && existing.updatedAt > entryTs) {
       skippedCount++;
+    } else {
+      updatedCount++;
     }
   }
 
@@ -2983,42 +2984,42 @@ export async function bulkSaveProfileCoefficients(
         : (Number(entry.updatedAt) > 0 ? Number(entry.updatedAt) : 0);
       const manualTs = isManualEntry ? entryTs : 0;
 
-      if (isManualEntry) {
+      if (isManualEntry || forceOverwriteManual) {
         return {
           sql: `
             INSERT INTO profile_coefficients (profile_id, item_id, coefficient, updated_at, is_manual, manual_updated_at)
-            VALUES (?, ?, ?, ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(profile_id, item_id) DO UPDATE SET
               coefficient = excluded.coefficient,
               updated_at = excluded.updated_at,
-              is_manual = 1,
+              is_manual = excluded.is_manual,
               manual_updated_at = excluded.manual_updated_at
           `,
-          args: [pid, Number(entry.itemId), validCoeff, entryTs, manualTs],
+          args: [pid, Number(entry.itemId), validCoeff, entryTs, isManualEntry ? 1 : 0, manualTs],
         };
       }
 
-      // External sync: ONLY update if incoming DoFocus date is strictly newer than the DB date
+      // External sync: ONLY preserve manual edits if the user explicitly edited this item in DBHDV and that manual edit is newer
       return {
         sql: `
           INSERT INTO profile_coefficients (profile_id, item_id, coefficient, updated_at, is_manual, manual_updated_at)
           VALUES (?, ?, ?, ?, 0, 0)
           ON CONFLICT(profile_id, item_id) DO UPDATE SET
             coefficient = CASE
-              WHEN profile_coefficients.updated_at < excluded.updated_at THEN excluded.coefficient
-              ELSE profile_coefficients.coefficient
+              WHEN profile_coefficients.is_manual = 1 AND profile_coefficients.manual_updated_at > excluded.updated_at THEN profile_coefficients.coefficient
+              ELSE excluded.coefficient
             END,
             updated_at = CASE
-              WHEN profile_coefficients.updated_at < excluded.updated_at THEN excluded.updated_at
-              ELSE profile_coefficients.updated_at
+              WHEN profile_coefficients.is_manual = 1 AND profile_coefficients.manual_updated_at > excluded.updated_at THEN profile_coefficients.updated_at
+              ELSE excluded.updated_at
             END,
             is_manual = CASE
-              WHEN profile_coefficients.updated_at < excluded.updated_at THEN 0
-              ELSE profile_coefficients.is_manual
+              WHEN profile_coefficients.is_manual = 1 AND profile_coefficients.manual_updated_at > excluded.updated_at THEN 1
+              ELSE 0
             END,
             manual_updated_at = CASE
-              WHEN profile_coefficients.updated_at < excluded.updated_at THEN 0
-              ELSE profile_coefficients.manual_updated_at
+              WHEN profile_coefficients.is_manual = 1 AND profile_coefficients.manual_updated_at > excluded.updated_at THEN profile_coefficients.manual_updated_at
+              ELSE 0
             END
         `,
         args: [pid, Number(entry.itemId), validCoeff, entryTs],

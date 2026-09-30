@@ -707,6 +707,17 @@ function parseFlexibleTimestamp(val: unknown): number {
     const parsed = new Date(year, month, day, hours, minutes, seconds).getTime();
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
+
+  // Soporte para frescura relativa de DoFocus (< 1 d, < 3 d, < 1 sem, < 1 mes)
+  const now = Date.now();
+  if (/< 1 (?:d|día|dia|day)/i.test(str)) return now - 12 * 60 * 60 * 1000;
+  if (/< 3 (?:d|día|dia|day)/i.test(str)) return now - 2 * 24 * 60 * 60 * 1000;
+  if (/< 1 (?:sem|semaine|week|w)/i.test(str)) return now - 5 * 24 * 60 * 60 * 1000;
+  if (/< 1 (?:mes|mois|month|m)/i.test(str)) return now - 15 * 24 * 60 * 60 * 1000;
+  if (/> 1 (?:mes|mois|month|m)/i.test(str)) return now - 45 * 24 * 60 * 60 * 1000;
+  if (/^(?:hoy|today)$/i.test(str)) return now - 4 * 60 * 60 * 1000;
+  if (/^(?:ayer|yesterday)$/i.test(str)) return now - 24 * 60 * 60 * 1000;
+
   const standard = Date.parse(str);
   if (!isNaN(standard) && standard > 0) return standard;
   return Date.now();
@@ -738,7 +749,8 @@ app.post("/api/local-db/coefficients/bulk", async (req, res) => {
       if (match) profileId = match.profileId;
     }
     const isManualBatch = Boolean(req.body?.isManual);
-    const result = await bulkSaveProfileCoefficients(entries, profileId, isManualBatch);
+    const forceOverwriteManual = Boolean(req.body?.forceOverwriteManual || req.body?.isImport || !req.body?.protectManual);
+    const result = await bulkSaveProfileCoefficients(entries, profileId, isManualBatch, forceOverwriteManual);
     res.json(result);
   } catch (error) {
     const message =

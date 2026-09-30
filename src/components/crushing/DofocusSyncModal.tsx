@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Sliders,
   TrendingUp,
+  Trash2,
 } from "lucide-react";
 import {
   DofocusSyncResult,
@@ -172,6 +173,19 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
       }
     } else {
       setErrorMsg(res.message);
+    }
+  };
+
+  const handleClearManualEdits = () => {
+    if (confirm(`¿Deseas desmarcar las etiquetas 'Manual' en ${selectedServer}? Los coeficientes seguirán guardados normalmente y pasarán a sincronizarse con las fechas reales de DoFocus.`)) {
+      localStorage.removeItem(`dofus_user_item_coeff_manual_edits_${selectedServerSlug}`);
+      window.dispatchEvent(
+        new CustomEvent("dofus_coefficients_updated", {
+          detail: { server: selectedServerSlug, timestamp: Date.now() },
+        })
+      );
+      setRestoreFeedback(`Se limpiaron las marcas manuales de ${selectedServer}.`);
+      setTimeout(() => setRestoreFeedback(null), 4000);
     }
   };
 
@@ -406,7 +420,7 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
                 <span>¡Coeficientes cargados exitosamente para {syncResult.server}!</span>
               </div>
               <p className="text-slate-300 text-[11px]">
-                Se actualizaron <strong>{syncResult.updatedCount.toLocaleString()}</strong> objetos. Los coeficientes protegidos o más recientes en tu base de datos se mantuvieron intactos.
+                Se actualizaron <strong>{syncResult.updatedCount.toLocaleString()}</strong> de <strong>{syncResult.totalAvailable.toLocaleString()}</strong> objetos con sus fechas correspondientes.
               </p>
             </div>
           )}
@@ -624,6 +638,15 @@ export const DofocusSyncModal: React.FC<DofocusSyncModalProps> = ({
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
                   <span>Restaurar Copia Anterior</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearManualEdits}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Elimina etiquetas 'Manual' residuales permitiendo que todos los ítems muestren su fecha real sincronizada"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Limpiar marcas 'Manual' en este servidor</span>
                 </button>
               </div>
             </div>
