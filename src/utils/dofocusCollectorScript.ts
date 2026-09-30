@@ -23,14 +23,18 @@ export const DOFUS_BROWSER_COLLECTOR_SCRIPT = `(() => {
 
   const loadState = () => {
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY);
       if (raw) return JSON.parse(raw);
     } catch {}
     return { isRunning: false, isPaused: false, server: detectServer(), items: {} };
   };
 
   const saveState = (st) => {
-    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(st)); } catch {}
+    try {
+      const j = JSON.stringify(st);
+      localStorage.setItem(STORAGE_KEY, j);
+      sessionStorage.setItem(STORAGE_KEY, j);
+    } catch {}
   };
 
   let state = loadState();
@@ -185,67 +189,95 @@ export const DOFUS_BROWSER_COLLECTOR_SCRIPT = `(() => {
     updateDisplay();
   }
 
-  async function stepAndAdvance() {
-    if (!state.isRunning || state.isPaused) return;
-    statusEl.innerText = "Leyendo página " + currentPage + "...";
-    scrapePage();
-
-    if (currentPage >= totalPages) {
-      statusEl.innerText = "¡Completado 100%! 🎉 Descargando...";
-      state.isRunning = false;
-      saveState(state);
-      updateDisplay();
-      setTimeout(() => downloadJson(true), 1200);
-      return;
-    }
-
-    const delay = Math.floor(Math.random() * 1000) + 2200;
-    statusEl.innerText = "Pausa " + (delay / 1000).toFixed(1) + "s antes de pág. " + (currentPage + 1) + "...";
-    await new Promise(r => setTimeout(r, delay));
-
-    if (!state.isRunning || state.isPaused) return;
-
-    const nextPage = currentPage + 1;
-    const nextBtn = document.querySelector('button.df-market-page-button[data-shattering-page="next"]') ||
-      document.querySelector('button[aria-label="Next page"]') ||
-      document.querySelector('button[aria-label="Page suivante"]') ||
-      document.querySelector('button[aria-label="Página siguiente"]') ||
-      document.querySelector('.df-market-pagination button:last-of-type');
-
-    const startPage = currentPage;
-    const targetUrl = "https://dofocus.fr/hdv/" + encodeURIComponent(state.server) + "?categories=equipment&page=" + nextPage;
-
-    if (nextBtn && !nextBtn.disabled) {
-      nextBtn.click();
-    } else {
-      window.location.href = targetUrl;
-      return;
-    }
-
-    let elapsed = 0;
-    const pollTimer = setInterval(() => {
-      elapsed += 400;
+  async function waitForPageRows(expectedPage, previousFirstItemId = null, timeoutMs = 12000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      if (!state.isRunning || state.isPaused) return false;
       const pagDiv = document.querySelector(".df-market-pagination");
-      let detectedPage = startPage;
+      let domPage = 0;
       if (pagDiv) {
         const match = pagDiv.textContent.match(/(\\d+)\\s*\\/\\s*(\\d+)/);
-        if (match) detectedPage = parseInt(match[1]);
+        if (match) domPage = parseInt(match[1]);
       }
-      const urlP = parseInt(new URLSearchParams(window.location.search).get("page") || "0");
-      if (detectedPage === nextPage || urlP === nextPage) {
-        clearInterval(pollTimer);
-        currentPage = nextPage;
-        updateDisplay();
-        setTimeout(stepAndAdvance, 800);
-        return;
-      }
-      if (elapsed >= 3200) {
-        clearInterval(pollTimer);
-        if (currentPage !== nextPage) {
-          window.location.href = targetUrl;
+      const urlPage = parseInt(new URLSearchParams(window.location.search).get("page") || "1");
+      const pageMatch = domPage === expectedPage || urlPage === expectedPage || domPage === 0;
+      const cells = document.querySelectorAll("td.df-market-coefficient-column[data-market-coefficient]");
+      if (cells.length > 0 && pageMatch) {
+        const currentFirstId = cells[0].getAttribute("data-market-coefficient");
+        if (!previousFirstItemId || currentFirstId !== previousFirstItemId) {
+          await new Promise(r => setTimeout(r, 600));
+          return true;
         }
       }
-    }, 400);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return false;
+  }
+
+  let isStepInProgress = false;
+
+  async function stepAndAdvance() {
+    if (isStepInProgress) return;
+    isStepInProgress = true;
+
+    try {
+      while (state.isRunning && !state.isPaused) {
+        const pagDiv = document.querySelector(".df-market-pagination");
+        if (pagDiv) {
+          const match = pagDiv.textContent.match(/(\\d+)\\s*\\/\\s*(\\d+)/);
+          if (match) { currentPage = parseInt(match[1]); totalPages = parseInt(match[2]); }
+        }
+        statusEl.innerText = "Cargando página " + currentPage + "...";
+        await waitForPageRows(currentPage);
+        scrapePage();
+
+        if (currentPage >= totalPages) {
+          statusEl.innerText = "¡Completado 100%! 🎉 Descargando...";
+          state.isRunning = false;
+          saveState(state);
+          updateDisplay();
+          setTimeout(() => downloadJson(true), 1200);
+          break;
+        }
+
+        const delay = Math.floor(Math.random() * 1000) + 2200;
+        statusEl.innerText = "Pausa " + (delay / 1000).toFixed(1) + "s antes de pág. " + (currentPage + 1) + "...";
+        await new Promise(r => setTimeout(r, delay));
+
+        if (!state.isRunning || state.isPaused) break;
+
+        const currentCells = document.querySelectorAll("td.df-market-coefficient-column[data-market-coefficient]");
+        const currentFirstId = currentCells.length > 0 ? currentCells[0].getAttribute("data-market-coefficient") : null;
+
+        const nextPage = currentPage + 1;
+        const targetUrl = "https://dofocus.fr/hdv/" + encodeURIComponent(state.server) + "?categories=equipment&page=" + nextPage;
+
+        const nextBtn = document.querySelector('button.df-market-page-button[data-shattering-page="next"]') ||
+          document.querySelector('button[aria-label="Next page"]') ||
+          document.querySelector('button[aria-label="Page suivante"]') ||
+          document.querySelector('button[aria-label="Página siguiente"]') ||
+          document.querySelector('.df-market-pagination button:last-of-type');
+
+        if (nextBtn && !nextBtn.disabled) {
+          nextBtn.click();
+        } else {
+          window.location.href = targetUrl;
+          return;
+        }
+
+        statusEl.innerText = "Cargando página " + nextPage + "...";
+        const loaded = await waitForPageRows(nextPage, currentFirstId, 10000);
+        if (loaded) {
+          currentPage = nextPage;
+          updateDisplay();
+        } else {
+          window.location.href = targetUrl;
+          return;
+        }
+      }
+    } finally {
+      isStepInProgress = false;
+    }
   }
 
   startBtn.onclick = () => {

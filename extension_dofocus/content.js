@@ -20,7 +20,7 @@
     "Imagiro",
     "Orukam",
     "Tylezia",
-    "Ombre"
+    "Ombre",
   ];
 
   const STORAGE_KEY = "dbhdv_collector_active_session";
@@ -33,10 +33,10 @@
     return found || "Draconiros";
   };
 
-  // 2. Cargar estado persistente de sessionStorage
+  // 2. Cargar estado persistente de localStorage y sessionStorage (máxima durabilidad)
   const loadState = () => {
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY);
       if (raw) return JSON.parse(raw);
     } catch {}
     return {
@@ -49,15 +49,26 @@
 
   const saveState = (st) => {
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(st));
-    } catch {}
+      const json = JSON.stringify(st);
+      localStorage.setItem(STORAGE_KEY, json);
+      sessionStorage.setItem(STORAGE_KEY, json);
+    } catch (e) {
+      console.warn("[DBHDV] Storage error:", e);
+    }
   };
 
   let state = loadState();
-  // Sincronizar servidor si la URL contiene uno explícito
   const urlServer = detectServerFromUrl();
   if (window.location.pathname.includes("/hdv/") && urlServer) {
-    state.server = urlServer;
+    if (state.server && state.server.toLowerCase() !== urlServer.toLowerCase()) {
+      state.server = urlServer;
+      state.items = {};
+      state.isRunning = false;
+      state.isPaused = false;
+      saveState(state);
+    } else {
+      state.server = urlServer;
+    }
   }
 
   let currentPage = 1;
@@ -76,7 +87,7 @@
       widget.innerHTML = `
         <div class="dbhdv-minimized-pill" id="dbhdv-expand-btn" title="Expandir sincronizador de DBHDV">
           <span>⚡ DBHDV Sync (${state.server})</span>
-          <span style="font-size:11px;opacity:0.8;">[${totalCount}]</span>
+          <span style="font-size:11px;opacity:0.8;">[${totalCount.toLocaleString()}]</span>
         </div>
       `;
       document.getElementById("dbhdv-expand-btn")?.addEventListener("click", () => {
@@ -164,8 +175,8 @@
     document.getElementById("dbhdv-server-select")?.addEventListener("change", (e) => {
       const newServer = e.target.value;
       state.server = newServer;
+      state.items = {};
       saveState(state);
-      // Navegar a la página 1 del nuevo servidor si es diferente
       const targetUrl = `https://dofocus.fr/hdv/${encodeURIComponent(newServer)}?categories=equipment&page=1`;
       window.location.href = targetUrl;
     });
@@ -194,6 +205,7 @@
         state.items = {};
         state.isRunning = false;
         state.isPaused = false;
+        localStorage.removeItem(STORAGE_KEY);
         sessionStorage.removeItem(STORAGE_KEY);
         updateUI();
         renderWidget();
@@ -234,7 +246,7 @@
     if (el) el.innerText = msg;
   };
 
-  // 4. Extracción de la página actual con NOMBRE DEL ÍTEM
+  // 4. Extracción de la página actual con NOMBRE DEL ÍTEM y FECHA EXACTA
   function scrapeCurrentPage() {
     const coeffCells = document.querySelectorAll("td.df-market-coefficient-column[data-market-coefficient]");
     let addedCount = 0;
@@ -317,13 +329,11 @@
             if (dateCell && !exactDate) {
               if (!dateStr) dateStr = dateCell.textContent.trim();
 
-              // Atributo title directo o en hijos (span, time, abbr, div)
               const titleNode = dateCell.hasAttribute("title") ? dateCell : dateCell.querySelector("[title]");
               if (titleNode && titleNode.getAttribute("title")) {
                 exactDate = titleNode.getAttribute("title").trim();
               }
 
-              // 2. Elemento <time datetime="...">
               if (!exactDate) {
                 const timeNode = dateCell.querySelector("time");
                 if (timeNode) {
@@ -331,7 +341,6 @@
                 }
               }
 
-              // 3. Atributos data-* de tooltips (Tippy, Bootstrap, Radix, Tailwind, etc.)
               if (!exactDate) {
                 const candidateNodes = [dateCell, ...Array.from(dateCell.querySelectorAll("*"))];
                 for (const node of candidateNodes) {
@@ -351,29 +360,6 @@
                     break;
                   }
                 }
-              }
-
-              // 4. Propiedades JS en el nodo (_tippy, etc.)
-              if (!exactDate) {
-                const candidateNodes = [dateCell, ...Array.from(dateCell.querySelectorAll("*"))];
-                for (const node of candidateNodes) {
-                  if (node._tippy?.props?.content) {
-                    const c = node._tippy.props.content;
-                    exactDate = typeof c === "string" ? c.trim() : (c.textContent || "").trim();
-                    if (exactDate) break;
-                  }
-                }
-              }
-
-              // 5. Simular hover (mouseenter) si es un tooltip perezoso
-              if (!exactDate) {
-                try {
-                  dateCell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-                  const afterTitle = dateCell.getAttribute("title") || dateCell.querySelector("[title]")?.getAttribute("title");
-                  if (afterTitle && afterTitle.trim() !== dateStr) {
-                    exactDate = afterTitle.trim();
-                  }
-                } catch {}
               }
             }
 
@@ -403,107 +389,133 @@
         totalPages = parseInt(match[2]);
       }
     } else {
-      // Intentar leer de los parámetros de URL
       const urlParams = new URLSearchParams(window.location.search);
       const p = parseInt(urlParams.get("page") || "1");
       if (p) currentPage = p;
     }
 
     saveState(state);
-    updateUI();
     return addedCount;
   }
 
-  // 5. Motor de Avance Automático
+  // 5. Esperar activamente a que las filas de la tabla carguen
+  async function waitForPageRows(expectedPage, previousFirstItemId = null, timeoutMs = 12000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      if (!state.isRunning || state.isPaused) return false;
+
+      // 1. Verificar número de página en la paginación del DOM
+      const pagDiv = document.querySelector(".df-market-pagination");
+      let domPage = 0;
+      if (pagDiv) {
+        const match = pagDiv.textContent.match(/(\d+)\s*\/\s*(\d+)/);
+        if (match) domPage = parseInt(match[1]);
+      }
+      const urlPage = parseInt(new URLSearchParams(window.location.search).get("page") || "1");
+      const pageMatch = domPage === expectedPage || urlPage === expectedPage || domPage === 0;
+
+      // 2. Verificar celdas de coeficientes en el DOM
+      const cells = document.querySelectorAll("td.df-market-coefficient-column[data-market-coefficient]");
+
+      // 3. Si hay celdas cargadas y la página coincide
+      if (cells.length > 0 && pageMatch) {
+        const currentFirstId = cells[0].getAttribute("data-market-coefficient");
+        // Si teníamos un ID previo, verificar que haya cambiado (es decir, nuevos datos reales en la tabla)
+        if (!previousFirstItemId || currentFirstId !== previousFirstItemId) {
+          // Pausa de 700ms para asegurar que React termine de pintar todas las 50 filas
+          await new Promise((r) => setTimeout(r, 700));
+          return true;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  }
+
+  // 6. Motor de Avance Automático con bucle continuo
   async function processCurrentPageAndAdvance() {
     if (isStepInProgress) return;
     isStepInProgress = true;
 
     try {
-      if (!state.isRunning || state.isPaused) {
-        isStepInProgress = false;
-        return;
-      }
-
-      setStatus(`Leyendo página ${currentPage} de ${totalPages}...`);
-      scrapeCurrentPage();
-
-      const totalCount = Object.keys(state.items || {}).length;
-
-      // Si llegamos a la última página
-      if (currentPage >= totalPages) {
-        setStatus(`¡Catálogo completado! (${totalCount.toLocaleString()} ítems en total) 🎉`);
-        state.isRunning = false;
-        state.isPaused = false;
-        saveState(state);
-        updateUI();
-        setTimeout(() => downloadConsolidatedJson(true), 1200);
-        isStepInProgress = false;
-        return;
-      }
-
-      // Tiempo de espera entre 2200ms y 3200ms (ritmo humano para no saturar)
-      const delay = Math.floor(Math.random() * 1000) + 2200;
-      setStatus(`Esperando ${(delay / 1000).toFixed(1)}s antes de la página ${currentPage + 1}...`);
-      await new Promise((r) => setTimeout(r, delay));
-
-      if (!state.isRunning || state.isPaused) {
-        isStepInProgress = false;
-        return;
-      }
-
-      const nextPage = currentPage + 1;
-      const targetUrl = `https://dofocus.fr/hdv/${encodeURIComponent(state.server)}?categories=equipment&page=${nextPage}`;
-
-      // Intentar hacer clic en el botón siguiente
-      const nextBtn =
-        document.querySelector('button.df-market-page-button[data-shattering-page="next"]') ||
-        document.querySelector('button[aria-label="Next page"]') ||
-        document.querySelector('button[aria-label="Page suivante"]') ||
-        document.querySelector('button[aria-label="Página siguiente"]') ||
-        document.querySelector('.df-market-pagination button:last-of-type');
-
-      const startPage = currentPage;
-      if (nextBtn && !nextBtn.disabled) {
-        nextBtn.click();
-      } else {
-        // Si no hay botón clickeable en el DOM, navegar por URL
-        window.location.href = targetUrl;
-        return;
-      }
-
-      // Vigilante activo de cambio de página (maneja transiciones SPA sin recarga total)
-      let elapsed = 0;
-      const pollTimer = setInterval(() => {
-        elapsed += 400;
+      while (state.isRunning && !state.isPaused) {
+        // Sincronizar número de página actual
         const pagDiv = document.querySelector(".df-market-pagination");
-        let detectedPage = startPage;
         if (pagDiv) {
           const match = pagDiv.textContent.match(/(\d+)\s*\/\s*(\d+)/);
-          if (match) detectedPage = parseInt(match[1]);
+          if (match) {
+            currentPage = parseInt(match[1]);
+            totalPages = parseInt(match[2]);
+          }
+        } else {
+          const urlParams = new URLSearchParams(window.location.search);
+          const p = parseInt(urlParams.get("page") || "1");
+          if (p) currentPage = p;
         }
-        const urlP = parseInt(new URLSearchParams(window.location.search).get("page") || "0");
 
-        // Si la página avanzó en la SPA
-        if (detectedPage === nextPage || urlP === nextPage) {
-          clearInterval(pollTimer);
+        setStatus(`Leyendo página ${currentPage} de ${totalPages}...`);
+        await waitForPageRows(currentPage);
+
+        const added = scrapeCurrentPage();
+        const totalCount = Object.keys(state.items || {}).length;
+        setStatus(`Pág. ${currentPage} leída (+${added} en esta pág, total acumulado: ${totalCount.toLocaleString()})`);
+        updateUI();
+
+        // Si llegamos al final del catálogo
+        if (currentPage >= totalPages) {
+          setStatus(`¡Catálogo completado! (${totalCount.toLocaleString()} ítems en total) 🎉`);
+          state.isRunning = false;
+          state.isPaused = false;
+          saveState(state);
+          updateUI();
+          setTimeout(() => downloadConsolidatedJson(true), 1200);
+          break;
+        }
+
+        // Delay humano (2.2s a 3.2s) para no saturar DoFocus
+        const delay = Math.floor(Math.random() * 1000) + 2200;
+        setStatus(`Pausa de ${(delay / 1000).toFixed(1)}s antes de la página ${currentPage + 1}...`);
+        await new Promise((r) => setTimeout(r, delay));
+
+        if (!state.isRunning || state.isPaused) break;
+
+        // Guardar el primer ID para verificar el cambio de página
+        const currentCells = document.querySelectorAll("td.df-market-coefficient-column[data-market-coefficient]");
+        const currentFirstId = currentCells.length > 0 ? currentCells[0].getAttribute("data-market-coefficient") : null;
+
+        const nextPage = currentPage + 1;
+        const targetUrl = `https://dofocus.fr/hdv/${encodeURIComponent(state.server)}?categories=equipment&page=${nextPage}`;
+
+        // Intentar clic en el botón siguiente
+        const nextBtn =
+          document.querySelector('button.df-market-page-button[data-shattering-page="next"]') ||
+          document.querySelector('button[aria-label="Next page"]') ||
+          document.querySelector('button[aria-label="Page suivante"]') ||
+          document.querySelector('button[aria-label="Página siguiente"]') ||
+          document.querySelector('.df-market-pagination button:last-of-type');
+
+        if (nextBtn && !nextBtn.disabled) {
+          nextBtn.click();
+        } else {
+          // Si no hay botón clickeable, navegar por URL
+          window.location.href = targetUrl;
+          return; // La página se recargará
+        }
+
+        // Esperar activamente a que las NUEVAS filas aparezcan en el DOM
+        setStatus(`Cargando página ${nextPage}...`);
+        const loaded = await waitForPageRows(nextPage, currentFirstId, 10000);
+        if (loaded) {
           currentPage = nextPage;
           updateUI();
-          setTimeout(() => {
-            processCurrentPageAndAdvance();
-          }, 800);
-          return;
+          // Continúa a la siguiente iteración del while
+        } else {
+          // Si la SPA no cargó las filas en 10s, navegar por URL completa
+          window.location.href = targetUrl;
+          return; // La página se recargará
         }
-
-        // Si pasaron más de 3.2 segundos y no cambió, forzar navegación directa por URL
-        if (elapsed >= 3200) {
-          clearInterval(pollTimer);
-          if (currentPage !== nextPage) {
-            window.location.href = targetUrl;
-          }
-        }
-      }, 400);
-
+      }
     } finally {
       isStepInProgress = false;
     }
@@ -517,7 +529,7 @@
     processCurrentPageAndAdvance();
   }
 
-  // 6. Descarga de UN SOLO archivo JSON consolidado
+  // 7. Descarga de UN SOLO archivo JSON consolidado
   function downloadConsolidatedJson(isFinished = false) {
     const list = Object.values(state.items || {});
     if (list.length === 0) {
@@ -554,7 +566,7 @@
     }
   }
 
-  // 7. Sincronización directa con DBHDV local (localhost:3000)
+  // 8. Sincronización directa con DBHDV local (localhost:3000)
   async function directSyncToDBHDV() {
     const list = Object.values(state.items || {});
     if (list.length === 0) {
@@ -595,25 +607,13 @@
   // Inicializar UI
   renderWidget();
   scrapeCurrentPage();
+  updateUI();
 
   // Si la extracción automática ya estaba en curso al cargar la página, continuar automáticamente
   if (state.isRunning && !state.isPaused) {
-    setTimeout(processCurrentPageAndAdvance, 1000);
+    const urlP = parseInt(new URLSearchParams(window.location.search).get("page") || "1");
+    if (urlP) currentPage = urlP;
+    updateUI();
+    setTimeout(processCurrentPageAndAdvance, 800);
   }
-
-  // Observador de cambios en el DOM para cuando DoFocus actualiza la tabla mediante SPA
-  const observer = new MutationObserver(() => {
-    if (state.isRunning && !state.isPaused && !isStepInProgress) {
-      const pagDiv = document.querySelector(".df-market-pagination");
-      if (pagDiv) {
-        const match = pagDiv.textContent.match(/(\d+)\s*\/\s*(\d+)/);
-        if (match && parseInt(match[1]) !== currentPage) {
-          processCurrentPageAndAdvance();
-        }
-      }
-    }
-  });
-
-  const tableContainer = document.querySelector("table") || document.body;
-  observer.observe(tableContainer, { childList: true, subtree: true });
 })();
