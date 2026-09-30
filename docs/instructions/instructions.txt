@@ -1,0 +1,6 @@
+# Reglas e Instrucciones de Desarrollo
+
+Coloca aquí las reglas que el asistente debe tener siempre presentes al generar o modificar código:
+
+- No uses nunca emojis
+- Evita dar descripciones obstentosas, mantenlas simples y formales.

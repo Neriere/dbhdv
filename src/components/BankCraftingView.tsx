@@ -141,8 +141,27 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
       try {
         const parsed = JSON.parse(e.target?.result as string);
         if (Array.isArray(parsed)) {
-          saveInventory(parsed);
-          showToast(`¡Se importaron ${parsed.length} recursos al banco!`);
+          // Consolidar automáticamente pilas duplicadas (ej: recursos ligados vs comerciables como Turmalina)
+          const consolidatedMap = new Map<number, BankInventoryItem>();
+          for (const rawItem of parsed) {
+            const id = Number(rawItem.itemId || rawItem.id);
+            const qty = Number(rawItem.quantity || rawItem.qty || 1);
+            if (!id || isNaN(id) || qty <= 0) continue;
+
+            if (consolidatedMap.has(id)) {
+              consolidatedMap.get(id)!.quantity += qty;
+            } else {
+              consolidatedMap.set(id, {
+                itemId: id,
+                quantity: qty,
+                item: rawItem.item,
+                addedAt: rawItem.addedAt || Date.now(),
+              });
+            }
+          }
+          const consolidatedList = Array.from(consolidatedMap.values());
+          saveInventory(consolidatedList);
+          showToast(`¡Se importaron ${consolidatedList.length} recursos al banco (cantidades consolidadas)!`);
         }
       } catch (err) {
         alert("El archivo JSON no tiene un formato válido");

@@ -1,0 +1,403 @@
+================================================================================
+  PLAN DE INTERNACIONALIZACIÓN (i18n) — DBHDV Dofus Helper
+  Idiomas: Español (es), Inglés (en), Francés (fr)
+  Fecha de creación: 2026-09-20
+  Estado: PENDIENTE — No ejecutar hasta que el sitio esté listo
+================================================================================
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      RESUMEN EJECUTIVO                                      ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  La app tiene DOS tipos de texto que necesitan traducción:                  ║
+║                                                                              ║
+║  1. NOMBRES DE ITEMS/OBJETOS del juego → ya existen en la API de DofusDB    ║
+║     en los 3 idiomas (name.es / name.en / name.fr)                          ║
+║                                                                              ║
+║  2. TEXTOS DE INTERFAZ (UI) → hardcodeados en español en ~25 componentes    ║
+║     TSX + archivos de datos estáticos + servicios                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+  FASE 0 — INFRAESTRUCTURA DEL SISTEMA i18n
+================================================================================
+
+  0.1) Crear sistema de contexto/provider de idioma
+       ─────────────────────────────────────────────
+       - Crear: src/i18n/LanguageContext.tsx
+         · React Context con el idioma activo: 'es' | 'en' | 'fr'
+         · Provider que envuelve <App />
+         · Hook: useLanguage() → { lang, setLang, t(key) }
+         · Persistir idioma seleccionado en localStorage (key: "app_language")
+         · Default: 'es' (mantener comportamiento actual)
+
+  0.2) Crear archivos de traducciones para UI
+       ────────────────────────────────────────
+       - Crear directorio: src/i18n/locales/
+         · src/i18n/locales/es.ts  → todas las strings UI en español
+         · src/i18n/locales/en.ts  → todas las strings UI en inglés
+         · src/i18n/locales/fr.ts  → todas las strings UI en francés
+         · src/i18n/index.ts       → exporta función t(key, lang) y tipo TranslationKeys
+
+       Estructura de las traducciones (ejemplo):
+       ┌─────────────────────────────────────────────────────────────────┐
+       │  export const es = {                                            │
+       │    nav: {                                                       │
+       │      group_calculate: "Calcular",                              │
+       │      group_manage: "Gestionar",                                │
+       │      group_explore: "Explorar",                                │
+       │      tab_recipes: "Recetas",                                   │
+       │      tab_daily_crafts: "Plan Crafteo",                         │
+       │      tab_job_optimizer: "Subir Oficio",                        │
+       │      tab_crusher: "Rompedora",                                 │
+       │      tab_dofusbook: "Set Dofusbook",                           │
+       │      tab_bank: "Mi Banco",                                     │
+       │      tab_shopping: "Compras",                                  │
+       │      tab_treasure: "Mapas & ByC",                              │
+       │      tab_scrolls: "Pergaminos",                                │
+       │      tab_ranking: "Ranking",                                   │
+       │      tab_prices: "Precios",                                    │
+       │      tab_database: "Base",                                     │
+       │    },                                                           │
+       │    common: {                                                    │
+       │      loading: "Cargando módulo...",                            │
+       │      unnamed_object: "Objeto sin nombre",                      │
+       │      sniffer_active: "Sniffer activo",                         │
+       │      sniffer_inactive: "Sniffer inactivo",                     │
+       │      data_via: "Datos via",                                    │
+       │      just_now: "ahora mismo",                                  │
+       │      ago_1_min: "hace 1 min",                                  │
+       │      ago_n_min: "hace {n} min",                                │
+       │      ...                                                        │
+       │    },                                                           │
+       │    recipes: { ... },                                            │
+       │    crushing: { ... },                                           │
+       │    ...                                                          │
+       │  };                                                             │
+       └─────────────────────────────────────────────────────────────────┘
+
+  0.3) Selector de idioma en el Navbar
+       ─────────────────────────────────
+       - Añadir un botón/dropdown en la barra de navegación (Navbar.tsx)
+       - Opciones con banderas o códigos:
+         · 🇪🇸 Español
+         · 🇬🇧 English
+         · 🇫🇷 Français
+       - Al cambiar, actualiza el contexto + localStorage
+       - Posición sugerida: junto al selector de tema (Bonta/Brakmar/etc)
+
+
+================================================================================
+  FASE 1 — NOMBRES DE ITEMS (datos del juego)
+================================================================================
+
+  Los nombres de items provienen de TRES fuentes principales:
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  FUENTE                          FORMATO ACTUAL       CAMBIO NECESARIO     │
+  ├─────────────────────────────────────────────────────────────────────────────┤
+  │  1. staticItemsDict.ts           Record<id, string>   → Record<id, DofusText> │
+  │     (~10,107 líneas, solo ES)    ej: "44": "Espada.." ej: "44": {es,en,fr} │
+  │                                                                             │
+  │  2. supplementaryItemsDict.ts    Record<id, string>   → Record<id, DofusText> │
+  │     (~673 líneas, solo ES)       ej: "781": "Capa.."  ej: "781": {es,en,fr}│
+  │                                                                             │
+  │  3. dofusAllRunesDict.ts         Ya tiene {es,fr,en}  ✅ Ya listo           │
+  │     (105 runas, ya multilingüe)                                             │
+  │                                                                             │
+  │  4. DofusDB API responses        Ya tiene name.es/fr/en ✅ Ya listo         │
+  │     (items cargados dinámicamente)                                          │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  1.1) Regenerar staticItemsDict.ts con los 3 idiomas
+       ─────────────────────────────────────────────────
+       - Script offline: scripts/buildMultilangDict.cjs
+       - Para cada itemId en el diccionario actual:
+         · Hacer fetch a: https://api.dofusdb.fr/items?id={itemId}&$select=id,name
+         · Extraer name.es, name.en, name.fr
+       - Generar nuevo formato:
+         export const STATIC_ITEMS_DICT: Record<string, { es: string; en: string; fr: string }> = {
+           "44": { es: "Espada de maderucha", en: "Twiggy Sword", fr: "Épée de Boisaille" },
+           ...
+         };
+       - NOTA: La API de DofusDB ya devuelve los 3 idiomas en cada response.
+         Se puede hacer batch con $limit=50 y $skip para no saturar.
+       - Tiempo estimado: ~200 requests de 50 items = 10,000 items → ~5-10 min
+
+  1.2) Regenerar supplementaryItemsDict.ts con los 3 idiomas
+       ─────────────────────────────────────────────────────────
+       - Mismo proceso que 1.1 pero con los ~670 items suplementarios
+       - ~14 requests de 50 items
+
+  1.3) Actualizar itemsDictionaryData.ts (buildItemsDictionary)
+       ─────────────────────────────────────────────────────────
+       - Cambiar tipo de retorno de Record<string, string>
+         → Record<string, { es: string; en: string; fr: string }>
+       - Merge de los 3 diccionarios ya con formato multilang
+       - dofusAllRunesDict.ts: ALL_DOFUS_RUNES_DICT también debe
+         cambiar de Record<string, string> a Record<string, DofusText>
+
+  1.4) Actualizar la función getItemName() en dofusDbService.ts
+       ─────────────────────────────────────────────────────────
+       Función actual (línea ~1575): siempre devuelve .es o string plano
+       
+       Cambio:
+       - Añadir parámetro `lang: 'es' | 'en' | 'fr' = 'es'`
+       - En cada lookup de diccionarios estáticos, usar dictEntry[lang]
+       - En fallback de item.name (DofusText), usar item.name[lang]
+       - Fallback chain: item.name[lang] → item.name.es → item.name.fr → item.name.en
+
+  1.5) Datos de presetCraftableItems.ts
+       ─────────────────────────────────────
+       - Los PresetCraftableItem ya tienen name: DofusText (con es, fr, en)
+         → ✅ Ya están listos, solo necesitan que se lea el campo correcto
+       - El campo `jobNameEs: string` necesita expandirse:
+         → Cambiar a: jobName: { es: string; en: string; fr: string }
+         → Actualizar todos los ~16,734 líneas del archivo
+         → ALTERNATIVA MÁS EFICIENTE: crear mapa de jobId → nombre multilingüe
+           en un archivo separado (ya que solo hay ~15 oficios distintos)
+
+  1.6) Datos de characteristicConsumablesData.ts
+       ──────────────────────────────────────────
+       - Los campos `name`, `stat`, `tier`, `job` están en español puro
+       - Necesitan expandirse a formato multilingüe:
+         · stat: 'Fuerza'|'Vitalidad'|... → mapear via diccionario i18n
+         · tier: 'pequeño'|'mediano'|... → mapear via diccionario i18n
+         · job: 'Cazador'|'Pescador'|... → mapear via diccionario i18n
+       - ALTERNATIVA: mantener los valores como IDs internos y mapear
+         en renderizado con el sistema t()
+
+  1.7) Datos de dofusJobs.ts / jobCategoryDatabase.ts
+       ───────────────────────────────────────────────
+       - jobCategoryDatabase.ts ya tiene nameEs y nameFr
+       - Falta nameEn → añadirlo a la interfaz y a los ~15 registros
+       - Las categorías internas (id, keywords) también tienen textos ES
+         → Los keywords se usan para búsquedas, considerar tener keywords
+           multilingüe para búsqueda en cada idioma
+
+  1.8) Datos de legendaryHuntsData.ts / bycDatabase.ts
+       ────────────────────────────────────────────────
+       - Tienen nombres de monstruos, zonas, etc. en español
+       - Necesitan versiones en/fr (se pueden obtener de DofusDB o
+         mantener manualmente dado que son pocos ~10-15 registros)
+
+
+================================================================================
+  FASE 2 — TEXTOS DE INTERFAZ (UI STRINGS)
+================================================================================
+
+  Lista completa de archivos con textos hardcodeados en español:
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  ARCHIVO                                    TIPO DE TEXTO              │
+  ├──────────────────────────────────────────────────────────────────────────┤
+  │  src/App.tsx                                Footer, status, fallback   │
+  │  src/components/Navbar.tsx                  Tab labels, groups, themes │
+  │  src/components/RecipeCraftingCalculator    Todos los labels/tooltips  │
+  │  src/components/CrushingCalculator.tsx      Labels, headers, tooltips  │
+  │  src/components/DailyCraftPlanner.tsx       Labels, headers, tooltips  │
+  │  src/components/DofusImporter.tsx           Progress steps, messages   │
+  │  src/components/DofusbookSetCalculator.tsx  Labels, headers, tooltips  │
+  │  src/components/GlobalProfitRanking.tsx     Table headers, filters     │
+  │  src/components/ShoppingListPlanner.tsx     Labels, buttons            │
+  │  src/components/PriceManager.tsx            Labels, filters            │
+  │  src/components/BankCraftingView.tsx        Labels, headers            │
+  │  src/components/TreasureHuntCalculator.tsx  Labels, headers, zones     │
+  │  src/components/ConsumablesCharacterView    Stat names, labels         │
+  │  src/components/MarketSnifferModal.tsx      Status messages            │
+  │  src/components/ItemPriceHistoryModal.tsx   Chart labels               │
+  │  src/components/GlobalPriceHistoryModal.tsx Chart labels               │
+  │  src/components/QuickSearchModal.tsx        Placeholder, labels        │
+  │  src/components/ErrorBoundary.tsx           Error messages             │
+  │  src/components/common/UserJobsModal.tsx    Job names, labels          │
+  │  src/components/common/BackupModal.tsx      Labels, status             │
+  │  src/components/common/KamaDisplay.tsx      Tooltip text               │
+  │  src/components/bank/*                      Bank-related labels        │
+  │  src/components/recipes/*                   Recipe filter labels       │
+  │  src/components/crushing/*                  Crushing filter labels     │
+  │  src/components/jobs/*                      Job optimizer labels       │
+  │  src/utils/kamaFormatters.ts               Kama format strings        │
+  │  src/services/dofusDbService.ts            Fallback names, messages   │
+  │  src/server/localDataStore.ts              Progress/status messages   │
+  │  src/server/expressApp.ts                  Error/status messages      │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  2.1) Proceso de extracción de strings
+       ─────────────────────────────────
+       Para CADA archivo de arriba:
+       a) Identificar todas las strings en español visibles al usuario
+       b) Asignarles una clave en el diccionario i18n
+       c) Reemplazar la string literal por t('clave')
+       d) Añadir la traducción en los 3 archivos de locale
+
+       Ejemplo de transformación:
+       ┌─────────────────────────────────────────────────────────────────┐
+       │  ANTES:                                                        │
+       │    <span>Cargando módulo...</span>                             │
+       │                                                                │
+       │  DESPUÉS:                                                      │
+       │    <span>{t('common.loading_module')}</span>                   │
+       │                                                                │
+       │  en es.ts: loading_module: "Cargando módulo..."               │
+       │  en en.ts: loading_module: "Loading module..."                │
+       │  en fr.ts: loading_module: "Chargement du module..."          │
+       └─────────────────────────────────────────────────────────────────┘
+
+  2.2) Strings con interpolación
+       ──────────────────────────
+       Algunas strings tienen valores dinámicos. Usar placeholders:
+       
+       ANTES:  `hace ${mins} min`
+       DESPUÉS: t('common.ago_minutes', { n: mins })
+       
+       La función t() debe soportar: t(key, params?) donde params
+       reemplaza {n}, {name}, etc. en la string traducida.
+
+  2.3) Strings de tema/servidor (Navbar)
+       ──────────────────────────────────
+       - Temas: Bonta, Brakmar, Bosque, Calmo
+         → En inglés: Bonta, Brakmar, Forest, Calm
+         → En francés: Bonta, Brakmar, Forêt, Calme
+       
+       - Nombres de servidor se mantienen sin traducir (son propios del juego)
+
+
+================================================================================
+  FASE 3 — ADAPTACIONES EN SERVICIOS Y LÓGICA
+================================================================================
+
+  3.1) dofusDbService.ts — funciones clave a modificar
+       ────────────────────────────────────────────────
+       - getItemName(item, lang)         → leer name[lang] del item
+       - getItemTypeName(item, lang)     → leer type.name[lang]
+       - getItemFallbackIconUrl()        → sin cambios (iconos no dependen de idioma)
+       - getItemIconUrl()                → sin cambios
+       - getCraftableItemsSnapshot()     → sin cambios (datos numéricos)
+       - Fallback strings como "Objeto #123" → t('common.unnamed_object', {id})
+
+  3.2) localDataStore.ts — API fetch con idioma
+       ──────────────────────────────────────────
+       - Las llamadas a api.dofusdb.fr ya usan `lang=es`
+       - No es necesario cambiarlas: la API devuelve name.{es,en,fr} 
+         independientemente del parámetro lang
+       - Los mensajes de progreso del importador van al frontend
+         → Estos SÍ necesitan i18n
+
+  3.3) expressApp.ts — mensajes de error del servidor
+       ───────────────────────────────────────────────
+       - Los mensajes de error van al frontend
+       - Opción A: traducir en el servidor (pasar lang como header)
+       - Opción B (RECOMENDADA): devolver códigos de error y traducir en frontend
+
+  3.4) salesVolumeService.ts
+       ─────────────────────
+       - Mensajes de log/debug en español → pueden dejarse en ES (no son UI)
+
+  3.5) Búsqueda de items (searchUtils.ts, QuickSearchModal.tsx)
+       ────────────────────────────────────────────────────────
+       - Actualmente busca por nombre en español
+       - Debe buscar en el idioma activo (o en los 3 para mejor UX)
+       - Considerar: siempre buscar en los 3 idiomas y mostrar el del idioma activo
+
+
+================================================================================
+  FASE 4 — ORDEN DE EJECUCIÓN RECOMENDADO
+================================================================================
+
+  Paso 1: Infraestructura (Fase 0)
+  ├── Crear LanguageContext + Provider
+  ├── Crear estructura de locales vacía
+  ├── Crear selector de idioma en Navbar
+  └── Probar que cambia y persiste el idioma
+
+  Paso 2: Nombres de Items (Fase 1)
+  ├── Crear script buildMultilangDict.cjs
+  ├── Regenerar staticItemsDict.ts (multilingüe)
+  ├── Regenerar supplementaryItemsDict.ts (multilingüe)
+  ├── Actualizar itemsDictionaryData.ts
+  ├── Actualizar getItemName() con param lang
+  └── Probar que items se muestran en el idioma correcto
+
+  Paso 3: UI Strings — Componentes principales (Fase 2, grupo 1)
+  ├── App.tsx
+  ├── Navbar.tsx
+  ├── RecipeCraftingCalculator.tsx
+  ├── CrushingCalculator.tsx
+  └── DailyCraftPlanner.tsx
+
+  Paso 4: UI Strings — Componentes secundarios (Fase 2, grupo 2)
+  ├── GlobalProfitRanking.tsx
+  ├── ShoppingListPlanner.tsx
+  ├── PriceManager.tsx
+  ├── BankCraftingView.tsx
+  ├── DofusbookSetCalculator.tsx
+  ├── TreasureHuntCalculator.tsx
+  └── ConsumablesCharacteristicView.tsx
+
+  Paso 5: UI Strings — Modales y utilidades (Fase 2, grupo 3)
+  ├── MarketSnifferModal.tsx
+  ├── ItemPriceHistoryModal.tsx
+  ├── GlobalPriceHistoryModal.tsx
+  ├── QuickSearchModal.tsx
+  ├── ErrorBoundary.tsx
+  ├── UserJobsModal.tsx
+  ├── BackupModal.tsx
+  └── Subdirectorios: bank/, recipes/, crushing/, jobs/
+
+  Paso 6: Servicios y datos estáticos (Fase 3)
+  ├── dofusDbService.ts (fallbacks)
+  ├── Adaptar officios/jobs con nameEn
+  ├── characteristicConsumablesData.ts
+  └── legendaryHuntsData.ts / bycDatabase.ts
+
+  Paso 7: QA y pulido
+  ├── Verificar cada vista en los 3 idiomas
+  ├── Revisar que no queden strings hardcodeadas
+  ├── Verificar búsqueda multilingüe
+  └── Probar persistencia de idioma
+
+
+================================================================================
+  CONSIDERACIONES TÉCNICAS
+================================================================================
+
+  • TAMAÑO DEL BUNDLE: Los diccionarios multilingüe triplicarán el tamaño de
+    staticItemsDict.ts (~370KB → ~1.1MB). Considerar:
+    - Lazy loading por idioma (import dinámico del locale correspondiente)
+    - O mantener comprimido (gzip reduce texto repetitivo significativamente)
+
+  • FORMATO DofusText: El tipo ya existe en types.ts:
+    interface DofusText { fr?: string; en?: string; es?: string; ... }
+    → Reusar este tipo para todos los diccionarios
+
+  • API DOFUSDB: Confirmado que la API devuelve name con los 3 idiomas
+    en cada response, independientemente del parámetro lang.
+    Ejemplo real: GET /items?id=44 devuelve:
+    name: { de: "...", en: "Twiggy Sword", es: "Espada de maderucha", fr: "Épée de Boisaille", pt: "..." }
+
+  • IMPACTO EN PRESETCRAFTABLEITEMS: Este archivo (484KB) ya tiene 
+    name: DofusText con los 3 idiomas. Solo falta leer el idioma correcto.
+    El campo jobNameEs necesita cambiar a jobName multilingüe.
+
+  • RUNES: dofusAllRunesDict.ts ya tiene los 3 idiomas (es, fr, en).
+    Solo necesita adaptar el tipo del diccionario string→DofusText.
+
+  • BÚSQUEDA: Se recomienda indexar los 3 idiomas en la función de búsqueda
+    para permitir buscar un item por su nombre en cualquier idioma.
+
+
+================================================================================
+  ESTIMACIÓN DE ESFUERZO
+================================================================================
+
+  Fase 0 (Infraestructura):         ~2-3 horas
+  Fase 1 (Nombres de Items):        ~4-6 horas (incluye script + regeneración)
+  Fase 2 (UI Strings):              ~8-12 horas (es la fase más extensa)
+  Fase 3 (Servicios):               ~2-3 horas
+  QA/Testing:                        ~2-3 horas
+  ─────────────────────────────────────────────
+  TOTAL ESTIMADO:                    ~18-27 horas de trabajo
+
+================================================================================
+  FIN DEL PLAN — Última actualización: 2026-09-20
+================================================================================

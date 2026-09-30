@@ -56,6 +56,8 @@ import {
   marketEvents,
 } from "./localDataStore";
 import snifferScriptHandler from "../../api/market/sniffer-script";
+import suiteScriptHandler from "../../api/market/suite-script";
+import tokensHandler from "../../api/tokens";
 import {
   getDofocusGlobalSyncState,
   startHourlyDofocusSync,
@@ -97,6 +99,9 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "DofusDB API Proxy & Explorer Server" });
 });
+
+app.all("/api/tokens", tokensHandler);
+app.get("/api/market/suite-script", suiteScriptHandler);
 
 app.get("/api/local-db/bootstrap", async (req, res) => {
   try {

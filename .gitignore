@@ -15,14 +15,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Logs & Debug
-*.log
-sniffer.log
-
-# Environment variables & Secrets (all env files including .env.example)
+# Environment variables & Secrets
 .env*
+!.env.example
 
-# Local Databases
+# Local Databases & Journals
 *.db
 *.db-journal
 *.db-shm
@@ -31,34 +28,38 @@ sniffer.log
 *.sqlite3
 data/*.db
 data/*.sqlite
+local.db
+local_dofus.db
 
 # Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
+sniffer/__pycache__/
+scripts/__pycache__/
 
-# Scratch & Temporary Dev Files
-scratch/
-scripts/items_db.json
+# Logs & Diagnostics
+*.log
+logs/
+sniffer/logs/
+calibracion_*
+cotizaciones_*
+sniffer.log
 
-# Internal Development History & Notes
-PLAN_INTERNACIONALIZACION.txt
-HISTORIAL_SNIFFER_CAMBIOS.md
-HISTORIAL_SNIFFER_ALMACEN.md
-instructions.txt
-sniffer_history.txt
-ANALISIS_SECCIONES_PROYECTO.md
-ANALISIS_*.md
-
-# Storage & Inventory Sniffer (Local & Private)
-scripts/storage_sniffer.py
-scripts/ejecutar_sniffer_almacen.bat
-storage_sniffer.log
-storage_inspection.txt
+# Private Storage Captures & User Data (Never commit user items/banks)
 *capturado*.json
 *banco_inventario*.json
 banco_inventario_capturado.json
+almacen_filtrado*.json
+historial_ventas_*
+sniffer/data/*.json
+sniffer/viewer/visor_almacen.html
 
 # Cloud & Tooling artifacts
 .vercel/
 .gemini/
+scratch/
+offline_tokens.json
+
+# Temporary scripts & external folders
+SniffSniffSquared-main/
