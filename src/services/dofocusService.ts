@@ -3,6 +3,7 @@ import {
   getAllSavedItemCoefficients,
   getAllSavedItemCoefficientTimestamps,
   getAllSavedItemManualEdits,
+  parseFlexibleTimestamp,
   saveItemCoefficient,
 } from "../data/dofusRuneWeights";
 
@@ -132,6 +133,26 @@ export async function getDofocusServers(): Promise<DofocusServer[]> {
   }
 }
 
+export function getStoredDofocusCookie(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("dofocus_session_cookie") || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setStoredDofocusCookie(cookie: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (!cookie || !cookie.trim()) {
+      localStorage.removeItem("dofocus_session_cookie");
+    } else {
+      localStorage.setItem("dofocus_session_cookie", cookie.trim());
+    }
+  } catch {}
+}
+
 /**
  * Fetch all coefficients for a server from DoFocus
  */
@@ -143,10 +164,23 @@ export async function fetchDofocusServerCoefficients(
   const url = `/api/dofocus/coefficients/${encodeURIComponent(dofocusName)}${
     forceRefresh ? "?refresh=true" : ""
   }`;
-  const res = await fetch(url);
+  const cookie = getStoredDofocusCookie();
+  const headers: Record<string, string> = {};
+  if (cookie) {
+    headers["X-Dofocus-Cookie"] = cookie;
+  }
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || `Error al obtener coeficientes (${res.status})`);
+    const isAccessRequired = res.status === 403 || errData.code === "ACCESS_REQUIRED";
+    const msg = isAccessRequired
+      ? "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile)."
+      : (errData.error || `Error al obtener coeficientes (${res.status})`);
+    const err: any = new Error(msg);
+    err.code = isAccessRequired ? "ACCESS_REQUIRED" : `HTTP_${res.status}`;
+    err.status = res.status;
+    err.details = errData;
+    throw err;
   }
   return res.json();
 }
@@ -159,8 +193,16 @@ export async function fetchDofocusItemCoefficient(
   serverName = "Draconiros"
 ): Promise<{ itemId: number; coefficient: number; dateUpdated: string | null; server: string }> {
   const dofocusName = normalizeServerToDoFocusName(serverName);
+  const cookie = getStoredDofocusCookie();
+  const headers: Record<string, string> = {};
+  if (cookie) {
+    headers["X-Dofocus-Cookie"] = cookie;
+  }
   try {
-    const res = await fetch(`/api/dofocus/item/${itemId}?server=${encodeURIComponent(dofocusName)}`);
+    const res = await fetch(
+      `/api/dofocus/item/${itemId}?server=${encodeURIComponent(dofocusName)}`,
+      { headers }
+    );
     if (res.ok) {
       return await res.json();
     }
@@ -194,6 +236,116 @@ export interface DofocusSyncOptions {
 }
 
 /**
+ * Import coefficients from raw JSON array/object directly (bypassing Turnstile scrapers).
+ * Protects newer manual edits and compares timestamps.
+ */
+export function importCoefficientsFromJson(
+  rawInput: string | any[],
+  serverNameOrSlug = "Draconiros"
+): DofocusSyncResult {
+  const dofocusName = normalizeServerToDoFocusName(serverNameOrSlug);
+  const serverSlug = normalizeServerToSlug(serverNameOrSlug);
+
+  let parsedData: any = rawInput;
+  if (typeof rawInput === "string") {
+    const clean = rawInput.trim();
+    if (!clean) throw new Error("El contenido JSON proporcionado está vacío");
+    try {
+      parsedData = JSON.parse(clean);
+    } catch {
+      throw new Error("Formato JSON inválido. Verifica la sintaxis del texto copiado.");
+    }
+  }
+
+  let entriesArray: any[] = [];
+  if (Array.isArray(parsedData)) {
+    entriesArray = parsedData;
+  } else if (parsedData && Array.isArray(parsedData.coefficients)) {
+    entriesArray = parsedData.coefficients;
+  } else if (parsedData && typeof parsedData === "object") {
+    entriesArray = Object.entries(parsedData).map(([k, v]) => ({
+      itemId: Number(k),
+      coefficient: Number(typeof v === "object" && v !== null ? (v as any).coefficient : v),
+      dateUpdated: typeof v === "object" && v !== null ? (v as any).dateUpdated : undefined,
+    }));
+  }
+
+  const validEntries = entriesArray
+    .filter((e) => e && (e.itemId || e.id))
+    .map((e) => ({
+      itemId: Number(e.itemId || e.id),
+      coefficient: Number(e.coefficient ?? e.coeff) || 100,
+      name: e.name || undefined,
+      exactDate: e.exactDate || undefined,
+      dateUpdated: e.exactDate || e.dateUpdated || e.updatedAt || undefined,
+    }));
+
+  if (validEntries.length === 0) {
+    throw new Error(
+      "No se encontraron objetos válidos con itemId y coefficient en los datos JSON"
+    );
+  }
+
+  const bulkResult = bulkSaveItemCoefficients(validEntries, {
+    serverSlug,
+    protectNewerLocalEdits: true,
+  });
+
+  const coeffs = getAllSavedItemCoefficients(serverSlug);
+  const timestamps = getAllSavedItemCoefficientTimestamps(serverSlug);
+  const manualEdits = getAllSavedItemManualEdits(serverSlug);
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem(`dofus_user_item_coefficients_${serverSlug}`, JSON.stringify(coeffs));
+    localStorage.setItem(`dofus_user_item_coeff_timestamps_${serverSlug}`, JSON.stringify(timestamps));
+    localStorage.setItem(`dofus_user_item_coeff_manual_edits_${serverSlug}`, JSON.stringify(manualEdits));
+
+    window.dispatchEvent(
+      new CustomEvent("dofus_coefficients_updated", {
+        detail: {
+          server: serverSlug,
+          count: bulkResult.updatedCount,
+          timestamp: Date.now(),
+        },
+      })
+    );
+
+    const backendPayload = validEntries.map((e) => ({
+      itemId: e.itemId,
+      coefficient: e.coefficient,
+      updatedAt: parseFlexibleTimestamp(e.exactDate || e.dateUpdated),
+      isManual: false,
+    }));
+    void fetch("/api/local-db/coefficients/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries: backendPayload, serverSlug, isManual: false }),
+    }).catch(() => {});
+  }
+
+  let avgCoeff = 100;
+  let topCount = 0;
+  if (coeffs) {
+    const vals = Object.values(coeffs).map(Number).filter((n) => !isNaN(n));
+    if (vals.length > 0) {
+      avgCoeff = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      topCount = vals.filter((n) => n >= 150).length;
+    }
+  }
+
+  return {
+    server: dofocusName,
+    serverSlug,
+    totalAvailable: validEntries.length,
+    updatedCount: bulkResult.updatedCount,
+    skippedCount: bulkResult.skippedCount,
+    averageCoefficient: avgCoeff,
+    topProfitableItemsCount: topCount,
+    timestamp: Date.now(),
+  };
+}
+
+/**
  * Synchronize coefficients from DoFocus into the SQLite database for a specific server profile.
  * Only coefficients with a newer date than what is in the database will be updated.
  *
@@ -208,19 +360,36 @@ export async function syncDofocusCoefficients(
   const serverSlug = options.serverSlug || normalizeServerToSlug(serverName);
 
   let data: any = null;
+  const cookie = getStoredDofocusCookie();
+  const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (cookie) {
+    reqHeaders["X-Dofocus-Cookie"] = cookie;
+  }
 
-  // 1. Try server-side sync endpoint first if running on full-stack Express
+  // 1. Try server-side sync endpoint first if running on full-stack Express or Vercel
   try {
     const res = await fetch("/api/dofocus/sync-server", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: reqHeaders,
       body: JSON.stringify({ server: dofocusName }),
     });
 
     if (res.ok) {
       data = await res.json();
+    } else if (res.status === 403) {
+      const errJson = await res.json().catch(() => ({}));
+      if (errJson.code === "ACCESS_REQUIRED") {
+        const err: any = new Error(
+          "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile)."
+        );
+        err.code = "ACCESS_REQUIRED";
+        throw err;
+      }
     }
-  } catch {
+  } catch (syncErr: any) {
+    if (syncErr?.code === "ACCESS_REQUIRED") {
+      throw syncErr;
+    }
     // Fallback to direct client-side synchronization via /api/dofocus/coefficients/[serverName]
   }
 
@@ -253,6 +422,7 @@ export async function syncDofocusCoefficients(
 
   // If server returned updated coefficients, sync local storage caches for fast UI response
   if (data.coefficients && typeof window !== "undefined") {
+
     localStorage.setItem(
       `dofus_user_item_coefficients_${serverSlug}`,
       JSON.stringify(data.coefficients)

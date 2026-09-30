@@ -12,12 +12,14 @@ import {
 } from "lucide-react";
 import {
   DofusItem,
+  BankInventoryItem,
   ReverseCraftAnalysis,
 } from "../types";
 import {
   calculateReverseCraftsFromBank,
   getStoredItemPrice,
   getItemName,
+  getItemById,
   addToShoppingListById,
 } from "../services/dofusDbService";
 import { useMarketPrices } from "../hooks/useMarketPrices";
@@ -26,6 +28,9 @@ import { useUserJobs } from "../hooks/useUserJobs";
 import { BankCatalogFilters } from "./bank/BankCatalogFilters";
 import { BankItemDrawer } from "./bank/BankItemDrawer";
 import { ReverseCraftCard } from "./bank/ReverseCraftCard";
+import craftIngredientsIds from "../data/craftIngredientsIds.json";
+
+const craftIngredientsSet = new Set<number>(craftIngredientsIds);
 
 interface BankCraftingViewProps {
   onSelectRecipeForCalculator: (item: DofusItem) => void;
@@ -139,32 +144,96 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(e.target?.result as string);
-        if (Array.isArray(parsed)) {
-          // Consolidar automáticamente pilas duplicadas (ej: recursos ligados vs comerciables como Turmalina)
-          const consolidatedMap = new Map<number, BankInventoryItem>();
-          for (const rawItem of parsed) {
-            const id = Number(rawItem.itemId || rawItem.id);
-            const qty = Number(rawItem.quantity || rawItem.qty || 1);
-            if (!id || isNaN(id) || qty <= 0) continue;
+        const rawContent = e.target?.result as string;
+        const parsed = JSON.parse(rawContent);
 
-            if (consolidatedMap.has(id)) {
-              consolidatedMap.get(id)!.quantity += qty;
-            } else {
-              consolidatedMap.set(id, {
-                itemId: id,
-                quantity: qty,
-                item: rawItem.item,
-                addedAt: rawItem.addedAt || Date.now(),
-              });
-            }
+        // Extraer lista flexible de ítems (array directo, { items: [...] }, o { [itemId]: qty })
+        let rawList: any[] = [];
+        if (Array.isArray(parsed)) {
+          rawList = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          if (Array.isArray(parsed.items)) {
+            rawList = parsed.items;
+          } else {
+            // Manejar formato clave-valor { "15271": 10 }
+            rawList = Object.entries(parsed).map(([key, val]) => {
+              if (typeof val === "number") {
+                return { itemId: Number(key), quantity: val };
+              }
+              if (val && typeof val === "object") {
+                return { itemId: Number(key), ...(val as object) };
+              }
+              return null;
+            }).filter(Boolean);
           }
-          const consolidatedList = Array.from(consolidatedMap.values());
-          saveInventory(consolidatedList);
-          showToast(`¡Se importaron ${consolidatedList.length} recursos al banco (cantidades consolidadas)!`);
         }
+
+        if (rawList.length === 0) {
+          alert("El archivo JSON no contiene objetos válidos para importar.");
+          return;
+        }
+
+        // Consolidar automáticamente pilas duplicadas y excluir no comerciables/misión y almas
+        const consolidatedMap = new Map<number, BankInventoryItem>();
+        let excludedCount = 0;
+
+        for (const rawItem of rawList) {
+          const id = Number(rawItem.itemId || rawItem.id);
+          const qty = Number(rawItem.quantity || rawItem.qty || 1);
+          if (!id || isNaN(id) || qty <= 0) continue;
+
+          // Excluir automáticamente almas de archis o ítems de misión si vienen marcados
+          if (rawItem.isQuest || (rawItem.category === "Misión") || (id >= 33820 && id <= 34125)) {
+            excludedCount++;
+            continue;
+          }
+
+          // Excluir fragmentos de mapa (BYC)
+          const cat = String(rawItem.category || "");
+          const rawName = String(rawItem.name || getItemName({ id } as any) || "").toLowerCase();
+          const isMapFrag =
+            cat.includes("Mapas") ||
+            (rawName.includes("fragmento") && rawName.includes("mapa")) ||
+            rawName.includes("trozo de mapa");
+          if (isMapFrag) {
+            excludedCount++;
+            continue;
+          }
+
+          // Excluir equipables o consumibles que no formen parte de ninguna receta de crafteo
+          const isEquipmentOrConsumable = cat === "Equipamiento" || cat === "Consumibles";
+          if (isEquipmentOrConsumable && !craftIngredientsSet.has(id)) {
+            excludedCount++;
+            continue;
+          }
+
+          if (consolidatedMap.has(id)) {
+            consolidatedMap.get(id)!.quantity += qty;
+          } else {
+            consolidatedMap.set(id, {
+              itemId: id,
+              quantity: qty,
+              item: rawItem.item || getItemById(id) || undefined,
+              addedAt: rawItem.addedAt || Date.now(),
+            });
+          }
+        }
+
+        const consolidatedList = Array.from(consolidatedMap.values());
+        if (consolidatedList.length === 0) {
+          alert("Todos los objetos del archivo eran de misión o no válidos.");
+          return;
+        }
+
+        saveInventory(consolidatedList);
+        const totalUnits = consolidatedList.reduce((acc, it) => acc + it.quantity, 0);
+        showToast(
+          `¡Éxito! Se cargaron ${consolidatedList.length.toLocaleString()} recursos (${totalUnits.toLocaleString()} u.) en Mi Banco`
+        );
       } catch (err) {
         alert("El archivo JSON no tiene un formato válido");
+      } finally {
+        event.target.value = "";
       }
     };
     reader.readAsText(file);

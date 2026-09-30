@@ -132,3 +132,24 @@ test('Vercel rewrite path extraction for recipes/:resultId (e.g. recipes/757)', 
   assert.deepStrictEqual(segments, ['recipes', '757']);
 });
 
+test('Vercel rewrite path extraction for dofocus sync endpoints', () => {
+  const reqStatus = {
+    url: '/api/dofocus?path=sync-all-status',
+    query: { path: 'sync-all-status' }
+  };
+  assert.deepStrictEqual(extractPathSegments(reqStatus, 'dofocus'), ['sync-all-status']);
+
+  const reqSyncServer = {
+    url: '/api/dofocus?path=sync-server',
+    query: { path: 'sync-server' }
+  };
+  assert.deepStrictEqual(extractPathSegments(reqSyncServer, 'dofocus'), ['sync-server']);
+
+  const reqSyncAll = {
+    url: '/api/dofocus?path=sync-all',
+    query: { path: 'sync-all' }
+  };
+  assert.deepStrictEqual(extractPathSegments(reqSyncAll, 'dofocus'), ['sync-all']);
+});
+
+

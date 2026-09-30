@@ -34,6 +34,7 @@ INVENTORY_JSON = os.path.join(DATA_DIR, "banco_inventario_capturado.json") if os
 VIEWER_HTML = os.path.join(VIEWER_DIR, "visor_almacen.html")
 ITEMS_TYPE_FILE = os.path.join(CONFIG_DIR, "items_type_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_type_db.json")) else os.path.join(PROJECT_ROOT, "scripts", "items_type_db.json")
 ITEMS_SUPER_TYPE_FILE = os.path.join(CONFIG_DIR, "items_super_type_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_super_type_db.json")) else os.path.join(PROJECT_ROOT, "scripts", "items_super_type_db.json")
+CRAFT_INGREDIENTS_FILE = os.path.join(CONFIG_DIR, "craft_ingredients_ids.json") if os.path.exists(os.path.join(CONFIG_DIR, "craft_ingredients_ids.json")) else os.path.join(PROJECT_ROOT, "src", "data", "craftIngredientsIds.json")
 
 KNOWN_QUEST_ITEM_IDS = {
     10272, 10223, 2151, 9312, 9968, 9979, 9980, 9981, 9982, 9983,
@@ -48,7 +49,7 @@ KNOWN_QUEST_ITEM_IDS = {
 QUEST_KEYWORDS = [
     "(misión)", "(mision)", "objeto de misión", "objeto de mision",
     "de la misión", "de la mision", "llave de misión", "llave de mision",
-    "trozo de mapa", "documento de", "carta de", "orden de ejecución",
+    "documento de", "carta de", "orden de ejecución",
     "orden de ejecucion", "nota de", "pergamino de misión", "ficticia",
     "falso dofus", "muestra de", "recompensa de la misión"
 ]
@@ -116,7 +117,20 @@ def load_type_maps():
             pass
     return type_db, super_db
 
-def classify_item(item_id, item_name, type_db=None, super_db=None):
+def load_craft_ingredients():
+    if os.path.exists(CRAFT_INGREDIENTS_FILE):
+        try:
+            with open(CRAFT_INGREDIENTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return set(int(x) for x in data if str(x).isdigit())
+                elif isinstance(data, dict):
+                    return set(int(k) for k in data.keys() if str(k).isdigit())
+        except Exception:
+            pass
+    return set()
+
+def classify_item(item_id, item_name, type_db=None, super_db=None, craft_set=None):
     iid = int(item_id) if str(item_id).isdigit() else 0
     sid = str(iid)
     t = type_db.get(sid, '') if type_db else ''
@@ -125,18 +139,49 @@ def classify_item(item_id, item_name, type_db=None, super_db=None):
     t_lower = t.lower()
     st_lower = st.lower()
 
-    # 1. Almas de Archimonstruos (Cosecha Eterna)
-    if (33820 <= iid <= 34125) or "alma capturada:" in name_lower or "âme capturée" in name_lower or t in ("Alma de archimonstruo", "Piedra de alma llena"):
+    # 1. Almas de Archimonstruos y Jefes (Cosecha Eterna)
+    # IMPORTANTE: Excluir piedras de alma vacías (son consumibles crafteables, no almas)
+    is_empty_stone = (
+        ("piedra de alma" in name_lower or "pierre d'âme" in name_lower) and
+        not any(k in name_lower for k in ["capturada", "llena:", ":"]) and
+        iid not in range(33820, 34126)
+    )
+    is_captured_soul = not is_empty_stone and (
+        (33820 <= iid <= 34125) or
+        "alma capturada:" in name_lower or
+        "âme capturée" in name_lower or
+        t in ("Alma de archimonstruo", "Piedra de alma llena")
+    )
+
+    if is_captured_soul:
         return {
             "category": "Archimonstruos",
             "badgeColor": "purple",
             "isQuest": False,
             "isSellable": True,
-            "defaultInclude": True,
+            "defaultInclude": False,  # No incluir en el banco de crafteo por defecto (tienen botón CSV Metamob)
             "icon": "👻"
         }
 
-    # 2. Runas de Forjamagia
+    # 2. Fragmentos de mapa (Búsqueda y Caza / BYC)
+    # Por petición del usuario: no vale la pena subirlos al banco de crafteo ya que uno decide si vender los fragmentos o el mapa entero
+    is_map_frag = (
+        ("fragmento" in name_lower and "mapa" in name_lower) or
+        ("trozo de mapa" in name_lower) or
+        ("fragment" in name_lower and "carte" in name_lower) or
+        t in ("Fragmento de mapa", "Fragment de carte")
+    )
+    if is_map_frag:
+        return {
+            "category": "Mapas / BYC",
+            "badgeColor": "cyan",
+            "isQuest": False,
+            "isSellable": True,
+            "defaultInclude": False,  # No subir fragmentos de mapa por defecto
+            "icon": "🗺️"
+        }
+
+    # 3. Runas de Forjamagia
     if name_lower.startswith("runa ") or name_lower.startswith("runa de ") or t in ("Runa de forjamagia", "Runa"):
         return {
             "category": "Runas",
@@ -147,7 +192,7 @@ def classify_item(item_id, item_name, type_db=None, super_db=None):
             "icon": "🔮"
         }
 
-    # 3. Objetos de Misión (No comerciables / Quest items)
+    # 4. Objetos de Misión (No comerciables / Quest items)
     if st == "Objeto de misión" or "misión" in st_lower or "mision" in st_lower or t in QUEST_TYPES or iid in KNOWN_QUEST_ITEM_IDS or any(k in name_lower for k in QUEST_KEYWORDS):
         return {
             "category": "Misión",
@@ -158,29 +203,51 @@ def classify_item(item_id, item_name, type_db=None, super_db=None):
             "icon": "📜"
         }
 
-    # 4. Equipamiento (Sets, armas, dofus, trofeos, escudos)
+    # 5. Equipamiento (Sets, armas, dofus, trofeos, escudos)
     if st in EQUIPMENT_SUPER_TYPES or t in EQUIPMENT_TYPES or any(name_lower.startswith(p) for p in ["dofus ", "dokoko", "dofawa", "dolmanax", "dorigami", "domakuro", "trofeo "]):
-        return {
-            "category": "Equipamiento",
-            "badgeColor": "amber",
-            "isQuest": False,
-            "isSellable": True,
-            "defaultInclude": True,
-            "icon": "🛡️"
-        }
+        is_craft_ingredient = (craft_set is not None and iid in craft_set)
+        if is_craft_ingredient:
+            return {
+                "category": "Equipamiento (Crafteo)",
+                "badgeColor": "emerald",
+                "isQuest": False,
+                "isSellable": True,
+                "defaultInclude": True,  # Forma parte de una receta de crafteo
+                "icon": "🛡️"
+            }
+        else:
+            return {
+                "category": "Equipamiento",
+                "badgeColor": "amber",
+                "isQuest": False,
+                "isSellable": True,
+                "defaultInclude": False,  # Equipamiento normal NO crafteable -> No exportar al banco
+                "icon": "🛡️"
+            }
 
-    # 5. Consumibles (Solo comestibles/bebidas/pociones/pergaminos)
-    if t in CONSUMABLE_TYPES:
-        return {
-            "category": "Consumibles",
-            "badgeColor": "blue",
-            "isQuest": False,
-            "isSellable": True,
-            "defaultInclude": True,
-            "icon": "🧪"
-        }
+    # 6. Consumibles (Comestibles/bebidas/pociones/pergaminos/piedras vacías)
+    if t in CONSUMABLE_TYPES or is_empty_stone:
+        is_craft_ingredient = (craft_set is not None and iid in craft_set)
+        if is_craft_ingredient:
+            return {
+                "category": "Consumibles (Crafteo)",
+                "badgeColor": "emerald",
+                "isQuest": False,
+                "isSellable": True,
+                "defaultInclude": True,  # Forma parte de una receta de crafteo
+                "icon": "🧪"
+            }
+        else:
+            return {
+                "category": "Consumibles",
+                "badgeColor": "blue",
+                "isQuest": False,
+                "isSellable": True,
+                "defaultInclude": False,  # Consumible NO usado en crafteo -> No exportar al banco
+                "icon": "🧪"
+            }
 
-    # 6. Recursos por defecto (Todo material, carne de cazador, pescado crudo, mineral, madera, drop)
+    # 7. Recursos por defecto (Todo material, carne de cazador, pescado crudo, mineral, madera, drop)
     return {
         "category": "Recursos",
         "badgeColor": "emerald",
@@ -295,6 +362,15 @@ def generate_viewer_html(items_list, meta=None):
     }}
     .btn-danger:hover {{
       background: rgba(239, 68, 68, 0.25);
+    }}
+    .btn-metamob {{
+      background: rgba(168, 85, 247, 0.15);
+      color: #d8b4fe;
+      border-color: rgba(168, 85, 247, 0.35);
+    }}
+    .btn-metamob:hover {{
+      background: rgba(168, 85, 247, 0.25);
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.35);
     }}
 
     /* KPI Cards */
@@ -513,10 +589,11 @@ def generate_viewer_html(items_list, meta=None):
         <p>Capturado: <strong>{meta.get("capturedAt")}</strong> | Tokens: <code>{", ".join(meta.get("tokens", []))}</code></p>
       </div>
       <div class="actions-box">
+        <button class="btn-metamob" onclick="exportMetamobCsv()" title="Genera CSV compatible con Metamob (Nombre,Cantidad) con tus archis y jefes capturados">👻 Exportar CSV Metamob</button>
         <button class="btn-danger" onclick="excludeAllQuestItems()">🚫 Excluir Todos los de Misión</button>
         <button class="btn-secondary" onclick="selectAll(true)">✅ Marcar Todo</button>
         <button class="btn-secondary" onclick="selectAll(false)">❌ Desmarcar Todo</button>
-        <button class="btn-primary" onclick="exportCleanJson()">📥 Guardar Selección para Web</button>
+        <button class="btn-primary" onclick="exportCleanJson()">📥 Guardar JSON para Mi Banco</button>
       </div>
     </header>
 
@@ -537,20 +614,30 @@ def generate_viewer_html(items_list, meta=None):
         <div class="kpi-val" id="kpi-recursos">0</div>
         <div class="kpi-sub">100% comerciables</div>
       </div>
-      <div class="kpi-card purple">
-        <div class="kpi-title">👻 Archimonstruos</div>
-        <div class="kpi-val" id="kpi-archis">0</div>
-        <div class="kpi-sub">Almas Cosecha Eterna</div>
+      <div class="kpi-card emerald">
+        <div class="kpi-title">🔨 Crafteo (Equip/Cons)</div>
+        <div class="kpi-val" id="kpi-craftables">0</div>
+        <div class="kpi-sub">Ingredientes de recetas</div>
       </div>
       <div class="kpi-card amber">
         <div class="kpi-title">🛡️ Equipamiento</div>
         <div class="kpi-val" id="kpi-equip">0</div>
-        <div class="kpi-sub">Sets, armas y dofus</div>
+        <div class="kpi-sub">No crafteo (Excluido)</div>
+      </div>
+      <div class="kpi-card cyan">
+        <div class="kpi-title">🗺️ Mapas / BYC</div>
+        <div class="kpi-val" id="kpi-mapas">0</div>
+        <div class="kpi-sub">Fragmentos (Excluido)</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="kpi-title">👻 Archimonstruos</div>
+        <div class="kpi-val" id="kpi-archis">0</div>
+        <div class="kpi-sub">CSV Metamob</div>
       </div>
       <div class="kpi-card red">
         <div class="kpi-title">📜 Objetos de Misión</div>
         <div class="kpi-val" id="kpi-quest">0</div>
-        <div class="kpi-sub">No comerciables (excluidos)</div>
+        <div class="kpi-sub">No comerciables (Excluido)</div>
       </div>
     </div>
 
@@ -622,15 +709,19 @@ def generate_viewer_html(items_list, meta=None):
       const totalSlots = RAW_ITEMS.length;
       const totalUnits = RAW_ITEMS.reduce((sum, it) => sum + it.quantity, 0);
       const recursos = RAW_ITEMS.filter(it => it.category === "Recursos").length;
-      const archis = RAW_ITEMS.filter(it => it.category === "Archimonstruos").length;
+      const craftables = RAW_ITEMS.filter(it => it.category === "Equipamiento (Crafteo)" || it.category === "Consumibles (Crafteo)").length;
       const equip = RAW_ITEMS.filter(it => it.category === "Equipamiento").length;
+      const mapas = RAW_ITEMS.filter(it => it.category === "Mapas / BYC").length;
+      const archis = RAW_ITEMS.filter(it => it.category === "Archimonstruos").length;
       const quest = RAW_ITEMS.filter(it => it.category === "Misión").length;
 
       document.getElementById("kpi-total-slots").innerText = totalSlots.toLocaleString();
       document.getElementById("kpi-total-units").innerText = totalUnits.toLocaleString();
       document.getElementById("kpi-recursos").innerText = recursos.toLocaleString();
-      document.getElementById("kpi-archis").innerText = archis.toLocaleString();
+      document.getElementById("kpi-craftables").innerText = craftables.toLocaleString();
       document.getElementById("kpi-equip").innerText = equip.toLocaleString();
+      document.getElementById("kpi-mapas").innerText = mapas.toLocaleString();
+      document.getElementById("kpi-archis").innerText = archis.toLocaleString();
       document.getElementById("kpi-quest").innerText = quest.toLocaleString();
     }}
 
@@ -644,12 +735,15 @@ def generate_viewer_html(items_list, meta=None):
       const categories = [
         {{ id: "all", label: "Todos", count: counts.all }},
         {{ id: "Recursos", label: "🌾 Recursos", count: counts["Recursos"] || 0 }},
-        {{ id: "Archimonstruos", label: "👻 Archimonstruos", count: counts["Archimonstruos"] || 0 }},
-        {{ id: "Equipamiento", label: "🛡️ Equipamiento", count: counts["Equipamiento"] || 0 }},
+        {{ id: "Equipamiento (Crafteo)", label: "🛡️ Equipamiento (Crafteo)", count: counts["Equipamiento (Crafteo)"] || 0 }},
+        {{ id: "Consumibles (Crafteo)", label: "🧪 Consumibles (Crafteo)", count: counts["Consumibles (Crafteo)"] || 0 }},
+        {{ id: "Equipamiento", label: "🛡️ Equipamiento (Excluido)", count: counts["Equipamiento"] || 0 }},
+        {{ id: "Consumibles", label: "🧪 Consumibles (Excluido)", count: counts["Consumibles"] || 0 }},
+        {{ id: "Mapas / BYC", label: "🗺️ Mapas / BYC (Excluido)", count: counts["Mapas / BYC"] || 0 }},
         {{ id: "Runas", label: "🔮 Runas", count: counts["Runas"] || 0 }},
-        {{ id: "Consumibles", label: "🧪 Consumibles", count: counts["Consumibles"] || 0 }},
+        {{ id: "Archimonstruos", label: "👻 Archimonstruos", count: counts["Archimonstruos"] || 0 }},
         {{ id: "Misión", label: "📜 Misión", count: counts["Misión"] || 0 }},
-      ];
+      ].filter(cat => cat.id === "all" || cat.count > 0);
 
       tabsContainer.innerHTML = categories.map(cat => `
         <button class="tab-btn ${{activeCategory === cat.id ? 'active' : ''}}" onclick="setCategory('${{cat.id}}')">
@@ -817,6 +911,67 @@ def generate_viewer_html(items_list, meta=None):
       alert(`¡Archivo exportado con éxito!\nContiene ${{approvedItems.length.toLocaleString()}} objetos consolidados (cantidades sumadas listas para 'Mi Banco').`);
     }}
 
+    function exportMetamobCsv() {{
+      // 1. Filtrar solo almas capturadas (archimonstruos y jefes de mazmorra)
+      const souls = RAW_ITEMS.filter(it => {{
+        const name = (it.name || "").toLowerCase();
+        const iid = it.itemId;
+        const isSoulId = (iid >= 33820 && iid <= 34125);
+        const isSoulName = name.includes("alma capturada") || name.includes("âme capturée");
+        return isSoulId || isSoulName || it.category === "Archimonstruos";
+      }});
+
+      if (souls.length === 0) {{
+        alert("No se encontraron piedras de alma con monstruos capturados en este almacén.");
+        return;
+      }}
+
+      // 2. Limpiar el nombre del monstruo y consolidar cantidades
+      const mobCounts = {{}};
+      souls.forEach(s => {{
+        let mobName = s.name || "";
+        // Remover prefijos "Alma capturada: ", "Alma de ", "Piedra de alma de ", etc.
+        mobName = mobName
+          .replace(/^Alma\\s+capturada:\\s*/i, "")
+          .replace(/^Piedra\\s+de\\s+alma\\s+(?:llena:\\s*|de\\s+)/i, "")
+          .replace(/^Alma\\s+de\\s+/i, "")
+          .replace(/^Âme\\s+capturée:\\s*/i, "")
+          .trim();
+
+        // Ignorar piedras de alma vacías (consumibles)
+        if (!mobName || mobName.toLowerCase().startsWith("piedra de alma") || mobName.toLowerCase().startsWith("pierre d'âme")) {{
+          return;
+        }}
+
+        mobCounts[mobName] = (mobCounts[mobName] || 0) + (s.quantity || 1);
+      }});
+
+      const sortedMobs = Object.keys(mobCounts).sort((a, b) => a.localeCompare(b));
+      if (sortedMobs.length === 0) {{
+        alert("No se encontraron nombres de monstruos válidos para exportar a Metamob.");
+        return;
+      }}
+
+      // 3. Formato Metamob: Nombre,Cantidad
+      let csvContent = "";
+      for (const mob of sortedMobs) {{
+        csvContent += `${{mob}},${{mobCounts[mob]}}\\n`;
+      }}
+
+      const totalSouls = Object.values(mobCounts).reduce((a, b) => a + b, 0);
+      const blob = new Blob(["\\uFEFF" + csvContent], {{ type: "text/csv;charset=utf-8;" }});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `metamob_almas_${{new Date().toISOString().slice(0, 10)}}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      alert(`¡CSV de Metamob exportado con éxito!\\n\\nContiene ${{sortedMobs.length.toLocaleString()}} monstruos/archis (${{totalSouls.toLocaleString()}} almas en total) en formato listo para subir a metamob.fr:\\nNombre,Cantidad`);
+    }}
+
     // Init
     updateKPIs();
     renderTabs();
@@ -832,6 +987,7 @@ def generate_viewer_html(items_list, meta=None):
 def process_and_open_viewer(inventory_data=None):
     items_map = load_items_map()
     type_db, super_db = load_type_maps()
+    craft_set = load_craft_ingredients()
 
     # Si no nos pasan datos directamente, leer de banco_inventario_capturado.json
     if inventory_data is None:
@@ -865,7 +1021,7 @@ def process_and_open_viewer(inventory_data=None):
         qty = it.get("quantity", 1)
         uid = it.get("uid") or f"uid_{iid}_{i}"
 
-        classification = classify_item(iid, name, type_db, super_db)
+        classification = classify_item(iid, name, type_db, super_db, craft_set)
         category_counts[classification["category"]] += 1
 
         enriched_items.append({

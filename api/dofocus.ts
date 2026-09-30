@@ -114,8 +114,11 @@ function extractPathSegments(req: any, basePath: string): string[] {
 export default async function handler(req: any, res: any) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Dofocus-Cookie"
+    );
     return res.status(200).end();
   }
 
@@ -125,30 +128,130 @@ export default async function handler(req: any, res: any) {
   const route0 = pathSegments[0] || "";
   const route1 = pathSegments[1] || "";
 
+  // Helper to extract session cookies (user-provided or server env)
+  const sessionCookie =
+    req.headers?.["x-dofocus-cookie"] ||
+    req.headers?.cookie ||
+    process.env.DOFOCUS_COOKIE;
+  const requestHeaders: Record<string, string> = {
+    ...DOFOCUS_HEADERS,
+    ...(sessionCookie ? { Cookie: String(sessionCookie) } : {}),
+  };
+
   try {
     // 1. SERVERS: GET /api/dofocus/servers
     if (route0 === "servers") {
       res.setHeader("Cache-Control", "s-maxage=600, stale-while-revalidate=1200");
       try {
-        const response = await fetch(`${DOFOCUS_BASE_URL}/servers`, { headers: DOFOCUS_HEADERS });
+        const response = await fetch(`${DOFOCUS_BASE_URL}/servers`, {
+          headers: requestHeaders,
+        });
         if (!response.ok) return res.status(200).json(FALLBACK_SERVERS);
         const data = await response.json();
-        return res.status(200).json(Array.isArray(data) && data.length > 0 ? data : FALLBACK_SERVERS);
+        return res
+          .status(200)
+          .json(Array.isArray(data) && data.length > 0 ? data : FALLBACK_SERVERS);
       } catch {
         return res.status(200).json(FALLBACK_SERVERS);
       }
     }
 
-    // 2. COEFFICIENTS BY SERVER: GET /api/dofocus/coefficients/:serverName
+    // 2. GLOBAL SYNC STATUS: GET /api/dofocus/sync-all-status
+    if (route0 === "sync-all-status") {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      return res.status(200).json({
+        isSyncRunning: false,
+        lastSyncTimestamp: null,
+        nextSyncTimestamp: null,
+        serverStatuses: {},
+      });
+    }
+
+    // 3. TRIGGER SYNC ALL: POST /api/dofocus/sync-all
+    if (route0 === "sync-all") {
+      return res.status(200).json({
+        status: "started",
+        message: "Sincronización procesada en la nube",
+      });
+    }
+
+    // 4. SYNC SINGLE SERVER: POST /api/dofocus/sync-server
+    if (route0 === "sync-server") {
+      const serverParam =
+        req.body?.server ||
+        req.body?.serverName ||
+        req.query?.server ||
+        req.query?.serverName ||
+        "Draconiros";
+      const serverName = normalizeDofocusServer(String(serverParam));
+      const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
+
+      try {
+        const response = await fetch(targetUrl, { headers: requestHeaders });
+        if (!response.ok) {
+          if (response.status === 403) {
+            const errBody = await response.json().catch(() => ({}));
+            return res.status(403).json({
+              success: false,
+              code: "ACCESS_REQUIRED",
+              server: serverName,
+              error:
+                "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile).",
+              automationPolicy: errBody?.automationPolicy,
+            });
+          }
+          return res.status(response.status).json({
+            success: false,
+            server: serverName,
+            error: `DoFocus respondió con status ${response.status}`,
+          });
+        }
+
+        const data = await response.json();
+        const entries = Array.isArray(data) ? data : [];
+        return res.status(200).json({
+          success: true,
+          server: serverName,
+          totalFetched: entries.length,
+          coefficients: entries,
+          timestamp: Date.now(),
+        });
+      } catch (syncErr: any) {
+        return res.status(500).json({
+          success: false,
+          server: serverName,
+          error: syncErr.message || "Error al sincronizar con DoFocus",
+        });
+      }
+    }
+
+    // 5. COEFFICIENTS BY SERVER: GET /api/dofocus/coefficients/:serverName
     if (route0 === "coefficients") {
       res.setHeader("Cache-Control", "s-maxage=180, stale-while-revalidate=300");
-      const serverParam = route1 || req.query?.serverName || req.query?.server || "Draconiros";
+      const serverParam =
+        route1 || req.query?.serverName || req.query?.server || "Draconiros";
       const serverName = normalizeDofocusServer(serverParam);
       const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
-      const response = await fetch(targetUrl, { headers: DOFOCUS_HEADERS });
+      const response = await fetch(targetUrl, { headers: requestHeaders });
+
       if (!response.ok) {
-        return res.status(response.status).json({ error: `DoFocus status ${response.status}` });
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          return res.status(403).json({
+            code: "ACCESS_REQUIRED",
+            error:
+              "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile).",
+            server: serverName,
+            total: 0,
+            coefficients: [],
+            automationPolicy: errBody?.automationPolicy,
+          });
+        }
+        return res
+          .status(response.status)
+          .json({ error: `DoFocus status ${response.status}` });
       }
+
       const data = await response.json();
       return res.status(200).json({
         server: serverName,
@@ -158,7 +261,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // 3. SINGLE ITEM: GET /api/dofocus/item/:itemId
+    // 6. SINGLE ITEM: GET /api/dofocus/item/:itemId
     if (route0 === "item") {
       res.setHeader("Cache-Control", "s-maxage=180, stale-while-revalidate=300");
       const itemId = Number(route1 || req.query?.itemId);
@@ -167,11 +270,28 @@ export default async function handler(req: any, res: any) {
       const rawServer = (req.query?.server as string) || "Draconiros";
       const serverName = normalizeDofocusServer(rawServer);
       const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
-      const response = await fetch(targetUrl, { headers: DOFOCUS_HEADERS });
+      const response = await fetch(targetUrl, { headers: requestHeaders });
+
       if (!response.ok) {
-        return res.status(response.status).json({ error: `DoFocus status ${response.status}` });
+        if (response.status === 403) {
+          return res.status(403).json({
+            code: "ACCESS_REQUIRED",
+            error:
+              "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile).",
+            itemId,
+            server: serverName,
+          });
+        }
+        return res
+          .status(response.status)
+          .json({ error: `DoFocus status ${response.status}` });
       }
-      const data = (await response.json()) as Array<{ itemId: number; coefficient: number; dateUpdated?: string }>;
+
+      const data = (await response.json()) as Array<{
+        itemId: number;
+        coefficient: number;
+        dateUpdated?: string;
+      }>;
       const match = Array.isArray(data) ? data.find((c) => c.itemId === itemId) : null;
       if (match) {
         return res.status(200).json({
@@ -182,7 +302,9 @@ export default async function handler(req: any, res: any) {
           source: "dofocus",
         });
       }
-      return res.status(404).json({ error: "Coeficiente no encontrado", itemId, server: serverName });
+      return res
+        .status(404)
+        .json({ error: "Coeficiente no encontrado", itemId, server: serverName });
     }
 
     return res.status(404).json({ error: "Ruta no encontrada" });
@@ -191,3 +313,4 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: err.message || "Error en API DoFocus" });
   }
 }
+

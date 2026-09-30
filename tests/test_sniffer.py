@@ -4,8 +4,8 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-import sniffer_standalone
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sniffer'))
+import dofus_suite as sniffer_standalone
 
 def encode_varint(val):
     out = bytearray()

@@ -2062,8 +2062,35 @@ export function restoreLastCoefficientSyncBackup(serverSlug?: string): {
   }
 }
 
+export function parseFlexibleTimestamp(val: unknown): number {
+  if (!val) return 0;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).trim();
+  if (!str) return 0;
+  if (/^\d{10,13}$/.test(str)) {
+    const num = Number(str);
+    return num < 1e11 ? num * 1000 : num;
+  }
+  const dmyMatch = str.match(
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+  );
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 12;
+    const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+    const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+    const parsed = new Date(year, month, day, hours, minutes, seconds).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const standard = Date.parse(str);
+  if (!isNaN(standard) && standard > 0) return standard;
+  return 0;
+}
+
 export function bulkSaveItemCoefficients(
-  entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number }>,
+  entries: Array<{ itemId: number; coefficient: number; dateUpdated?: string | number; exactDate?: string | number }>,
   options: BulkSaveOptions = {},
   serverSlugParam?: string
 ): { updatedCount: number; totalCount: number; skippedCount: number; server: string } {
@@ -2116,12 +2143,10 @@ export function bulkSaveItemCoefficients(
       if (!item.itemId) continue;
 
       let dofocusTs = 0;
-      if (item.dateUpdated) {
-        const parsedDate =
-          typeof item.dateUpdated === "number"
-            ? item.dateUpdated
-            : new Date(item.dateUpdated).getTime();
-        if (!isNaN(parsedDate) && parsedDate > 0) {
+      const rawDate = item.exactDate || item.dateUpdated;
+      if (rawDate) {
+        const parsedDate = parseFlexibleTimestamp(rawDate);
+        if (parsedDate > 0) {
           dofocusTs = parsedDate;
         }
       }

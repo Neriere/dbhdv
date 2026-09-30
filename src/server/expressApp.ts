@@ -685,9 +685,50 @@ app.put("/api/local-db/coefficients/:itemId", async (req, res) => {
   }
 });
 
+function parseFlexibleTimestamp(val: unknown): number {
+  if (!val) return Date.now();
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).trim();
+  if (!str) return Date.now();
+  if (/^\d{10,13}$/.test(str)) {
+    const num = Number(str);
+    return num < 1e11 ? num * 1000 : num;
+  }
+  const dmyMatch = str.match(
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+  );
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 12;
+    const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+    const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+    const parsed = new Date(year, month, day, hours, minutes, seconds).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const standard = Date.parse(str);
+  if (!isNaN(standard) && standard > 0) return standard;
+  return Date.now();
+}
+
 app.post("/api/local-db/coefficients/bulk", async (req, res) => {
   try {
-    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const rawList = Array.isArray(req.body)
+      ? req.body
+      : (Array.isArray(req.body?.entries)
+          ? req.body.entries
+          : (Array.isArray(req.body?.coefficients) ? req.body.coefficients : []));
+
+    const entries = rawList
+      .filter((e: any) => e && (e.itemId || e.id))
+      .map((e: any) => ({
+        itemId: Number(e.itemId || e.id),
+        coefficient: Number(e.coefficient ?? e.coeff ?? 100),
+        updatedAt: parseFlexibleTimestamp(e.exactDate || e.updatedAt || e.dateUpdated),
+        isManual: Boolean(e.isManual),
+      }));
+
     let profileId = req.body?.profileId
       ? Number(req.body?.profileId)
       : undefined;
@@ -776,7 +817,8 @@ app.post("/api/dofocus/sync-all", async (req, res) => {
 app.post("/api/dofocus/sync-server", async (req, res) => {
   try {
     const serverName = String(req.body?.server || req.body?.serverName || "Draconiros");
-    const result = await syncSingleServerFromDofocus(serverName);
+    const cookie = (req.headers["x-dofocus-cookie"] as string) || req.headers.cookie;
+    const result = await syncSingleServerFromDofocus(serverName, cookie);
     if (!result.success) {
       return res.status(500).json({ error: result.error || "Error al sincronizar con DoFocus" });
     }
@@ -1900,11 +1942,32 @@ app.get("/api/dofocus/coefficients/:serverName", async (req, res) => {
     }
 
     const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(serverName)}`;
+    const cookie =
+      (req.headers["x-dofocus-cookie"] as string) ||
+      req.headers.cookie ||
+      process.env.DOFOCUS_COOKIE;
+    const reqHeaders = {
+      ...DOFOCUS_HEADERS,
+      "X-Dofocus-Client": "web",
+      ...(cookie ? { Cookie: String(cookie) } : {}),
+    };
     const response = await fetch(targetUrl, {
-      headers: DOFOCUS_HEADERS,
+      headers: reqHeaders,
     });
 
     if (!response.ok) {
+      if (response.status === 403) {
+        const errBody = await response.json().catch(() => ({}));
+        return res.status(403).json({
+          code: "ACCESS_REQUIRED",
+          error:
+            "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile).",
+          server: serverName,
+          total: 0,
+          coefficients: [],
+          automationPolicy: errBody?.automationPolicy,
+        });
+      }
       throw new Error(
         `DoFocus respondió con status ${response.status}: ${response.statusText}`,
       );

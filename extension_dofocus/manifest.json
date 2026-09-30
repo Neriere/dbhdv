@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "DBHDV — DoFocus Coeficientes Sync",
+  "version": "1.0.0",
+  "description": "Recolector automático y sincronizador de coeficientes de rotura de DoFocus para DBHDV",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://dofocus.fr/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://dofocus.fr/hdv*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

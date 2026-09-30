@@ -26,7 +26,16 @@ const DOFOCUS_HEADERS = {
   Accept: "application/json, text/plain, */*",
   Referer: "https://dofocus.fr/",
   Origin: "https://dofocus.fr",
+  "X-Dofocus-Client": "web",
 };
+
+export function getDofocusRequestHeaders(customCookie?: string) {
+  const cookie = customCookie || process.env.DOFOCUS_COOKIE;
+  return {
+    ...DOFOCUS_HEADERS,
+    ...(cookie ? { Cookie: cookie } : {}),
+  };
+}
 
 export interface ServerSyncStatus {
   server: string;
@@ -65,20 +74,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function syncSingleServerFromDofocus(serverName: string): Promise<ServerSyncStatus> {
+export async function syncSingleServerFromDofocus(
+  serverName: string,
+  customCookie?: string
+): Promise<ServerSyncStatus> {
   const cleanName = serverName.trim();
   const profileInfo = await getProfileIdByServerNameOrSlug(cleanName);
   const targetUrl = `${DOFOCUS_BASE_URL}/coefficients/by-server/${encodeURIComponent(cleanName)}`;
 
   try {
     const response = await fetch(targetUrl, {
-      headers: DOFOCUS_HEADERS,
+      headers: getDofocusRequestHeaders(customCookie),
       signal: AbortSignal.timeout(20000),
     });
 
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error(
+          "DoFocus requiere verificación humana o autorización de sesión (Cloudflare Turnstile)"
+        );
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
+
 
     const data = (await response.json()) as Array<{
       itemId: number;

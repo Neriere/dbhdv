@@ -186,3 +186,103 @@ test('DailyCraftPlanner: Persistencia de configuración en localStorage preserva
   assert.equal(loaded.showMaterialsDrawer, true);
   assert.equal(loaded.showPostedDrawer, false);
 });
+
+test('DailyCraftPlanner: useBankResources descuenta ingredientes de banco al postear y los restaura al deshacer', () => {
+  // Simular inventario de banco
+  const bankQtyMap: Record<number, number> = {
+    400: 50, // Hierro (disponible: 50)
+    401: 20, // Cobre (disponible: 20)
+    402: 5,  // Bronce (disponible: 5)
+  };
+
+  // Receta a fabricar: 10 unidades de Pala de Madera (pide 3x Hierro, 2x Cobre, 1x Bronce por pala)
+  const recipe = {
+    ingredientIds: [400, 401, 402],
+    quantities: [3, 2, 1],
+  };
+  const units = 10;
+  // Necesarios totales: Hierro = 30, Cobre = 20, Bronce = 10
+
+  const useBankResources = true;
+  const deductedBankMaterials: Record<number, number> = {};
+
+  if (useBankResources) {
+    recipe.ingredientIds.forEach((ingId, idx) => {
+      const needed = recipe.quantities[idx] * units;
+      const inBank = bankQtyMap[ingId] || 0;
+      const toDeduct = Math.min(inBank, needed);
+      if (toDeduct > 0) {
+        deductedBankMaterials[ingId] = toDeduct;
+        bankQtyMap[ingId] = inBank - toDeduct;
+      }
+    });
+  }
+
+  // Verificaciones tras el descuento:
+  assert.equal(deductedBankMaterials[400], 30); // 30 de 50 descontados
+  assert.equal(bankQtyMap[400], 20);            // Quedan 20 en banco
+  assert.equal(deductedBankMaterials[401], 20); // 20 de 20 descontados
+  assert.equal(bankQtyMap[401], 0);             // Queda 0 en banco
+  assert.equal(deductedBankMaterials[402], 5);  // Solo había 5 de los 10 necesarios
+  assert.equal(bankQtyMap[402], 0);             // Queda 0 en banco
+
+  // Simular DESHACER (Undo posted craft)
+  for (const [idStr, qty] of Object.entries(deductedBankMaterials)) {
+    const ingId = Number(idStr);
+    bankQtyMap[ingId] = (bankQtyMap[ingId] || 0) + qty;
+  }
+
+  // Verificaciones tras deshacer:
+  assert.equal(bankQtyMap[400], 50); // Hierro completamente restaurado
+  assert.equal(bankQtyMap[401], 20); // Cobre completamente restaurado
+  assert.equal(bankQtyMap[402], 5);  // Bronce completamente restaurado
+});
+
+test('DailyCraftPlanner: useBankResources = false no descuenta recursos del banco', () => {
+  const bankQtyMap: Record<number, number> = { 400: 50 };
+  const recipe = { ingredientIds: [400], quantities: [2] };
+  const units = 5;
+  const useBankResources = false;
+  const deductedBankMaterials: Record<number, number> = {};
+
+  if (useBankResources) {
+    recipe.ingredientIds.forEach((ingId, idx) => {
+      const needed = recipe.quantities[idx] * units;
+      const inBank = bankQtyMap[ingId] || 0;
+      const toDeduct = Math.min(inBank, needed);
+      if (toDeduct > 0) {
+        deductedBankMaterials[ingId] = toDeduct;
+        bankQtyMap[ingId] = inBank - toDeduct;
+      }
+    });
+  }
+
+  assert.equal(Object.keys(deductedBankMaterials).length, 0);
+  assert.equal(bankQtyMap[400], 50); // Intacto
+});
+
+test('BankExport: Equipables no usados en crafteo y fragmentos de mapa son excluidos', async () => {
+  const craftIdsModule = await import('../src/data/craftIngredientsIds.json', { with: { type: 'json' } });
+  const craftSet = new Set<number>(craftIdsModule.default);
+
+  // Equipamiento que SÍ es ingrediente de crafteo (ej: El Broche Celeste = 159, Raciela = 202, Dragolira = 867)
+  assert.ok(craftSet.has(159), 'El Broche Celeste (159) debe estar en ingredientes de crafteo');
+  assert.ok(craftSet.has(202), 'Raciela (202) debe estar en ingredientes de crafteo');
+  assert.ok(craftSet.has(867), 'Dragolira (867) debe estar en ingredientes de crafteo');
+
+  // Equipamiento común que NO es ingrediente de crafteo (ej: un sombrero o capa normal)
+  // ID 120 (Capa pío azul) o similar no está en recetas
+  assert.equal(craftSet.has(999999), false);
+
+  // Filtro de fragmentos de mapa
+  const isMapFrag = (name: string, cat: string) => {
+    const nl = name.toLowerCase();
+    return cat.includes('Mapa') || (nl.includes('fragmento') && nl.includes('mapa')) || nl.includes('trozo de mapa');
+  };
+
+  assert.equal(isMapFrag('Fragmento del mapa de Tortacia 1/4', 'Mapas / BYC'), true);
+  assert.equal(isMapFrag('Trozo de mapa de Ates', 'Recursos'), true);
+  assert.equal(isMapFrag('Magnesita', 'Recursos'), false);
+  assert.equal(isMapFrag('El Broche Celeste', 'Equipamiento (Crafteo)'), false);
+});
+

@@ -1336,10 +1336,10 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
             type="button"
             onClick={() => setIsDofocusModalOpen(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-amber-500/15 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 shadow-sm transition-all cursor-pointer"
-            title={`Sincronizar coeficientes de rotura desde DoFocus (${activeProfile?.name || 'Servidor Activo'})`}
+            title={`Gestor de Coeficientes de Rotura (${activeProfile?.name || 'Servidor Activo'})`}
           >
-            <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-            <span>Sincronizar DoFocus</span>
+            <Sliders className="w-3.5 h-3.5 text-amber-400" />
+            <span>Gestor de Coeficientes</span>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
               {activeProfile?.name || 'Servidor'}
             </span>

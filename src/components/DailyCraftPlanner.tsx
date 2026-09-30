@@ -28,9 +28,11 @@ import {
   AlertTriangle,
   RotateCcw,
   CheckCircle2,
+  Vault,
 } from 'lucide-react';
 import { useUserJobs } from '../hooks/useUserJobs';
 import { useMarketPrices } from '../hooks/useMarketPrices';
+import { useBankInventory } from '../hooks/useBankInventory';
 import { UserJobsModal } from './common/UserJobsModal';
 import { SafeImage } from './SafeImage';
 import { KamaDisplay } from './common/KamaDisplay';
@@ -128,6 +130,7 @@ export interface PostedCraftItem {
   roiPercent: number;
   estimatedSlots: number;
   postedAt: number;
+  deductedBankMaterials?: Record<number, number>;
 }
 
 /**
@@ -305,6 +308,7 @@ export interface StoredPlannerConfig {
   manualUnitsOverride: Record<number, number>;
   showPostedDrawer: boolean;
   showMaterialsDrawer: boolean;
+  useBankResources?: boolean;
 }
 
 export function getStoredPlannerConfig(): Partial<StoredPlannerConfig> {
@@ -407,6 +411,12 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     const saved = getStoredPlannerConfig();
     return typeof saved.recentSalesOnly === 'boolean' ? saved.recentSalesOnly : true;
   });
+  const [useBankResources, setUseBankResources] = useState<boolean>(() => {
+    const saved = getStoredPlannerConfig();
+    return typeof saved.useBankResources === 'boolean' ? saved.useBankResources : true;
+  });
+
+  const { bankInventory, bankQtyMap, updateBankItem } = useBankInventory();
   const [postedCrafts, setPostedCrafts] = useState<PostedCraftItem[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -448,6 +458,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         manualUnitsOverride,
         showPostedDrawer,
         showMaterialsDrawer,
+        useBankResources,
       };
       localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg));
     } catch (e) {
@@ -475,6 +486,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     manualUnitsOverride,
     showPostedDrawer,
     showMaterialsDrawer,
+    useBankResources,
   ]);
 
   // Persistir objetos ya puestos en HDV en localStorage
@@ -1069,7 +1081,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     };
   }, [plannedCrafts, budget, postedSummary]);
 
-  // Desglose de Materiales Agregados & Cuellos de Botella
+  // Desglose de Materiales Agregados & Cuellos de Botella con soporte para Mi Banco
   const materialsSummary = useMemo(() => {
     if (plannedCrafts.length === 0) return null;
 
@@ -1080,9 +1092,14 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       unitPrice: number;
       totalCost: number;
       recipesUsing: number;
+      inBankQty: number;
+      coveredByBankQty: number;
+      neededToBuyQty: number;
+      bankSavingsCost: number;
     }>();
 
     let grandTotalCost = 0;
+    let totalBankSavings = 0;
 
     for (const craft of plannedCrafts) {
       if (!craft.item.recipeData?.ingredientIds) continue;
@@ -1102,6 +1119,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           existing.recipesUsing += 1;
         } else {
           const name = getItemName({ id: ingId } as any) || `Recurso #${ingId}`;
+          const inBankQty = useBankResources ? (bankQtyMap[ingId] || 0) : 0;
           map.set(ingId, {
             id: ingId,
             name,
@@ -1109,10 +1127,28 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             unitPrice: price,
             totalCost: cost,
             recipesUsing: 1,
+            inBankQty,
+            coveredByBankQty: 0,
+            neededToBuyQty: totalQtyForCraft,
+            bankSavingsCost: 0,
           });
         }
       });
     }
+
+    // Calcular cobertura y ahorro real con recursos del banco
+    map.forEach((item) => {
+      if (useBankResources && item.inBankQty > 0) {
+        item.coveredByBankQty = Math.min(item.inBankQty, item.totalQty);
+        item.neededToBuyQty = Math.max(0, item.totalQty - item.coveredByBankQty);
+        item.bankSavingsCost = item.coveredByBankQty * item.unitPrice;
+        totalBankSavings += item.bankSavingsCost;
+      } else {
+        item.coveredByBankQty = 0;
+        item.neededToBuyQty = item.totalQty;
+        item.bankSavingsCost = 0;
+      }
+    });
 
     const list = Array.from(map.values()).sort((a, b) => b.totalCost - a.totalCost);
     // Identificar cuellos de botella (recursos que acaparan más del 20% del costo total)
@@ -1122,20 +1158,28 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       list,
       totalIngredientsCount: list.length,
       grandTotalCost,
+      totalBankSavings,
+      effectiveCostAfterBank: Math.max(0, grandTotalCost - totalBankSavings),
       bottlenecks,
     };
-  }, [plannedCrafts, marketPrices]);
+  }, [plannedCrafts, marketPrices, useBankResources, bankQtyMap]);
 
   const handleCopyMaterialsList = () => {
     if (!materialsSummary) return;
     const lines = [
       `🛒 LISTA DE COMPRAS - PLAN CRAFTEO DOFUS (${plannedCrafts.length} recetas, ${summary.totalUnits} unidades)`,
       `Presupuesto total: ${summary.totalCost.toLocaleString('es-ES')} K | Ganancia neta: +${summary.totalProfit.toLocaleString('es-ES')} K (+${summary.overallRoi.toFixed(0)}% ROI)`,
+      ...(useBankResources && materialsSummary.totalBankSavings > 0
+        ? [`🏦 Ahorro Mi Banco: -${materialsSummary.totalBankSavings.toLocaleString('es-ES')} K | A comprar en HDV: ~${materialsSummary.effectiveCostAfterBank.toLocaleString('es-ES')} K`]
+        : []),
       '',
       '--- MATERIALES NECESARIOS ---',
       ...materialsSummary.list.map((m) => {
         const share = materialsSummary.grandTotalCost > 0 ? ((m.totalCost / materialsSummary.grandTotalCost) * 100).toFixed(0) : '0';
-        return `• ${m.totalQty.toLocaleString('es-ES')}x ${m.name} (~${m.totalCost.toLocaleString('es-ES')} K, ${share}%)`;
+        const bankInfo = useBankResources && m.coveredByBankQty > 0
+          ? ` [Faltan: ${m.neededToBuyQty.toLocaleString('es-ES')}u, Banco: ${m.coveredByBankQty.toLocaleString('es-ES')}u]`
+          : '';
+        return `• ${m.totalQty.toLocaleString('es-ES')}x ${m.name} (~${m.totalCost.toLocaleString('es-ES')} K, ${share}%)${bankInfo}`;
       }),
       '',
       `Copiado desde Calculadora HDV Dofus`
@@ -1200,6 +1244,28 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     const slots = calculateItemSlots(craft.isStackable, units);
     const itemName = getItemName(craft.item);
 
+    // Descontar recursos de Mi Banco si el check está activo
+    const deductedBankMaterials: Record<number, number> = {};
+    let totalItemsDeducted = 0;
+    let bankKamasSaved = 0;
+
+    if (useBankResources && craft.item.recipeData?.ingredientIds) {
+      craft.item.recipeData.ingredientIds.forEach((ingId, idx) => {
+        const qtyPerCraft = craft.item.recipeData!.quantities[idx] || 1;
+        const totalNeeded = qtyPerCraft * units;
+        const availableInBank = bankQtyMap[ingId] || 0;
+        const toDeduct = Math.min(availableInBank, totalNeeded);
+
+        if (toDeduct > 0) {
+          deductedBankMaterials[ingId] = toDeduct;
+          totalItemsDeducted += toDeduct;
+          const price = marketPrices[ingId] || 0;
+          bankKamasSaved += toDeduct * price;
+          updateBankItem(ingId, Math.max(0, availableInBank - toDeduct));
+        }
+      });
+    }
+
     const newPosted: PostedCraftItem = {
       itemId: craft.item.id,
       item: craft.item,
@@ -1218,6 +1284,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       roiPercent: craft.roiPercent,
       estimatedSlots: slots,
       postedAt: Date.now(),
+      deductedBankMaterials: Object.keys(deductedBankMaterials).length > 0 ? deductedBankMaterials : undefined,
     };
 
     setPostedCrafts((prev) => [...prev.filter((p) => p.itemId !== craft.item.id), newPosted]);
@@ -1227,19 +1294,41 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       return next;
     });
 
-    setJustPostedNotice(`"${itemName}" puesto en HDV (${units}x, -${cost.toLocaleString('es-ES')} K de presupuesto)`);
+    const bankMsg = totalItemsDeducted > 0
+      ? ` | 🏦 -${totalItemsDeducted} recursos de Mi Banco (ahorro: ~${bankKamasSaved.toLocaleString('es-ES')} K)`
+      : '';
+    setJustPostedNotice(`"${itemName}" puesto en HDV (${units}x, -${cost.toLocaleString('es-ES')} K de presupuesto)${bankMsg}`);
     setTimeout(() => {
       setJustPostedNotice(null);
-    }, 3500);
+    }, 4000);
   };
 
   const handleUndoPosted = (itemId: number) => {
+    const craftToUndo = postedCrafts.find((c) => c.itemId === itemId);
+    if (craftToUndo?.deductedBankMaterials) {
+      // Restaurar recursos descontados a Mi Banco
+      Object.entries(craftToUndo.deductedBankMaterials).forEach(([idStr, qty]) => {
+        const ingId = Number(idStr);
+        const currentInBank = bankQtyMap[ingId] || 0;
+        updateBankItem(ingId, currentInBank + qty);
+      });
+    }
     setPostedCrafts((prev) => prev.filter((c) => c.itemId !== itemId));
   };
 
   const handleClearAllPosted = () => {
     if (postedCrafts.length === 0) return;
-    if (window.confirm('¿Deseas reiniciar la lista de objetos puestos en HDV y restaurar todo el presupuesto?')) {
+    if (window.confirm('¿Deseas reiniciar la lista de objetos puestos en HDV, restaurar los recursos descontados a Mi Banco y recuperar todo el presupuesto?')) {
+      // Restaurar todos los recursos descontados a Mi Banco
+      for (const craft of postedCrafts) {
+        if (craft.deductedBankMaterials) {
+          Object.entries(craft.deductedBankMaterials).forEach(([idStr, qty]) => {
+            const ingId = Number(idStr);
+            const currentInBank = bankQtyMap[ingId] || 0;
+            updateBankItem(ingId, currentInBank + qty);
+          });
+        }
+      }
       setPostedCrafts([]);
     }
   };
@@ -1831,6 +1920,23 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               </span>
             </label>
 
+            {/* Toggle Usar recursos de Mi Banco */}
+            <label
+              className="inline-flex items-center gap-1.5 cursor-pointer select-none pl-2 border-l border-slate-800"
+              title="Usa y descuenta automáticamente los ingredientes disponibles en Mi Banco al marcar objetos como puestos en HDV"
+            >
+              <input
+                type="checkbox"
+                checked={useBankResources}
+                onChange={(e) => setUseBankResources(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-400/50 cursor-pointer"
+              />
+              <span className={`font-semibold flex items-center gap-1 ${useBankResources ? 'text-amber-400' : 'text-slate-400'}`}>
+                <Vault className="w-3.5 h-3.5 text-amber-400" />
+                Usar Mi Banco
+              </span>
+            </label>
+
             {/* Filtro por Oficio Específico */}
             <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
               <span className="text-slate-400 font-medium">Oficio:</span>
@@ -2127,16 +2233,27 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                 <Package className="w-4 h-4" />
               </div>
               <div>
-                <span className="font-bold text-white text-xs flex items-center gap-2">
+                <span className="font-bold text-white text-xs flex items-center gap-2 flex-wrap">
                   Desglose Agregado de Materiales & Cuellos de Botella
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
                     {materialsSummary.totalIngredientsCount} recursos necesarios
                   </span>
+                  {useBankResources && materialsSummary.totalBankSavings > 0 && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold flex items-center gap-1 border border-amber-500/30">
+                      <Vault className="w-3 h-3 text-amber-400" />
+                      Ahorro Mi Banco: ~{materialsSummary.totalBankSavings.toLocaleString('es-ES')} K
+                    </span>
+                  )}
                 </span>
                 <p className="text-[11px] text-slate-400">
                   {materialsSummary.bottlenecks.length > 0
                     ? `⚠️ ${materialsSummary.bottlenecks.length} cuello(s) de botella acaparan la mayor parte del presupuesto`
                     : 'Gasto de materiales bien distribuido sin dependencias críticas'}
+                  {useBankResources && materialsSummary.totalBankSavings > 0 && (
+                    <span className="text-amber-200/90 ml-1.5 font-mono">
+                      (A comprar en HDV: ~{materialsSummary.effectiveCostAfterBank.toLocaleString('es-ES')} K)
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -2195,19 +2312,44 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                       }`}
                     >
                       <div className="min-w-0 pr-2">
-                        <div className="font-bold truncate text-white" title={mat.name}>
-                          {mat.name}
+                        <div className="font-bold truncate text-white flex items-center gap-1.5" title={mat.name}>
+                          <span>{mat.name}</span>
+                          {useBankResources && mat.coveredByBankQty > 0 && (
+                            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold shrink-0">
+                              🏦 {mat.coveredByBankQty.toLocaleString('es-ES')}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-sans">
                           {mat.totalQty.toLocaleString('es-ES')}x • {mat.unitPrice.toLocaleString('es-ES')} K/u
+                          {useBankResources && mat.coveredByBankQty > 0 && mat.neededToBuyQty > 0 && (
+                            <span className="text-amber-200/90 ml-1.5">
+                              (Comprar: {mat.neededToBuyQty.toLocaleString('es-ES')}x)
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-bold text-amber-300">
-                          {mat.totalCost.toLocaleString('es-ES')} K
+                          {useBankResources && mat.coveredByBankQty > 0 ? (
+                            <>
+                              <span className="line-through text-slate-500 text-[10px] mr-1">
+                                {mat.totalCost.toLocaleString('es-ES')} K
+                              </span>
+                              <span>
+                                {(mat.neededToBuyQty * mat.unitPrice).toLocaleString('es-ES')} K
+                              </span>
+                            </>
+                          ) : (
+                            `${mat.totalCost.toLocaleString('es-ES')} K`
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          {pct.toFixed(0)}% del gasto
+                          {useBankResources && mat.neededToBuyQty === 0 ? (
+                            <span className="text-emerald-400 font-bold">100% en banco</span>
+                          ) : (
+                            `${pct.toFixed(0)}% del gasto`
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2300,6 +2442,12 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                           <div className="text-[10px] text-slate-500 font-mono">
                             Gasto: {posted.totalCraftCost.toLocaleString('es-ES')} K | Ganancia: +{posted.totalNetProfit.toLocaleString('es-ES')} K
                           </div>
+                          {posted.deductedBankMaterials && (
+                            <div className="text-[10px] text-amber-300 font-sans flex items-center gap-1 mt-0.5">
+                              <Vault className="w-3 h-3 text-amber-400" />
+                              <span>{Object.values(posted.deductedBankMaterials).reduce((a, b) => a + b, 0)} recursos descontados de Mi Banco</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -2592,6 +2740,39 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                         </span>
                       </div>
                     </div>
+
+                    {/* Cobertura de recursos en Mi Banco si está activo */}
+                    {useBankResources && craft.item.recipeData?.ingredientIds && (() => {
+                      let inBankCount = 0;
+                      let totalKamasCovered = 0;
+                      const totalIngredients = craft.item.recipeData.ingredientIds.length;
+
+                      craft.item.recipeData.ingredientIds.forEach((ingId, idx) => {
+                        const qtyPerCraft = craft.item.recipeData!.quantities[idx] || 1;
+                        const needed = qtyPerCraft * craft.recommendedUnits;
+                        const inBank = bankQtyMap[ingId] || 0;
+                        if (inBank > 0) {
+                          inBankCount++;
+                          const covered = Math.min(inBank, needed);
+                          const price = marketPrices[ingId] || 0;
+                          totalKamasCovered += covered * price;
+                        }
+                      });
+
+                      if (inBankCount === 0) return null;
+
+                      return (
+                        <div className="flex items-center justify-between text-[11px] bg-amber-500/10 border border-amber-500/25 rounded-xl px-2.5 py-1 text-amber-300">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <Vault className="w-3.5 h-3.5 text-amber-400" />
+                            {inBankCount}/{totalIngredients} ingredientes en banco
+                          </span>
+                          <span className="font-mono text-[10px] text-amber-200 font-bold">
+                            Ahorro: ~{totalKamasCovered.toLocaleString('es-ES')} K
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Market Velocity & Cashflow Indicators */}
                     <div className="space-y-1.5">
