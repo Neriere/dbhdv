@@ -1,12 +1,12 @@
-# Dofus Craft & Market Explorer
+# Dofus Craft & Market Explorer (DBHDV)
 
-Plataforma de análisis económico, modelado de rentabilidad de recetas, simulación de forjamagia y seguimiento de mercados para Dofus.
+Plataforma de análisis económico, modelado de rentabilidad de recetas, simulación de forjamagia, gestión de almacenes e ingestión pasiva de tráfico de red para Dofus Unity.
 
 ---
 
 ## Descripción General
 
-Dofus Craft es una aplicación web analítica construida con React 19, Node.js/Express, funciones serverless y una capa de persistencia relacional SQL. Su propósito es optimizar la toma de decisiones comerciales, el cálculo de costos de fabricación artesanal y la gestión de inventario en economías de juego activas.
+Dofus Craft es una aplicación web analítica construida con React 19, Node.js/Express, funciones serverless y una capa de persistencia relacional SQL (SQLite local / Turso LibSQL remoto). Su propósito es optimizar la toma de decisiones comerciales, el cálculo de costos de fabricación artesanal, la valoración de almacenes patrimoniales y la auditoría de ventas en economías de juego activas.
 
 ### Capacidades Principales
 - **Análisis de Rentabilidad y Subcrafteo**: Cálculo del costo directo y óptimo mediante resolución recursiva de ingredientes.
@@ -15,8 +15,9 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
 - **Simulador de Machacado de Runas**: Cálculo de producción de runas de forjamagia y coeficientes de rotura con aislamiento estricto por servidor.
 - **Consumibles y Cacerías (BYC)**: Análisis de progresión de estadísticas, evaluación de pergaminos y comparativa de adquisición en cacerías legendarias.
 - **Filtro Global por Oficios**: Restricción transversal de interfaces en función de las competencias y niveles de oficio configurados por el usuario.
-- **Ingestión Pasiva de Cotizaciones**: Captura y sincronización de precios de mercadillo en tiempo real mediante análisis pasivo de paquetes de red.
-- **Perfiles Aislados por Servidor**: Soporte para múltiples perfiles de juego independientes con reactividad inmediata y preservación histórica.
+- **DBHDV Suite Unificada 3.6**: Inspección pasiva de tráfico de red TCP para mercadillo, almacén unificado, historial de transacciones y listings activos en venta.
+- **Sincronización Comunitaria Cloud**: Gestión centralizada de tokens de red mediante Turso LibSQL para garantizar resiliencia tras mantenimientos semanales.
+- **Perfiles Aislados por Servidor**: Soporte para múltiples servidores de juego independientes con reactividad inmediata y preservación histórica.
 
 ---
 
@@ -30,7 +31,7 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
   - **Subcrafteo total**: Desglose jerárquico hasta materias primas base.
   - **Modo óptimo**: Selección automatizada de la ruta más económica entre compra y fabricación intermedia.
 - Métricas financieras:
-  - Costo de producción vs. cotización de venta.
+  - Costo de producción frente a cotización de venta.
   - Margen neto en kamas y retorno porcentual sobre la inversión (ROI).
   - Deducción automática de la tasa de puesta en venta en mercadillo (2%).
 
@@ -68,7 +69,7 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
 
 ### 7. Cacerías Legendarias y Análisis Comercial (BYC)
 - Catálogo de cacerías legendarias y mapas de búsqueda.
-- Análisis de decisión: venta del recurso directo del jefe vs. fabricación de los equipables asociados.
+- Análisis de decisión: venta del recurso directo del jefe frente a la fabricación de los equipables asociados.
 - Evaluación de rutas de adquisición:
   - Adquisición de fragmentos, resolución de cacería y fabricación.
   - Adquisición directa de mapa en mercadillo, resolución y fabricación.
@@ -93,10 +94,20 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
 - Panel de métricas de absorción: volumen de ventas en 24h, 7d, 30d y tasa diaria de rotación.
 - Historial de fluctuaciones y herramientas de exportación/importación JSON.
 
-### 12. Ingestión Pasiva de Paquetes de Red (Sniffer)
-- Script en Python (`scripts/sniffer_standalone.py`) para inspección pasiva de tráfico TCP en el puerto del cliente del juego.
-- Operación autónoma sin manipulación de memoria ni almacenamiento de credenciales.
-- Sincronización asíncrona por lotes vía HTTP hacia el endpoint de la API.
+### 12. DBHDV Suite Unificada 3.6 (Captura Pasiva y Diagnóstico)
+Script de alto rendimiento en Python (`sniffer/dofus_suite.py`) estructurado en 12 submódulos integrados:
+- **Modos de Captura en Vivo**:
+  1. *Sniffer de Mercadillo*: Captura de cotizaciones x1, x10, x100, x1000 en tiempo real y transmisión HTTP asíncrona por lotes.
+  2. *Sniffer de Almacén Unificado*: Consolidación simultánea de inventario de personaje, banco de cuenta y cofre de merkasako.
+  3. *Sniffer de Historial de Ventas*: Registro cronológico de transacciones realizadas, ingresos brutos y notificaciones de caducidad.
+  4. *Sniffer de Listings Activos en Venta*: Lotes colocados activamente en mercadillos de recursos, equipamiento y consumibles con partición atómica y cálculo exacto de precios.
+- **Visores Visuales Web Locales**:
+  5. *Visor de Almacén* (`sniffer/viewer/visor_almacen.html`): Exploración gráfica interactiva y filtrado de existencias locales.
+  6. *Visor de Historial* (`sniffer/viewer/visor_historial.html`): Auditoría analítica de transacciones comerciales pasadas.
+- **Calibración y Diagnóstico de Red**:
+  7-10. *Calibradores Inteligentes*: Descubrimiento interactivo y validación de tokens de red (`price_list`, `inventory`, `storage`, `sales_history`, `active_listings`) tras cada parche semanal.
+  11. *Sincronización Cloud Comunitaria*: Descarga y publicación de tokens comunitarios verificados mediante la API central.
+  12. *Telemetría y Registro Diagnóstico*: Inspección de trazas y depuración de ráfagas TCP.
 
 ---
 
@@ -111,18 +122,26 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
 │
 ├── server (Backend Express / Local)
 │   ├── server.ts (Punto de entrada: Vite en desarrollo, estáticos en producción)
-│   ├── src/server/expressApp.ts (Endpoints de API, ingestión y sincronización)
-│   └── src/server/localDataStore.ts (Capa de datos y lógica de persistencia SQL)
+│   ├── src/server/expressApp.ts (Endpoints de API, ingestión, tokens y sincronización)
+│   └── src/server/localDataStore.ts (Capa de datos y persistencia SQL con Turso / LibSQL)
 │
-├── api (Serverless Functions)
-│   ├── api/dofusbook/analyze.ts (Análisis de sets externos)
-│   ├── api/dofocus/* (Integración de coeficientes y servidores)
-│   ├── api/market/* (Ingestión y consulta de cotizaciones)
+├── sniffer (DBHDV Suite Unificada 3.6)
+│   ├── dofus_suite.py (Suite completa de captura, calibración y sincronización)
+│   ├── config/ (keymap.json, item_categories.json, items_db.json)
+│   ├── data/ (Archivos locales de captura excluidos de control de versiones)
+│   ├── logs/ (Registros de diagnóstico de calibración y ejecución)
+│   └── viewer/ (Generadores y visores web offline de almacén e historial)
+│
+├── api (Serverless Functions - Vercel)
+│   ├── api/tokens.ts (Gestión y sincronización comunitaria de tokens de red)
+│   ├── api/market/download-bat.ts (Lanzador .BAT unificado para Windows con elevación UAC)
+│   ├── api/market/suite-script.ts (Distribución del script dofus_suite.py)
+│   ├── api/market/* (Ingestión de precios y diccionarios)
 │   └── api/local-db/* (Endpoints de persistencia relacional)
 │
 └── database (Persistencia)
-    ├── local.db (Base de datos SQL local predeterminada - SQLite)
-    └── Base de datos SQL remota (Configurable mediante DATABASE_URL)
+    ├── local.db (Base de datos SQLite local predeterminada)
+    └── Turso LibSQL Remoto (Configurable mediante TURSO_DATABASE_URL / DATABASE_URL)
 ```
 
 ---
@@ -131,23 +150,25 @@ Dofus Craft es una aplicación web analítica construida con React 19, Node.js/E
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| `GET` | `/api/health` | Verificación de estado del servicio. |
+| `GET` | `/api/health` | Verificación de estado operativo del servicio. |
+| `GET` | `/api/tokens` | Consulta de tokens de red comunitarios verificados (Dofus Unity 3.6). |
+| `POST` | `/api/tokens` | Publicación y actualización comunitaria de tokens tras calibración. |
+| `GET` | `/api/market/suite-script` | Descarga directa de la DBHDV Suite Unificada (`dofus_suite.py`). |
+| `GET` | `/api/market/download-bat` | Generación del lanzador `.bat` unificado para Windows con elevación UAC. |
+| `POST` | `/api/market/update` | Ingestión individual de cotizaciones de mercadillo. |
+| `POST` | `/api/market/batch-update` | Ingestión masiva asíncrona de cotizaciones enviadas por la suite. |
+| `GET` | `/api/market/latest-prices` | Consulta de cotizaciones más recientes por servidor. |
+| `GET` | `/api/market/items-dictionary` | Diccionario indexado ID -> Nombre para resolución local de objetos. |
+| `GET` | `/api/market/download-items-db` | Descarga de la base local de objetos (`items_db.json`). |
 | `GET` | `/api/local-db/bootstrap` | Carga inicial consolidada (catálogo, recetas, precios, perfiles y configuración). |
-| `GET` | `/api/local-db/meta` | Resumen de registros y estadísticas de la base de datos. |
-| `GET` | `/api/local-db/items/:id` | Consulta de un objeto por identificador numérico. |
+| `GET` | `/api/local-db/meta` | Resumen estadístico de registros en base de datos. |
+| `GET` | `/api/local-db/items/:id` | Consulta de objeto por identificador numérico. |
 | `GET` | `/api/local-db/recipes/:resultId` | Consulta de receta asociada al objeto resultante. |
 | `PUT` | `/api/local-db/prices/:itemId` | Actualización de cotización para un objeto en el perfil activo. |
 | `PUT` | `/api/local-db/prices` | Actualización masiva de cotizaciones en el perfil activo. |
 | `GET` | `/api/local-db/price-history` | Consulta paginada del historial cronológico de precios. |
 | `GET` | `/api/local-db/coefficients` | Consulta de coeficientes de machacado guardados. |
 | `POST` | `/api/local-db/coefficients/bulk` | Guardado en lote de coeficientes de machacado. |
-| `POST` | `/api/market/update` | Ingestión individual de precios enviada por el sniffer. |
-| `POST` | `/api/market/batch-update` | Ingestión en lote de cotizaciones enviadas por el sniffer. |
-| `GET` | `/api/market/latest-prices` | Consulta de las cotizaciones más recientes. |
-| `GET` | `/api/market/items-dictionary` | Diccionario indexado ID -> Nombre para resolución local en el sniffer. |
-| `GET` | `/api/market/download-items-db` | Descarga de base local de nombres (`items_db.json`). |
-| `GET` | `/api/market/sniffer-script` | Generación dinámica del script de captura configurado para el host activo. |
-| `GET` | `/api/market/download-bat` | Descarga del script lanzador para entornos Windows. |
 | `POST` | `/api/dofusbook/analyze` | Análisis de equipamiento, costos y crafteo para builds externas. |
 | `GET` | `/api/dofocus/servers` | Consulta de servidores disponibles en DoFocus. |
 | `GET` | `/api/dofocus/coefficients/:serverName` | Consulta de coeficientes de rotura por servidor. |
@@ -166,10 +187,12 @@ APP_BASIC_AUTH_USER=
 APP_BASIC_AUTH_PASSWORD=
 APP_BASIC_AUTH_REALM=Acceso Privado
 
-# Autenticación del Sniffer de Mercadillo (Opcional)
+# Autenticación de Ingestión de Precios (Opcional)
 MARKET_SNIFFER_SECRET=
 
-# Persistencia SQL Remota (Opcional - por defecto utiliza SQLite local en local.db)
+# Persistencia SQL Remota (Turso / LibSQL)
+TURSO_DATABASE_URL=
+TURSO_AUTH_TOKEN=
 DATABASE_URL=
 DATABASE_AUTH_TOKEN=
 ```
@@ -181,7 +204,8 @@ DATABASE_AUTH_TOKEN=
 ### Requisitos Previos
 - **Node.js**: Versión 20 o superior
 - **npm**: Versión 10 o superior
-- **Python**: Versión 3.9 o superior (requerido únicamente para la ejecución local del sniffer)
+- **Python**: Versión 3.9 o superior (requerido únicamente para la ejecución de la suite en el cliente)
+- **Npcap**: Requerido en entornos Windows para la captura pasiva de paquetes de red
 
 ### Pasos de Instalación
 
@@ -209,10 +233,10 @@ DATABASE_AUTH_TOKEN=
 
 ---
 
-## Operación del Sniffer de Mercadillo
+## Operación de la DBHDV Suite Unificada
 
 1. En la barra superior de la aplicación web, acceder a la opción **Sniffer de Mercadillo**.
-2. Seleccionar el perfil de servidor de juego correspondiente.
-3. Descargar el archivo lanzador `.bat` o el script `dofus_sniffer.py`.
-4. Ejecutar el script en el equipo donde se ejecuta el cliente de juego.
-5. Al consultar los mercadillos dentro del juego, las cotizaciones se registrarán y sincronizarán automáticamente con la base de datos de la plataforma.
+2. Seleccionar el servidor de juego activo (por ejemplo, *Draconiros*).
+3. Hacer clic en **Descargar .BAT (Suite Unificada 3.6)**.
+4. Ejecutar el archivo `.bat` descargado con doble clic (solicitará permisos de Administrador para Scapy/Npcap).
+5. El lanzador descargará automáticamente `dofus_suite.py` y `items_db.json`, sincronizará los tokens comunitarios desde DBHDV Cloud y desplegará el menú interactivo con las 12 opciones de captura, visualización y calibración.

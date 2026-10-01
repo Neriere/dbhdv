@@ -1,8 +1,9 @@
 {
   "current_token": "jzn",
   "price_list": "jzn",
-  "last_calibrated": "2026-09-30 02:26:42",
+  "last_calibrated": "2026-10-01 16:21:24",
   "inventory": "isb",
   "storage": "hlp",
-  "sales_history": "kyo"
+  "sales_history": "kyo",
+  "active_listings": "ket"
 }

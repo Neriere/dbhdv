@@ -1,6 +1,71 @@
-# Reglas e Instrucciones de Desarrollo
+# Reglas e Instrucciones de Desarrollo (Vibe Coding)
 
-Coloca aquí las reglas que el asistente debe tener siempre presentes al generar o modificar código:
+Este documento contiene las reglas y el flujo de trabajo que el asistente y el desarrollador deben seguir para optimizar el ciclo de desarrollo en el proyecto DBHDV.
 
-- No uses nunca emojis
-- Evita dar descripciones obstentosas, mantenlas simples y formales.
+---
+
+## 1. Reglas Fundamentales de Comunicacion y Codigo
+
+- No uses nunca emojis.
+- Evita dar descripciones ostentosas, mantenlas simples y formales.
+- Principio de verificacion previa (Ground Truth): Inspeccionar siempre los archivos y dependencias antes de proponer o escribir codigo. No asumir firmas ni rutas.
+- Mantener tipado estricto en TypeScript sin `any` innecesarios.
+- Preservar codigo y comentarios preexistentes que no formen parte del cambio.
+
+---
+
+## 2. Ciclo de Trabajo Obligatorio (Workflow)
+
+El flujo de ejecucion se divide en los siguientes pasos secuenciales:
+
+### 1. Plan
+- Analizar el requerimiento del usuario y definir el alcance.
+- Identificar los archivos, servicios y componentes impactados.
+
+### 2. Audit Plan
+- Verificar la viabilidad del plan contra el codigo base existente.
+- Detectar dependencias cruzadas, riesgos de regresion o efectos secundarios.
+
+### 3. Decompose into Phases
+Dividir la ejecucion en fases independientes y acotadas:
+- Fase A: Definicion de contratos (interfaces, tipos y esquemas de datos).
+- Fase B: Logica de negocio y servicios (backend, hooks, sniffer).
+- Fase C: Capa visual (componentes de presentacion y UI).
+- Fase D: Validacion y pruebas funcionales.
+
+### 4. Audit Phases
+- Confirmar que cada fase sea verificable por si misma antes de iniciar la construccion.
+- Validar el orden secuencial para que ninguna fase dependa de algo aun no construido.
+
+### 5. Build
+- Escribir el codigo correspondiente a la fase activa de forma quirurgica.
+- No mezclar refactorizaciones no solicitadas durante la fase de construccion.
+
+### 6. Audit Build
+- Comprobar que la fase recien construida compile limpiamente (`npx tsc --noEmit`).
+- Verificar que las funciones auxiliares y los tipos coincidan exactamente con lo planificado.
+
+### 7. Audit Cumulative Build Across Multiple Phases
+- Al completar varias fases, verificar la integracion global del sistema.
+- Validar que no se hayan generado efectos secundarios en modulos preexistentes (como Mi Banco, Ranking o Calculadora).
+- Ejecutar `npm run build` para asegurar la integridad del empaquetado de produccion.
+
+### 8. Refactor
+- Simplificar codigo duplicado, optimizar rendimiento y limpiar importaciones obsoletas.
+- Mantener la legibilidad y coherencia con los patrones del repositorio.
+
+### 9. Audit Post-Refactor
+- Volver a ejecutar comprobacion estricta de tipos (`npx tsc --noEmit`).
+- Verificar que el refactor no haya introducido regresiones de comportamiento ni roto la compatibilidad con localStorage.
+
+### 10. Repeat
+- Pasar al siguiente requerimiento o fase iterativa siguiendo exactamente este mismo ciclo.
+
+---
+
+## 3. Convenciones Tecnicas Especificas de DBHDV
+
+- Moneda: Utilizar siempre `<KamaDisplay amount={valor} />` (la propiedad es `amount`, no `kamas`).
+- Reactividad: Para notificar cambios locales entre vistas sin acoplamiento, utilizar `window.dispatchEvent(new CustomEvent('nombre_evento'))`.
+- Almacenamiento: Todo acceso a `localStorage` debe contar con comprobacion defensiva `typeof window !== 'undefined'` y bloque `try/catch`.
+- Sniffer: Las modificaciones en `sniffer/dofus_suite.py` deben preservar la decodificacion de paquetes TCP puerto 5555 y exportar JSON a `sniffer/data/` en UTF-8.

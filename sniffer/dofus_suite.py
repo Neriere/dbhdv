@@ -87,6 +87,7 @@ DIAGNOSTIC_LOG = os.path.join(LOGS_DIR, "calibracion_diagnostico.log")
 SNIFFER_LOG = os.path.join(LOGS_DIR, "sniffer.log")
 INVENTORY_OUTPUT = os.path.join(DATA_DIR, "banco_inventario_capturado.json")
 SALES_OUTPUT = os.path.join(DATA_DIR, "historial_ventas_capturado.json")
+ACTIVE_LISTINGS_OUTPUT = os.path.join(DATA_DIR, "listings_en_venta_capturado.json")
 
 ITEMS_DB_FILE = os.path.join(CONFIG_DIR, "items_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_db.json")) else os.path.join(PROJECT_ROOT, "scripts", "items_db.json")
 STATIC_DICT_FILE = os.path.join(PROJECT_ROOT, "src", "data", "staticItemsDictionary.json")
@@ -371,7 +372,7 @@ def sync_tokens_from_cloud(silent=False):
                 remote_tokens = data["tokens"]
                 km = load_keymap()
                 changed = False
-                for k in ["price_list", "inventory", "storage", "sales_history"]:
+                for k in ["price_list", "inventory", "storage", "sales_history", "active_listings"]:
                     if k in remote_tokens and remote_tokens[k] and remote_tokens[k] != km.get(k):
                         km[k] = remote_tokens[k]
                         changed = True
@@ -380,29 +381,30 @@ def sync_tokens_from_cloud(silent=False):
                     with open(KEYMAP_FILE, "w", encoding="utf-8") as f:
                         json.dump(km, f, indent=2, ensure_ascii=False)
                     if not silent:
-                        print("  ✅ Tokens actualizados con éxito desde DBHDV Cloud:")
-                        print(f"     • Mercadillo (price_list) : '{km.get('price_list')}'")
-                        print(f"     • Inventario (inventory)  : '{km.get('inventory')}'")
-                        print(f"     • Almacén (storage)       : '{km.get('storage')}'")
-                        print(f"     • Historial (sales)       : '{km.get('sales_history')}'")
+                        print("  [OK] Tokens actualizados con exito desde DBHDV Cloud:")
+                        print(f"     * Mercadillo (price_list)    : '{km.get('price_list')}'")
+                        print(f"     * Inventario (inventory)     : '{km.get('inventory')}'")
+                        print(f"     * Almacen (storage)          : '{km.get('storage')}'")
+                        print(f"     * Historial (sales_history)  : '{km.get('sales_history')}'")
+                        print(f"     * En Venta (active_listings) : '{km.get('active_listings')}'")
                 else:
                     if not silent:
-                        print("  ✓ Tus tokens locales ya están al día con la última versión de la comunidad.")
+                        print("  [OK] Tus tokens locales ya estan al dia con la ultima version comunitaria.")
                 return True
     except Exception as e:
         if not silent:
-            print(f"  ⚠️ No se pudo contactar con DBHDV Cloud ({e}). Operando en modo local.")
+            print(f"  [Aviso] No se pudo contactar con DBHDV Cloud ({e}). Operando en modo local.")
     return False
 
 def share_token_to_cloud(key_name, token_val):
     """
-    Comparte un token recién calibrado con la comunidad de DBHDV si el servidor está disponible.
+    Comparte un token recien calibrado con la comunidad de DBHDV si el servidor esta disponible.
     """
-    print(f"\n¿Deseas compartir el token '{token_val}' de '{key_name}' con la comunidad de DBHDV? [s/N]: ", end="")
+    print(f"\nDeseas compartir el token '{token_val}' de '{key_name}' con la comunidad de DBHDV? [s/N]: ", end="")
     try:
         ans = input().strip().lower()
         if ans not in ("s", "si", "y", "yes"):
-            print("  ✓ Token guardado exclusivamente en modo local.")
+            print("  [OK] Token guardado exclusivamente en modo local.")
             return
         url = f"{DEFAULT_API_URL}/api/tokens"
         payload = json.dumps({
@@ -414,15 +416,15 @@ def share_token_to_cloud(key_name, token_val):
             "Content-Type": "application/json",
             "User-Agent": "DBHDV-Suite/1.0"
         })
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
             res_data = json.loads(resp.read().decode("utf-8"))
             if res_data.get("success"):
-                print("  🎉 ¡Gracias! El token ha sido registrado en DBHDV para toda la comunidad.")
+                print("  [OK] Gracias. El token ha sido registrado en DBHDV para toda la comunidad.")
             else:
-                print("  ✓ Token guardado localmente.")
+                print("  [OK] Token guardado localmente.")
     except Exception:
-        print("  ℹ️  El backend remoto en la nube aún no está desplegado en Vercel.")
-        print("  ✓ Tu token está guardado y funcionando al 100% en modo local (config/keymap.json).")
+        print("  [Info] El backend remoto en la nube no esta accesible actualmente.")
+        print("  [OK] Tu token esta guardado y funcionando al 100% en modo local (config/keymap.json).")
 
 # =============================================================================
 # MODULO 1: SNIFFER DE MERCADILLO EN VIVO
@@ -1219,9 +1221,177 @@ def run_calibrator_sales():
             print(f"\n[Aviso] Token '{tok}' descartado.")
             print("Continuando escucha de red...")
 
+
+# =============================================================================
+# MODULO 5B: CALIBRADOR DE VENTAS ACTIVAS (LISTINGS EN MERCADILLO)
+# =============================================================================
+
+def run_calibrator_active_listings():
+    """
+    Calibrador interactivo para descubrir y validar el token de listings activos
+    (pestaña 'VENTA' del mercadillo), mostrando en consola el contenido decodificado
+    de cada token candidato para confirmar visualmente antes de guardar.
+    """
+    print("\n" + "=" * 70)
+    print("  [CALIBRACIÓN] LISTINGS ACTIVOS EN VENTA (PESTAÑA 'VENTA' DEL MERCADILLO)")
+    print("=" * 70)
+    print("  Instrucciones:")
+    print("  1. Abre el juego Dofus Unity 3.6.")
+    print("  2. Acude a cualquier Mercadillo (Recursos, Equipamiento o Consumibles).")
+    print("  3. Abre el mercadillo y haz clic en la pestaña 'VENTA'.")
+    print("  4. El calibrador capturará la ráfaga TCP y probará cada token")
+    print("     mostrando en consola tus lotes en venta (objetos, precio y tiempo).")
+    print("-" * 70)
+
+    load_items_dictionary()
+    km = load_keymap()
+    known_ignored = {
+        km.get("price_list", "jzn"),
+        km.get("inventory", "isb"),
+        km.get("storage", "hlp"),
+        km.get("sales_history", "kyo"),
+    }
+    step_rejected = set()
+
+    burst_stream = bytearray()
+    burst_active = False
+    last_pkt_time = 0.0
+    packet_count = 0
+    feedback_time = 0.0
+    detected_tokens = []
+
+    def on_packet(packet):
+        nonlocal burst_stream, burst_active, last_pkt_time, packet_count, detected_tokens
+        if not packet.haslayer(TCP) or not packet.haslayer(Raw):
+            return
+        if packet[TCP].sport != 5555:
+            return
+
+        payload = bytes(packet[Raw].load)
+        if len(payload) < 8:
+            return
+
+        now = time.time()
+        tokens = extract_type_tokens(payload)
+
+        new_tokens = [tok for tok, _ in tokens if tok not in known_ignored and tok not in step_rejected]
+        if new_tokens or burst_active or len(payload) >= 150:
+            burst_active = True
+            burst_stream.extend(payload)
+            packet_count += 1
+            last_pkt_time = now
+            for tok in new_tokens:
+                if tok not in detected_tokens:
+                    detected_tokens.append(tok)
+
+    sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
+    sniffer.start()
+
+    print("\nEscuchando puerto 5555. Haz clic en la pestana 'VENTA' del mercadillo...")
+
+    try:
+        while True:
+            time.sleep(0.08)
+            now = time.time()
+
+            if burst_active:
+                if now - feedback_time > 0.2:
+                    sys.stdout.write(
+                        f"\r  [Capturando] {len(burst_stream):,} bytes en {packet_count} paquetes | "
+                        f"Tokens: {', '.join(detected_tokens) if detected_tokens else 'analizando...'}   "
+                    )
+                    sys.stdout.flush()
+                    feedback_time = now
+
+                # Fin de rafaga: 1.2s de silencio y tamano suficiente
+                if now - last_pkt_time >= 1.2 and len(burst_stream) >= 200:
+                    raw_data = bytes(burst_stream)
+                    burst_stream.clear()
+                    burst_active = False
+                    packet_count = 0
+
+                    all_tokens = extract_type_tokens(raw_data)
+                    token_counts = defaultdict(int)
+                    for tok, _ in all_tokens:
+                        token_counts[tok] += 1
+
+                    candidates = [tok for tok in token_counts.keys() if tok not in known_ignored and tok not in step_rejected]
+                    if not candidates:
+                        candidates = [tok for tok in token_counts.keys() if tok not in step_rejected]
+
+                    # Probar candidatos que decodifiquen listings validos
+                    found_any = False
+                    for cand in candidates:
+                        cand_listings = extract_active_listings(raw_data, token=cand)
+                        if not cand_listings:
+                            continue
+
+                        found_any = True
+                        total_value = sum(l["price"] for l in cand_listings)
+                        print("\n\n" + "=" * 70)
+                        print(f"  PAQUETE DE LISTINGS DETECTADO -> Token Candidato: '{cand}'")
+                        print("=" * 70)
+                        print(f"  Lotes encontrados  : {len(cand_listings)} lote(s) en venta")
+                        print(f"  Valor total en HDV : {total_value:,} K")
+                        print("-" * 70)
+                        print("  Muestra de lotes decodificados en tu mercadillo:")
+                        for i, entry in enumerate(cand_listings[:8], 1):
+                            qty = entry.get("quantity", 1)
+                            unit_str = f" ({entry.get('unitPrice', entry['price'] // qty):,} K/u)" if qty > 1 else ""
+                            print(
+                                f"    [{i}] {qty:2d}x {entry['name']} (#{entry['itemId']}) "
+                                f"-> {entry['price']:,} K{unit_str} | Expira en: {entry.get('timeLabel', 'N/D')}"
+                            )
+                        if len(cand_listings) > 8:
+                            print(f"    ... y {len(cand_listings) - 8} lotes adicionales.")
+
+                        print("-" * 70)
+                        print(f"Coinciden estos {len(cand_listings)} lotes con tus ofertas en mercadillo?")
+                        print("Opciones: [s] Confirmar y guardar  |  [n] Probar siguiente token  |  [c] Cancelar")
+                        try:
+                            ans = input("Selecciona [s / n / c]: ").strip().lower()
+                        except (KeyboardInterrupt, EOFError):
+                            ans = "c"
+
+                        if ans in ("s", "si", "y", "yes"):
+                            save_keymap_entry("active_listings", cand)
+                            print(f"\n[OK] Token de listings activos ('{cand}') guardado con exito en config/keymap.json")
+                            share_token_to_cloud("active_listings", cand)
+                            input("\nPresiona Enter para continuar...")
+                            return
+                        elif ans in ("c", "cancelar"):
+                            print("\n[Calibracion cancelada]")
+                            return
+                        else:
+                            step_rejected.add(cand)
+                            print(f"\n[Aviso] Token '{cand}' descartado.")
+
+                    if not found_any:
+                        # Rafaga no contenia listings (movimiento, chat, etc.), continua escuchando
+                        detected_tokens.clear()
+                        continue
+
+            else:
+                if now - feedback_time > 0.4:
+                    sys.stdout.write(
+                        f"\r  [Escuchando puerto 5555] Haz clic en la pestana 'VENTA' del mercadillo...   "
+                    )
+                    sys.stdout.flush()
+                    feedback_time = now
+
+    except KeyboardInterrupt:
+        print("\n\n[Calibracion cancelada por el usuario]")
+    finally:
+        if sniffer.running:
+            sniffer.stop()
+
+    input("\nPresiona Enter para volver al menu...")
+
+
 # =============================================================================
 # MODULO 6: SNIFFER DE HISTORIAL DE VENTAS (EN VIVO)
 # =============================================================================
+
 def run_sniffer_sales():
     km = load_keymap()
     sales_token = km.get("sales_history", "kyo")
@@ -1363,6 +1533,552 @@ def run_sniffer_sales():
             sniffer.stop()
 
 # =============================================================================
+# MODULO 7: SNIFFER DE LISTINGS ACTIVOS EN VENTA (PESTAÑA VENTA DEL MERCADILLO)
+# =============================================================================
+def parse_active_listing_entry(sub):
+    """
+    Parsea un submensaje de listing activo en el mercadillo (pestaña VENTA).
+    Estructura Protobuf confirmada (token 'ket'):
+      fn 1 (submessage):
+        fn 1 (varint): listingUid
+        fn 2 (varint): itemId (GID del objeto)
+        fn 3 (varint): quantity / tamaño de lote (1, 10, 100)
+      fn 2 (varint): price en kamas del lote
+      fn 3 (varint): secondsRemaining hasta la expiración
+    """
+    off = 0
+    item_id = None
+    quantity = 1
+    price = 0
+    seconds_remaining = 0
+    listing_uid = None
+
+    while off < len(sub):
+        tag, r = decode_varint(sub, off)
+        if r == 0:
+            break
+        off += r
+        fn = tag >> 3
+        wt = tag & 7
+
+        if wt == 0:
+            v, r2 = decode_varint(sub, off)
+            off += r2
+            if fn == 2 and 50 <= v <= 2_000_000_000:
+                price = v
+            elif fn == 3 and 0 <= v <= 2_592_000:
+                seconds_remaining = v
+            elif fn == 1 and 10 <= v <= 65000 and item_id is None:
+                item_id = v
+            elif fn == 4 and 0 <= v <= 2_592_000 and seconds_remaining == 0:
+                seconds_remaining = v
+        elif wt == 2:
+            l, r2 = decode_varint(sub, off)
+            if r2 == 0 or off + r2 + l > len(sub):
+                break
+            off += r2
+            inner = sub[off:off + l]
+            off += l
+            if fn == 1:
+                ioff = 0
+                while ioff < len(inner):
+                    itag, ir = decode_varint(inner, ioff)
+                    if ir == 0:
+                        break
+                    ioff += ir
+                    ifn = itag >> 3
+                    iwt = itag & 7
+                    if iwt == 0:
+                        iv, ir2 = decode_varint(inner, ioff)
+                        ioff += ir2
+                        if ifn == 1:
+                            listing_uid = iv
+                        elif ifn == 2 and 10 <= iv <= 65000:
+                            item_id = iv
+                        elif ifn == 3 and iv in (1, 10, 100, 1000):
+                            quantity = iv
+                    elif iwt == 2:
+                        il, ir2 = decode_varint(inner, ioff)
+                        if ir2 == 0 or ioff + ir2 + il > len(inner):
+                            break
+                        ioff += ir2 + il
+                    elif iwt == 1:
+                        ioff += 8
+                    elif iwt == 5:
+                        ioff += 4
+                    else:
+                        break
+        elif wt == 1:
+            off += 8
+        elif wt == 5:
+            off += 4
+        else:
+            break
+
+    if item_id and price > 0:
+        days = seconds_remaining // 86400
+        hours = (seconds_remaining % 86400) // 3600
+        qty = quantity if quantity > 0 else 1
+        unit_price = round(price / qty, 2)
+        return {
+            "uid": listing_uid,
+            "itemId": item_id,
+            "name": get_item_name(item_id),
+            "quantity": qty,
+            "price": price,
+            "unitPrice": unit_price,
+            "secondsRemaining": seconds_remaining,
+            "timeLabel": f"{days}d {hours}h" if days > 0 else f"{hours}h",
+        }
+    return None
+
+
+def extract_active_listings(buf, token=None):
+    """
+    Extrae listings activos desde el buffer TCP buscando el token activo ('ket')
+    y parseando las entradas repetidas (fn=2). También soporta escaneo recursivo.
+    """
+    listings = []
+    seen_keys = set()
+    km = load_keymap()
+    target_token = token or km.get("active_listings", "ket")
+    target_bytes = f"type.ankama.com/{target_token}".encode("ascii")
+
+    pos = buf.find(target_bytes)
+    if pos != -1:
+        off = pos + len(target_bytes)
+        tag, r = decode_varint(buf, off)
+        if tag >> 3 == 2:
+            off += r
+            length, r2 = decode_varint(buf, off)
+            off += r2
+            msg_bytes = buf[off:off + length]
+        else:
+            msg_bytes = buf[off:off + 50000]
+
+        moff = 0
+        while moff < len(msg_bytes):
+            mtag, mr = decode_varint(msg_bytes, moff)
+            if mr == 0:
+                break
+            moff += mr
+            mfn = mtag >> 3
+            mwt = mtag & 7
+            if mwt == 2:
+                ml, mr2 = decode_varint(msg_bytes, moff)
+                if mr2 == 0 or moff + mr2 + ml > len(msg_bytes):
+                    break
+                moff += mr2
+                entry_bytes = msg_bytes[moff:moff + ml]
+                moff += ml
+                if mfn == 2:
+                    parsed = parse_active_listing_entry(entry_bytes)
+                    if parsed:
+                        key = parsed.get("uid") or (parsed["itemId"], parsed["quantity"], parsed["price"], len(listings))
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            listings.append(parsed)
+            elif mwt == 0:
+                _, mr2 = decode_varint(msg_bytes, moff)
+                moff += mr2
+            elif mwt == 1:
+                moff += 8
+            elif mwt == 5:
+                moff += 4
+            else:
+                break
+
+    if listings:
+        return listings
+
+    # Escaneo recursivo de respaldo
+    def walk(b, depth=0):
+        if depth > 4 or len(b) < 6:
+            return
+        off = 0
+        while off < len(b):
+            tag, r = decode_varint(b, off)
+            if r == 0:
+                break
+            off += r
+            fn = tag >> 3
+            wt = tag & 7
+            if wt == 2:
+                length, r2 = decode_varint(b, off)
+                if r2 == 0 or off + r2 + length > len(b):
+                    break
+                off += r2
+                sub = b[off:off + length]
+                off += length
+                entry = parse_active_listing_entry(sub)
+                if entry and entry["price"] > 0:
+                    key = entry.get("uid") or (entry["itemId"], entry["quantity"], entry["price"], len(listings))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        listings.append(entry)
+                else:
+                    walk(sub, depth + 1)
+            elif wt == 0:
+                _, r2 = decode_varint(b, off)
+                off += r2
+            elif wt == 1:
+                off += 8
+            elif wt == 5:
+                off += 4
+            else:
+                break
+
+    walk(buf)
+    return listings
+
+
+# =============================================================================
+# CLASIFICACIÓN DE MERCADILLOS (RECURSOS, EQUIPAMIENTO, CONSUMIBLES)
+# =============================================================================
+
+ITEM_CATEGORIES_FILE = os.path.join(CONFIG_DIR, "item_categories.json")
+ITEM_CATEGORIES_MAP = {}
+
+def load_item_categories():
+    global ITEM_CATEGORIES_MAP
+    if ITEM_CATEGORIES_MAP:
+        return
+    if os.path.exists(ITEM_CATEGORIES_FILE):
+        try:
+            with open(ITEM_CATEGORIES_FILE, "r", encoding="utf-8") as f:
+                ITEM_CATEGORIES_MAP = json.load(f)
+        except Exception:
+            pass
+
+def classify_item(item_id, item_name="", quantity=1):
+    """
+    Clasifica un objeto en: 'recursos', 'equipamiento' o 'consumibles'.
+    Utiliza primero la base de datos de tipos oficiales y luego reglas heurísticas.
+    """
+    load_item_categories()
+    str_id = str(item_id)
+    if str_id in ITEM_CATEGORIES_MAP:
+        return ITEM_CATEGORIES_MAP[str_id]
+
+    # En Dofus el equipamiento nunca se vende en lotes > 1
+    if quantity > 1:
+        name_l = (item_name or "").lower()
+        if any(w in name_l for w in ("pergamino", "pócima", "pocion", "pan", "pescado", "carne")):
+            return "consumibles"
+        return "recursos"
+
+    name_l = (item_name or "").lower()
+    if any(w in name_l for w in ("pergamino", "pócima", "pocion", "pan", "pescado comestible", "carne comestible", "golosina", "bebida", "poción")):
+        return "consumibles"
+    if any(w in name_l for w in ("amuleto", "anillo", "bota", "sombrero", "capa", "cinturón", "cinturon", "escudo", "trofeo", "espada", "daga", "pala", "varita", "bastón", "baston", "hacha", "martillo", "arco", "lanza", "dofus", "mascota")):
+        return "equipamiento"
+
+    return "recursos"
+
+def classify_batch_market(batch):
+    """
+    Determina a qué mercadillo pertenece la ráfaga analizando los objetos decodificados.
+    Retorna: 'recursos', 'equipamiento' o 'consumibles'.
+    """
+    if not batch:
+        return "recursos"
+    votes = {"equipamiento": 0, "consumibles": 0, "recursos": 0}
+    for item in batch:
+        cat = classify_item(item.get("itemId"), item.get("name", ""), item.get("quantity", 1))
+        votes[cat] += 1
+    return max(votes, key=votes.get)
+
+
+def run_sniffer_active_listings():
+    """
+    Captura los listings activos de la pestana 'VENTA' del mercadillo.
+    Modo multi-mercadillo inteligente:
+    - Mantiene separados los 3 mercadillos: 'recursos', 'equipamiento', 'consumibles'.
+    - Al abrir un mercadillo, actualiza unicamente los lotes vigentes de esa categoria.
+    - Si se produce una venta y se vuelve a abrir el mismo mercadillo, la lista se sincroniza.
+    - Exporta un JSON estructurado con categorias individuales y lista consolidada.
+    """
+    print("\n" + "=" * 70)
+    print("  [SNIFFER] LISTINGS ACTIVOS POR MERCADILLO (RECURSOS, EQUIPOS, CONSUMIBLES)")
+    print("=" * 70)
+    print("  Instrucciones:")
+    print("  1. Abre el Mercadillo que desees en Dofus Unity (Recursos, Equipos o Consumibles).")
+    print("  2. Haz clic en la pestana 'VENTA' para que el servidor envie los lotes activos.")
+    print("  3. El sniffer identificara el tipo de mercadillo y actualizara sus lotes.")
+    print("  4. Puedes visitar los otros mercadillos en la misma sesion sin perder datos.")
+    print("  5. Presiona CTRL+C para finalizar la captura cuando hayas terminado.")
+    print("-" * 70)
+
+    load_items_dictionary()
+    load_item_categories()
+
+    mercadillos = {
+        "recursos": [],
+        "equipamiento": [],
+        "consumibles": []
+    }
+
+    # Cargar estado previo persistente
+    if os.path.exists(ACTIVE_LISTINGS_OUTPUT):
+        try:
+            with open(ACTIVE_LISTINGS_OUTPUT, "r", encoding="utf-8") as f:
+                prev_data = json.load(f)
+                if isinstance(prev_data, dict):
+                    if "mercadillos" in prev_data and isinstance(prev_data["mercadillos"], dict):
+                        for m_key in ("recursos", "equipamiento", "consumibles"):
+                            m_sec = prev_data["mercadillos"].get(m_key, {})
+                            if isinstance(m_sec, dict) and "listings" in m_sec:
+                                mercadillos[m_key] = m_sec["listings"]
+                            elif isinstance(m_sec, list):
+                                mercadillos[m_key] = m_sec
+                    elif "listings" in prev_data and isinstance(prev_data["listings"], list):
+                        # Migracion desde formato plano previo
+                        for l in prev_data["listings"]:
+                            cat = l.get("market") or classify_item(l.get("itemId"), l.get("name", ""), l.get("quantity", 1))
+                            if cat in mercadillos:
+                                mercadillos[cat].append(l)
+        except Exception:
+            pass
+
+    total_prev = sum(len(v) for v in mercadillos.values())
+    if total_prev > 0:
+        print("  [Memoria de Mercadillos cargada]:")
+        print(f"    • Recursos     : {len(mercadillos['recursos'])} lotes")
+        print(f"    • Equipamiento : {len(mercadillos['equipamiento'])} lotes")
+        print(f"    • Consumibles  : {len(mercadillos['consumibles'])} lotes")
+        print(f"    Total consolidado : {total_prev} lotes activos")
+        print("  Opciones: [Enter] Mantener y sincronizar por mercadillo  |  [r] Reiniciar desde cero")
+        try:
+            init_choice = input("  Selecciona [Enter / r]: ").strip().lower()
+            if init_choice in ("r", "reset", "reiniciar"):
+                for k in mercadillos:
+                    mercadillos[k] = []
+                print("  [Reinicio] Memoria limpiada. Capturando desde cero...")
+            else:
+                print("  [Modo sincronizacion activo] Cada mercadillo se actualizara independientemente.")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[Operacion cancelada]")
+            return
+
+    burst_stream = bytearray()
+    burst_active = False
+    last_pkt_time = 0.0
+    packet_count = 0
+    feedback_time = 0.0
+
+    km = load_keymap()
+    target_token = km.get("active_listings", "ket")
+    target_bytes = f"type.ankama.com/{target_token}".encode("ascii")
+
+    def on_packet(packet):
+        nonlocal burst_stream, burst_active, last_pkt_time, packet_count
+        if not packet.haslayer(TCP) or not packet.haslayer(Raw):
+            return
+        if packet[TCP].sport != 5555:
+            return
+
+        payload = bytes(packet[Raw].load)
+        if len(payload) < 8:
+            return
+
+        now = time.time()
+
+        # Deteccion de rafaga: presencia de token ket, submensaje de items o paquete grande de Dofus
+        has_token = target_bytes in payload or b"type.ankama.com/ket" in payload
+        if has_token or burst_active:
+            burst_active = True
+            burst_stream.extend(payload)
+            packet_count += 1
+            last_pkt_time = now
+        elif len(payload) >= 150:
+            # Paquete de datos del servidor mientras esperamos apertura de mercadillo
+            burst_active = True
+            burst_stream.extend(payload)
+            packet_count += 1
+            last_pkt_time = now
+
+    sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
+    sniffer.start()
+
+    print("\nEscuchando puerto 5555. Abre la pestana 'VENTA' de cualquier mercadillo...")
+    print("Presiona CTRL+C en cualquier momento para finalizar y guardar.\n")
+
+    try:
+        while True:
+            time.sleep(0.08)
+            now = time.time()
+
+            if burst_active:
+                if now - feedback_time > 0.15:
+                    sys.stdout.write(
+                        f"\r  [Acumulando Rafaga] {len(burst_stream):,} bytes en {packet_count} paquetes TCP...   "
+                    )
+                    sys.stdout.flush()
+                    feedback_time = now
+
+                # Fin de rafaga: 1.2s de silencio y buffer suficiente
+                if now - last_pkt_time >= 1.2 and len(burst_stream) >= 200:
+                    raw_data = bytes(burst_stream)
+                    burst_stream.clear()
+                    burst_active = False
+                    packet_count = 0
+
+                    new_listings = extract_active_listings(raw_data)
+
+                    if not new_listings:
+                        # No eran listings de mercadillo (trafico no relacionado de Dofus)
+                        continue
+
+                    # Identificar categoria de mercadillo
+                    market_key = classify_batch_market(new_listings)
+                    market_names = {
+                        "recursos": "MERCADILLO DE RECURSOS",
+                        "equipamiento": "MERCADILLO DE EQUIPAMIENTO",
+                        "consumibles": "MERCADILLO DE CONSUMIBLES"
+                    }
+                    market_display = market_names.get(market_key, market_key.upper())
+
+                    now_ts = int(time.time())
+                    for entry in new_listings:
+                        secs = entry.get("secondsRemaining", 0)
+                        if secs > 0:
+                            expiry_ts = now_ts + secs
+                            expiry_dt = datetime.datetime.fromtimestamp(expiry_ts)
+                            entry["expiresAt"] = expiry_dt.strftime("%Y-%m-%d %H:%M:%S")
+                            days = secs // 86400
+                            hours = (secs % 86400) // 3600
+                            entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
+                        else:
+                            entry["expiresAt"] = None
+                            entry["timeLabel"] = "Desconocido"
+                        entry["market"] = market_key
+
+                    # Actualizacion atomica del mercadillo correspondiente
+                    mercadillos[market_key] = new_listings
+
+                    # Consolidar todos los lotes
+                    all_listings = (
+                        mercadillos["recursos"] +
+                        mercadillos["equipamiento"] +
+                        mercadillos["consumibles"]
+                    )
+                    total_lots = len(all_listings)
+                    total_value = sum(e["price"] for e in all_listings)
+
+                    batch_value = sum(e["price"] for e in new_listings)
+
+                    print("\n" + "=" * 70)
+                    print(f"  [ACTUALIZACION: {market_display}]")
+                    print("=" * 70)
+                    print(f"  Lotes vigentes en este mercadillo : {len(new_listings)} ({batch_value:,} K)")
+                    print("-" * 70)
+                    print("  Estado consolidado por mercadillo:")
+                    for mk, label in [("recursos", "Recursos"), ("equipamiento", "Equipamiento"), ("consumibles", "Consumibles")]:
+                        m_cnt = len(mercadillos[mk])
+                        m_val = sum(e["price"] for e in mercadillos[mk])
+                        marker = "  <-- Actualizado ahora" if mk == market_key else ""
+                        print(f"    * {label:12s} : {m_cnt:2d} lotes | {m_val:11,d} K{marker}")
+                    print("-" * 70)
+                    print(f"  Total activo en venta : {total_lots} lotes | {total_value:,} K")
+                    print("-" * 70)
+                    print("  Muestra de lotes de este mercadillo:")
+                    for entry in new_listings[:5]:
+                        qty = entry.get("quantity", 1)
+                        unit_str = f" ({entry.get('unitPrice', entry['price'] // qty):,} K/u)" if qty > 1 else ""
+                        print(
+                            f"    - {qty}x {entry['name']} (#{entry['itemId']}) "
+                            f"-> {entry['price']:,} K{unit_str} | Expira en: {entry['timeLabel']}"
+                        )
+                    if len(new_listings) > 5:
+                        print(f"    ... y {len(new_listings) - 5} lotes mas")
+
+                    # Estructura JSON completa con separacion de mercadillos y compatibilidad retroactiva
+                    out_data = {
+                        "metadata": {
+                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "totalLots": total_lots,
+                            "totalValue": total_value,
+                            "counts": {
+                                "recursos": len(mercadillos["recursos"]),
+                                "equipamiento": len(mercadillos["equipamiento"]),
+                                "consumibles": len(mercadillos["consumibles"])
+                            }
+                        },
+                        "mercadillos": {
+                            "recursos": {
+                                "totalLots": len(mercadillos["recursos"]),
+                                "totalValue": sum(e["price"] for e in mercadillos["recursos"]),
+                                "lastUpdated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if market_key == "recursos" else None,
+                                "listings": mercadillos["recursos"]
+                            },
+                            "equipamiento": {
+                                "totalLots": len(mercadillos["equipamiento"]),
+                                "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]),
+                                "lastUpdated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if market_key == "equipamiento" else None,
+                                "listings": mercadillos["equipamiento"]
+                            },
+                            "consumibles": {
+                                "totalLots": len(mercadillos["consumibles"]),
+                                "totalValue": sum(e["price"] for e in mercadillos["consumibles"]),
+                                "lastUpdated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if market_key == "consumibles" else None,
+                                "listings": mercadillos["consumibles"]
+                            }
+                        },
+                        "listings": all_listings
+                    }
+
+                    try:
+                        with open(ACTIVE_LISTINGS_OUTPUT, "w", encoding="utf-8") as f:
+                            json.dump(out_data, f, indent=2, ensure_ascii=False)
+                        print(f"\n  [Guardado OK] {total_lots} lotes consolidados en:")
+                        print(f"  sniffer/data/listings_en_venta_capturado.json")
+                    except Exception as e:
+                        print(f"  [Error guardando]: {e}")
+
+                    print("\n  -> Puedes abrir otro mercadillo (o el mismo tras una venta) para actualizar.")
+                    print("  -> Presiona CTRL+C para finalizar la sesion y volver al menu principal.\n")
+
+            else:
+                if now - feedback_time > 0.3:
+                    rec_c = len(mercadillos["recursos"])
+                    eq_c = len(mercadillos["equipamiento"])
+                    con_c = len(mercadillos["consumibles"])
+                    sys.stdout.write(
+                        f"\r  [Escuchando puerto 5555] R:{rec_c} | E:{eq_c} | C:{con_c} | "
+                        f"Abre la pestana 'VENTA' de cualquier mercadillo en Dofus...   "
+                    )
+                    sys.stdout.flush()
+                    feedback_time = now
+
+    except KeyboardInterrupt:
+        print("\n\n[Finalizando captura de listings activos]")
+        all_listings = (
+            mercadillos["recursos"] +
+            mercadillos["equipamiento"] +
+            mercadillos["consumibles"]
+        )
+        total_lots = len(all_listings)
+        total_value = sum(e["price"] for e in all_listings)
+        print("=" * 70)
+        print(f"  RESUMEN FINAL DE LISTINGS ACTIVOS: {total_lots} lotes")
+        print("=" * 70)
+        print(f"    • Recursos     : {len(mercadillos['recursos']):2d} lotes")
+        print(f"    • Equipamiento : {len(mercadillos['equipamiento']):2d} lotes")
+        print(f"    • Consumibles  : {len(mercadillos['consumibles']):2d} lotes")
+        print("-" * 70)
+        print(f"  Total lotes guardados : {total_lots}")
+        print(f"  Valor total en venta  : {total_value:,} K")
+        print(f"  Archivo guardado      : sniffer/data/listings_en_venta_capturado.json")
+        print("=" * 70)
+        print("  Importa este archivo en DBHDV > Mi Mercadillo para ver tu inventario activo.")
+    finally:
+        if sniffer.running:
+            sniffer.stop()
+
+    input("\nPresiona Enter para continuar...")
+
+
+# =============================================================================
 # MENÚ PRINCIPAL
 # =============================================================================
 def print_menu():
@@ -1373,33 +2089,35 @@ def print_menu():
     print("  Tokens Activos en config/keymap.json:")
     print(f"    • Mercadillo (price_list)    : '{km.get('price_list', 'No calibrado')}'")
     print(f"    • Inventario (inventory)     : '{km.get('inventory', 'No calibrado')}'")
-    print(f"    • Almacén (storage)          : '{km.get('storage', 'No calibrado')}'")
-    print(f"    • Historial (sales_history)  : '{km.get('sales_history', 'No calibrado')}'")
-    print(f"    • Última calibración         : {km.get('last_calibrated', 'Nunca')}")
+    print("    • Almacén (storage)          : '" + str(km.get('storage', 'No calibrado')) + "'")
+    print("    • Historial (sales_history)  : '" + str(km.get('sales_history', 'No calibrado')) + "'")
+    print("    • En Venta (active_listings) : '" + str(km.get('active_listings', 'No calibrado')) + "'")
+    print("    • Última calibración         : " + str(km.get('last_calibrated', 'Nunca')))
     print("-" * 70)
     print("  [MODO CAPTURA Y GESTIÓN EN VIVO]")
     print("    [1] Sniffer Mercadillo (Precios HDV en Vivo)")
     print("    [2] Sniffer Almacén Unificado (Inventario + Banco + Merkasako)")
-    print("    [3] Abrir Visor Visual de Almacén (visor_almacen.html)")
-    print("    [4] Sniffer Historial de Ventas (Capturar 900+ registros y abrir Visor)")
-    print("    [5] Abrir Visor Visual de Historial (visor_historial.html)")
+    print("    [3] Sniffer Historial de Ventas (Transacciones y Caducidades)")
+    print("    [4] Sniffer Listings ACTIVOS en Venta (Lotes puestos en HDV)")
+    print("    [5] Abrir Visor Visual de Almacén (visor_almacen.html)")
+    print("    [6] Abrir Visor Visual de Historial (visor_historial.html)")
     print("\n  [MODO CALIBRACIÓN Y DIAGNÓSTICO]")
-    print("    [6] Calibrar Token de Mercadillo (Precios)")
-    print("    [7] Calibrar Token de Almacén (Inventario/Banco)")
-    print("    [8] Calibrar Token de Historial de Ventas")
-    print("    [9] ☁️ Sincronizar Tokens desde DBHDV Cloud (Auto-actualización)")
-    print("    [10] Ver Registro de Diagnóstico y Telemetría")
+    print("    [7] Calibrar Token de Mercadillo (price_list)")
+    print("    [8] Calibrar Token de Almacén (inventory / storage)")
+    print("    [9] Calibrar Token de Historial de Ventas (sales_history)")
+    print("    [10] Calibrar Token de Listings ACTIVOS en Venta (active_listings)")
+    print("    [11] Sincronizar Tokens desde DBHDV Cloud")
+    print("    [12] Ver Registro de Diagnóstico y Telemetría")
     print("\n    [0] Salir")
     print("=" * 70)
 
 def main():
-    # Intento silencioso de sincronizar tokens al iniciar para que el usuario siempre tenga lo último
     sync_tokens_from_cloud(silent=True)
 
     while True:
         print_menu()
         try:
-            choice = input("Selecciona una opción [0-10]: ").strip()
+            choice = input("Selecciona una opción [0-12]: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\n¡Hasta pronto!")
             break
@@ -1409,20 +2127,24 @@ def main():
         elif choice == "2":
             run_sniffer_storage()
         elif choice == "3":
-            open_storage_viewer()
-        elif choice == "4":
             run_sniffer_sales()
+        elif choice == "4":
+            run_sniffer_active_listings()
         elif choice == "5":
-            open_sales_viewer()
+            open_storage_viewer()
         elif choice == "6":
-            run_calibrator_market()
+            open_sales_viewer()
         elif choice == "7":
-            run_sniffer_storage()  # Calibra y acumula el almacén
+            run_calibrator_market()
         elif choice == "8":
-            run_calibrator_sales()
+            run_sniffer_storage()
         elif choice == "9":
+            run_calibrator_sales()
+        elif choice == "10":
+            run_calibrator_active_listings()
+        elif choice == "11":
             sync_tokens_from_cloud(silent=False)
-        elif choice in ("10", "d", "diag"):
+        elif choice in ("12", "d", "diag"):
             print("\n" + "=" * 70)
             print("  ÚLTIMOS REGISTROS DE DIAGNÓSTICO (logs/calibracion_diagnostico.log)")
             print("=" * 70)
@@ -1441,7 +2163,7 @@ def main():
             print("\nSaliendo de DBHDV Suite. ¡Buen juego!")
             break
         else:
-            print("\n[Opción no válida. Ingresa un número del 0 al 10]")
+            print("\n[Opción no válida. Ingresa un número del 0 al 12]")
 
 if __name__ == "__main__":
     main()

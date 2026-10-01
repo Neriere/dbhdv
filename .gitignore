@@ -46,16 +46,20 @@ calibracion_*
 cotizaciones_*
 sniffer.log
 
-# Private Storage Captures & User Data (Never commit user items/banks/dumps)
+# Private Storage Captures, Packet Dumps & User Data (Never commit user items/banks/dumps)
 *capturado*.json
 *banco_inventario*.json
 banco_inventario_capturado.json
 almacen_filtrado*.json
 historial_ventas_*
+listings_en_venta_*
 sniffer/data/*
 !sniffer/data/.gitkeep
 sniffer/viewer/*.html
 *.bin
+*.pcap
+*.pcapng
+*.cap
 
 # Cloud & Tooling artifacts
 .vercel/
@@ -66,3 +70,5 @@ offline_tokens.json
 # Temporary scripts & external folders
 scripts/capture_sales_dump.py
 SniffSniffSquared-main/
+*.tmp
+

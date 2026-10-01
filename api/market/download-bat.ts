@@ -19,6 +19,7 @@ cd /d "%~dp0"
 
 :: Forzar salida inmediata en tiempo real sin almacenamiento en búfer
 set PYTHONUNBUFFERED=1
+set DBHDV_API_URL=${baseUrl}
 
 :: Verificar permisos de Administrador
 net session >nul 2>&1
@@ -33,10 +34,11 @@ if %errorlevel% neq 0 (
 echo ===================================================================
 echo       DOFUS UNITY 3.6 - DBHDV SUITE UNIFICADA
 echo       Servidor: ${server}
+echo       Backend : ${baseUrl}
 echo ===================================================================
 echo.
 
-echo [1/2] Descargando / Actualizando dofus_suite.py...
+echo [1/3] Descargando / Actualizando dofus_suite.py...
 where curl >nul 2>&1
 if %errorlevel% equ 0 (
     curl -fsSL "${suiteScriptUrl}" -o "dofus_suite.py"
@@ -48,7 +50,7 @@ if not exist "dofus_suite.py" (
     goto :error
 )
 
-echo [2/2] Verificando base de datos de items...
+echo [2/3] Verificando base de datos de items...
 if not exist "items_db.json" (
     where curl >nul 2>&1
     if %errorlevel% equ 0 (
@@ -58,26 +60,62 @@ if not exist "items_db.json" (
     )
 )
 
-echo.
-echo ===================================================================
-echo  Iniciando DBHDV Suite...
-echo ===================================================================
+echo [3/3] Verificando dependencias requeridas (Scapy)...
 where py >nul 2>&1
 if %errorlevel% equ 0 (
-    py -3 dofus_suite.py
-    goto :fin
+    py -3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        py -3 -m pip install --quiet scapy
+    )
+    goto :run_py
 )
+
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python dofus_suite.py
-    goto :fin
+    python -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python -m pip install --quiet scapy
+    )
+    goto :run_python
 )
+
 where python3 >nul 2>&1
 if %errorlevel% equ 0 (
-    python3 dofus_suite.py
-    goto :fin
+    python3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python3 -m pip install --quiet scapy
+    )
+    goto :run_python3
 )
+
 goto :no_python
+
+:run_py
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+py -3 dofus_suite.py
+goto :fin
+
+:run_python
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python dofus_suite.py
+goto :fin
+
+:run_python3
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python3 dofus_suite.py
+goto :fin
 
 :no_python
 echo.

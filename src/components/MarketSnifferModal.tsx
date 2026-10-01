@@ -55,10 +55,28 @@ export const MarketSnifferModal: React.FC<MarketSnifferModalProps> = ({
   const [copiedBat, setCopiedBat] = useState(false);
   const [activeTab, setActiveTab] = useState<'instructions' | 'bat' | 'script'>('instructions');
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
+  const [communityTokens, setCommunityTokens] = useState<Record<string, string> | null>(null);
+  const [tokensLastCalibrated, setTokensLastCalibrated] = useState<string | null>(null);
+  const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       void triggerLivePriceSync(true);
+      setIsLoadingTokens(true);
+      fetch('/api/tokens')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.success && data.tokens) {
+            setCommunityTokens(data.tokens);
+            setTokensLastCalibrated(data.last_calibrated || null);
+          }
+        })
+        .catch((err) => {
+          console.warn('[MarketSnifferModal] Error consultando tokens comunitarios:', err);
+        })
+        .finally(() => {
+          setIsLoadingTokens(false);
+        });
     }
   }, [isOpen]);
 
@@ -747,45 +765,48 @@ if __name__ == "__main__":
         input("\\nPresiona Enter para cerrar...")
 `;
 
-  const snifferScriptUrl = `${currentOrigin}/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}`;
-  const calibratorScriptUrl = `${currentOrigin}/api/market/calibrator-script`;
+  const suiteScriptUrl = `${currentOrigin}/api/market/suite-script`;
   const itemsDbDownloadUrl = `${currentOrigin}/api/market/download-items-db`;
 
   const batContent = `@echo off
 chcp 65001 >nul
-title Dofus Unity - Sincronizador y Calibrador de Mercadillo (${activeServerTarget})
+title Dofus Unity 3.6 - DBHDV Suite Unificada (${activeServerTarget})
 cd /d "%~dp0"
 
 :: Forzar salida inmediata en tiempo real sin almacenamiento en búfer
 set PYTHONUNBUFFERED=1
+set DBHDV_API_URL=${currentOrigin}
+
+:: Verificar permisos de Administrador
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ===============================================================================
+    echo   Solicitando permisos de Administrador para captura de red (Npcap/Scapy)...
+    echo ===============================================================================
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
 
 echo ===================================================================
-echo       DOFUS UNITY - SINCRONIZADOR DE MERCADILLO
+echo       DOFUS UNITY 3.6 - DBHDV SUITE UNIFICADA
 echo       Servidor: ${activeServerTarget}
+echo       Backend : ${currentOrigin}
 echo ===================================================================
 echo.
 
-echo [1/3] Descargando dofus_sniffer.py...
+echo [1/3] Descargando / Actualizando dofus_suite.py...
 where curl >nul 2>&1
 if %errorlevel% equ 0 (
-    curl -fsSL "${snifferScriptUrl}" -o "dofus_sniffer.py"
+    curl -fsSL "${suiteScriptUrl}" -o "dofus_suite.py"
 ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${snifferScriptUrl}' -OutFile 'dofus_sniffer.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${suiteScriptUrl}' -OutFile 'dofus_suite.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
 )
-if not exist "dofus_sniffer.py" (
-    echo [Error] No se pudo descargar dofus_sniffer.py.
+if not exist "dofus_suite.py" (
+    echo [Error] No se pudo descargar dofus_suite.py. Verifica tu conexion a internet.
     goto :error
 )
 
-echo [2/3] Descargando calibrar_token.py...
-where curl >nul 2>&1
-if %errorlevel% equ 0 (
-    curl -fsSL "${calibratorScriptUrl}" -o "calibrar_token.py"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${calibratorScriptUrl}' -OutFile 'calibrar_token.py' -UseBasicParsing } catch { }"
-)
-
-echo [3/3] Verificando items_db.json...
+echo [2/3] Verificando base de datos de items...
 if not exist "items_db.json" (
     where curl >nul 2>&1
     if %errorlevel% equ 0 (
@@ -795,64 +816,62 @@ if not exist "items_db.json" (
     )
 )
 
-echo.
-echo ===================================================================
-echo  Selecciona una opcion:
-echo ===================================================================
-echo  [1] Iniciar Sniffer de Mercadillo
-echo  [2] Calibrar Token
-echo  [3] Salir
-echo ===================================================================
-set /p opt="Opcion [1-3] (Presiona ENTER para Iniciar Sniffer): "
-if "%opt%"=="" set opt=1
-if "%opt%"=="1" goto :run_sniffer
-if "%opt%"=="2" goto :run_calibrator
-if "%opt%"=="3" goto :fin
-goto :run_sniffer
-
-:run_sniffer
-echo.
-echo ===================================================================
-echo  Iniciando Sniffer de Mercadillo...
-echo ===================================================================
+echo [3/3] Verificando dependencias requeridas (Scapy)...
 where py >nul 2>&1
 if %errorlevel% equ 0 (
-    py -3 -u dofus_sniffer.py --server "${activeServerTarget}"
-    goto :fin
+    py -3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        py -3 -m pip install --quiet scapy
+    )
+    goto :run_py
 )
+
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python -u dofus_sniffer.py --server "${activeServerTarget}"
-    goto :fin
+    python -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python -m pip install --quiet scapy
+    )
+    goto :run_python
 )
+
 where python3 >nul 2>&1
 if %errorlevel% equ 0 (
-    python3 -u dofus_sniffer.py --server "${activeServerTarget}"
-    goto :fin
+    python3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python3 -m pip install --quiet scapy
+    )
+    goto :run_python3
 )
+
 goto :no_python
 
-:run_calibrator
+:run_py
 echo.
 echo ===================================================================
-echo  Iniciando Calibrador de Token...
+echo  Iniciando DBHDV Suite Unificada...
 echo ===================================================================
-where py >nul 2>&1
-if %errorlevel% equ 0 (
-    py -3 -u calibrar_token.py
-    goto :fin
-)
-where python >nul 2>&1
-if %errorlevel% equ 0 (
-    python -u calibrar_token.py
-    goto :fin
-)
-where python3 >nul 2>&1
-if %errorlevel% equ 0 (
-    python3 -u calibrar_token.py
-    goto :fin
-)
-goto :no_python
+py -3 dofus_suite.py
+goto :fin
+
+:run_python
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python dofus_suite.py
+goto :fin
+
+:run_python3
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python3 dofus_suite.py
+goto :fin
 
 :no_python
 echo.
@@ -887,7 +906,7 @@ pause
 
   const handleCopyScript = async () => {
     try {
-      const resp = await fetch(`/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}`);
+      const resp = await fetch(`/api/market/suite-script`);
       if (resp.ok) {
         const text = await resp.text();
         navigator.clipboard.writeText(text);
@@ -912,14 +931,14 @@ pause
 
   const handleDownloadScript = async () => {
     try {
-      const resp = await fetch(`/api/market/sniffer-script?server=${encodeURIComponent(activeServerTarget)}`);
+      const resp = await fetch(`/api/market/suite-script`);
       if (resp.ok) {
         const text = await resp.text();
         const blob = new Blob([text], { type: 'text/x-python;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `dofus_sniffer_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.py`;
+        a.download = `dofus_suite.py`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -933,7 +952,7 @@ pause
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dofus_sniffer_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.py`;
+    a.download = `dofus_suite.py`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -985,7 +1004,7 @@ pause
 
   const handleDownloadBat = async () => {
     try {
-      const filename = `sincronizar_mercadillo_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.bat`;
+      const filename = `dbhdv_suite_${activeServerTarget.toLowerCase().replace(/[^a-z0-9]/g, '_')}.bat`;
       let content = batContent;
       try {
         const resp = await fetch(`/api/market/download-bat?server=${encodeURIComponent(activeServerTarget)}`);
@@ -1007,7 +1026,7 @@ pause
       URL.revokeObjectURL(url);
 
       setDownloadSuccessToast(
-        `Descarga completada: ${filename} (incluye Sniffer + Calibrador).`
+        `Descarga completada: ${filename} (DBHDV Suite Unificada 3.6).`
       );
       setTimeout(() => setDownloadSuccessToast(null), 5000);
     } catch (e) {
@@ -1027,13 +1046,13 @@ pause
             </div>
             <div>
               <h3 className="text-lg font-black text-white flex items-center gap-2">
-                Sincronización Automática de Mercadillo (Sniffer)
+                DBHDV Suite Unificada 3.6 (Sniffer y Calibrador)
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-wider">
-                  Sincronización en Tiempo Real
+                  En Vivo y Privado
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Envía precios automáticamente a tu base de datos mientras recorres el juego.
+                Captura cotizaciones HDV en vivo, almacén unificado, historial de ventas y listings activos.
               </p>
             </div>
           </div>
@@ -1225,31 +1244,71 @@ pause
                 </div>
               </div>
 
+              {/* Community Verified Tokens Banner */}
+              <div className="bg-slate-950 border border-emerald-500/20 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Tokens Comunitarios Activos (DBHDV Cloud)
+                    </span>
+                    {isLoadingTokens && (
+                      <span className="text-[10px] text-slate-400 font-mono animate-pulse">
+                        (Consultando nube...)
+                      </span>
+                    )}
+                  </div>
+                  {tokensLastCalibrated && (
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Última calibración: <strong className="text-slate-200">{tokensLastCalibrated}</strong>
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Mercadillo</span>
+                    <span className="font-mono font-bold text-amber-400 text-sm">{communityTokens?.price_list ? `'${communityTokens.price_list}'` : "'jzn'"}</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">En Venta (Listings)</span>
+                    <span className="font-mono font-bold text-emerald-400 text-sm">{communityTokens?.active_listings ? `'${communityTokens.active_listings}'` : "'ket'"}</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Inventario</span>
+                    <span className="font-mono font-bold text-cyan-400 text-sm">{communityTokens?.inventory ? `'${communityTokens.inventory}'` : "'isb'"}</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Almacén (Banco)</span>
+                    <span className="font-mono font-bold text-indigo-400 text-sm">{communityTokens?.storage ? `'${communityTokens.storage}'` : "'hlp'"}</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5">
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Historial Ventas</span>
+                    <span className="font-mono font-bold text-purple-400 text-sm">{communityTokens?.sales_history ? `'${communityTokens.sales_history}'` : "'kyo'"}</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Al iniciar el script .bat, se sincronizarán automáticamente estos tokens comunitarios en tu keymap local para que no requieras calibrar manualmente tras cada parche.
+                </p>
+              </div>
+
               {/* Step by step download card */}
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h4 className="font-bold text-white text-xs uppercase tracking-wider">
-                    Descargar para servidor: <span className="text-amber-400">{activeServerTarget}</span>
+                    Descargar Suite para servidor: <span className="text-amber-400">{activeServerTarget}</span>
                   </h4>
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={handleDownloadScript}
-                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer transition-colors shadow-md shadow-amber-500/20"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-amber-500/20"
                     >
-                      <Download className="w-3.5 h-3.5" /> dofus_sniffer.py
-                    </button>
-                    <button
-                      onClick={handleDownloadCalibrator}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-indigo-500/40 shadow-sm"
-                      title="Descargar script de calibración rápida de token"
-                    >
-                      <Download className="w-3.5 h-3.5" /> calibrar_token.py
+                      <Download className="w-3.5 h-3.5" /> dofus_suite.py
                     </button>
                     <button
                       onClick={handleDownloadBat}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-slate-700"
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-lg shadow-amber-500/20"
                     >
-                      <Download className="w-3.5 h-3.5" /> Descargar .bat (Todo en Uno)
+                      <Download className="w-4 h-4" /> Descargar .BAT (Suite Unificada 3.6)
                     </button>
                   </div>
                 </div>
@@ -1257,21 +1316,22 @@ pause
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                   <div className="bg-slate-900/90 border border-amber-500/20 rounded-xl p-3 space-y-2">
                     <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
-                      Opción 1: Lanzador .BAT Todo en Uno (Recomendado)
+                      Suite Unificada Todo en Uno (12 Opciones)
                     </span>
-                    <ol className="list-decimal list-inside space-y-1 text-xs text-slate-300">
-                      <li>Descarga el archivo <strong>.bat</strong> y haz doble clic.</li>
-                      <li>Descarga automáticamente <strong>dofus_sniffer.py</strong> y <strong>calibrar_token.py</strong>.</li>
-                      <li>Te muestra un menú: presiona <strong>1</strong> para sincronizar o <strong>2</strong> para calibrar el token si Ankama actualizó el juego el martes.</li>
-                    </ol>
+                    <ul className="space-y-1 text-xs text-slate-300">
+                      <li>• <strong>[1-4] Sniffers en Vivo:</strong> Mercadillo HDV, Almacén Unificado, Historial de Ventas y Listings Activos.</li>
+                      <li>• <strong>[5-6] Visores Web Locales:</strong> Visualización offline de tu inventario y tus ventas.</li>
+                      <li>• <strong>[7-10] Calibradores Automáticos:</strong> Auto-detección interactiva de tokens con 1 solo clic en el juego.</li>
+                      <li>• <strong>[11] Sincronización Cloud:</strong> Descarga y subida de tokens verificados con la comunidad de DBHDV.</li>
+                    </ul>
                   </div>
 
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2">
                     <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                      ¿Qué pasa cuando Ankama rota tokens (Mantenimiento semanal)?
+                      ¿Cómo funciona tras cada mantenimiento semanal?
                     </span>
                     <p className="text-xs text-slate-400">
-                      El sniffer usa <strong className="text-white">keymap.json</strong> local. Si Ankama cambia el token de red, ejecuta la opción <strong>[2] Calibrar Token</strong> en el .bat o abre <strong className="text-white">calibrar_token.py</strong>. Haz clic en un recurso en el juego y se guardará el nuevo token automáticamente sin reinstalar nada.
+                      La suite intenta primero descargar los tokens actualizados desde DBHDV Cloud. Si eres el primer usuario en conectarte tras un parche de Ankama, puedes calibrar el token con la opción <strong>[10]</strong> (o <strong>[7-9]</strong>) en el menú del .bat y compartirlo con la comunidad para que los demás lo reciban al instante.
                     </p>
                   </div>
                 </div>
@@ -1319,10 +1379,10 @@ pause
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h4 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-emerald-400" /> Código Fuente Python (dofus_sniffer.py) &mdash; {activeServerTarget}
+                    <Terminal className="w-4 h-4 text-emerald-400" /> Código Fuente Python (dofus_suite.py) &mdash; {activeServerTarget}
                   </h4>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Motor principal de captura en vivo, decodificación y envío HTTP asíncrono a la base de datos.
+                    Suite Unificada de captura en vivo, visor visual offline de almacén e historial, y calibrador interactivo.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1338,7 +1398,7 @@ pause
                     className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-emerald-600/20"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    Descargar .py
+                    Descargar dofus_suite.py
                   </button>
                 </div>
               </div>

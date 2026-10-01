@@ -1469,6 +1469,21 @@ sniff(filter="tcp port 5555", prn=process_pkt, store=False)
   res.send(calibratorContent);
 });
 
+app.get("/api/market/suite-script", (req, res) => {
+  return suiteScriptHandler(req, res);
+});
+
+app.all("/api/tokens", (req, res) => {
+  return tokensHandler(req, res);
+});
+
+app.get("/api/market/download-py", (req, res) => {
+  const server = (req.query.server as string) || "Draconiros";
+  res.redirect(
+    `/api/market/suite-script`,
+  );
+});
+
 app.get("/api/market/download-bat", (req, res) => {
   const proto =
     (req.headers["x-forwarded-proto"] as string) ||
@@ -1480,112 +1495,113 @@ app.get("/api/market/download-bat", (req, res) => {
   const baseUrl = `${proto}://${host}`;
   const server = (req.query.server as string) || "Draconiros";
 
-  const snifferScriptUrl = `${baseUrl}/api/market/sniffer-script?server=${encodeURIComponent(server)}`;
-  const calibratorScriptUrl = `${baseUrl}/api/market/calibrator-script`;
+  const suiteScriptUrl = `${baseUrl}/api/market/suite-script`;
   const itemsDbDownloadUrl = `${baseUrl}/api/market/download-items-db`;
 
   const batContent = `@echo off
 chcp 65001 >nul
-title Dofus Unity - Sincronizador y Calibrador de Mercadillo (${server})
+title Dofus Unity 3.6 - DBHDV Suite Unificada (${server})
 cd /d "%~dp0"
 
 :: Forzar salida inmediata en tiempo real sin almacenamiento en búfer
 set PYTHONUNBUFFERED=1
+set DBHDV_API_URL=${baseUrl}
+
+:: Verificar permisos de Administrador
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ===============================================================================
+    echo   Solicitando permisos de Administrador para captura de red (Npcap/Scapy)...
+    echo ===============================================================================
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
 
 echo ===================================================================
-echo       DOFUS UNITY - SINCRONIZADOR DE MERCADILLO
+echo       DOFUS UNITY 3.6 - DBHDV SUITE UNIFICADA
 echo       Servidor: ${server}
+echo       Backend : ${baseUrl}
 echo ===================================================================
 echo.
 
-echo [1/3] Descargando dofus_sniffer.py...
+echo [1/3] Descargando / Actualizando dofus_suite.py...
 where curl >nul 2>&1
 if %errorlevel% equ 0 (
-    curl -fsSL "${snifferScriptUrl}" -o "dofus_sniffer.py"
+    curl -fsSL "${suiteScriptUrl}" -o "dofus_suite.py"
 ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${snifferScriptUrl}' -OutFile 'dofus_sniffer.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${suiteScriptUrl}' -OutFile 'dofus_suite.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
 )
-if not exist "dofus_sniffer.py" (
-    echo [Error] No se pudo descargar dofus_sniffer.py.
+if not exist "dofus_suite.py" (
+    echo [Error] No se pudo descargar dofus_suite.py. Verifica tu conexion a internet.
     goto :error
 )
 
-echo [2/3] Descargando calibrar_token.py...
-where curl >nul 2>&1
-if %errorlevel% equ 0 (
-    curl -fsSL "${calibratorScriptUrl}" -o "calibrar_token.py"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${calibratorScriptUrl}' -OutFile 'calibrar_token.py' -UseBasicParsing } catch { }"
-)
-
-echo [3/3] Verificando items_db.json...
+echo [2/3] Verificando base de datos de items...
 if not exist "items_db.json" (
     where curl >nul 2>&1
     if %errorlevel% equ 0 (
         curl -fsSL "${itemsDbDownloadUrl}" -o "items_db.json"
     ) else (
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { }"
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { Write-Host $_.Exception.Message }"
     )
 )
 
-echo.
-echo ===================================================================
-echo  Selecciona una opcion:
-echo ===================================================================
-echo  [1] Iniciar Sniffer de Mercadillo
-echo  [2] Calibrar Token
-echo  [3] Salir
-echo ===================================================================
-set /p opt="Opcion [1-3] (Presiona ENTER para Iniciar Sniffer): "
-if "%opt%"=="" set opt=1
-if "%opt%"=="1" goto :run_sniffer
-if "%opt%"=="2" goto :run_calibrator
-if "%opt%"=="3" goto :fin
-goto :run_sniffer
-
-:run_sniffer
-echo.
-echo ===================================================================
-echo  Iniciando Sniffer de Mercadillo...
-echo ===================================================================
+echo [3/3] Verificando dependencias requeridas (Scapy)...
 where py >nul 2>&1
 if %errorlevel% equ 0 (
-    py -3 -u dofus_sniffer.py --server "${server}"
-    goto :fin
+    py -3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        py -3 -m pip install --quiet scapy
+    )
+    goto :run_py
 )
+
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python -u dofus_sniffer.py --server "${server}"
-    goto :fin
+    python -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python -m pip install --quiet scapy
+    )
+    goto :run_python
 )
+
 where python3 >nul 2>&1
 if %errorlevel% equ 0 (
-    python3 -u dofus_sniffer.py --server "${server}"
-    goto :fin
+    python3 -c "import scapy" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [Info] Instalando paquete 'scapy'...
+        python3 -m pip install --quiet scapy
+    )
+    goto :run_python3
 )
+
 goto :no_python
 
-:run_calibrator
+:run_py
 echo.
 echo ===================================================================
-echo  Iniciando Calibrador de Token...
+echo  Iniciando DBHDV Suite Unificada...
 echo ===================================================================
-where py >nul 2>&1
-if %errorlevel% equ 0 (
-    py -3 -u calibrar_token.py
-    goto :fin
-)
-where python >nul 2>&1
-if %errorlevel% equ 0 (
-    python -u calibrar_token.py
-    goto :fin
-)
-where python3 >nul 2>&1
-if %errorlevel% equ 0 (
-    python3 -u calibrar_token.py
-    goto :fin
-)
-goto :no_python
+py -3 dofus_suite.py
+goto :fin
+
+:run_python
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python dofus_suite.py
+goto :fin
+
+:run_python3
+echo.
+echo ===================================================================
+echo  Iniciando DBHDV Suite Unificada...
+echo ===================================================================
+python3 dofus_suite.py
+goto :fin
 
 :no_python
 echo.
@@ -1612,7 +1628,7 @@ echo ===================================================================
 pause
 `;
 
-  const safeFilename = `sincronizar_mercadillo_${server.toLowerCase().replace(/[^a-z0-9]/g, "_")}.bat`;
+  const safeFilename = `dbhdv_suite_${server.toLowerCase().replace(/[^a-z0-9]/g, "_")}.bat`;
   const crlfBat = batContent.replace(/\r?\n/g, "\r\n");
   res.setHeader(
     "Content-Disposition",
@@ -1620,13 +1636,6 @@ pause
   );
   res.setHeader("Content-Type", "application/x-bat; charset=utf-8");
   res.send(crlfBat);
-});
-
-app.get("/api/market/download-py", (req, res) => {
-  const server = (req.query.server as string) || "Draconiros";
-  res.redirect(
-    `/api/market/sniffer-script?server=${encodeURIComponent(server)}`,
-  );
 });
 
 app.get("/api/dofusdb/proxy/*", async (req, res) => {

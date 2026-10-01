@@ -33,6 +33,9 @@ import {
 import { useUserJobs } from '../hooks/useUserJobs';
 import { useMarketPrices } from '../hooks/useMarketPrices';
 import { useBankInventory } from '../hooks/useBankInventory';
+import { useSalesHistory } from '../hooks/useSalesHistory';
+import { SalesAnalyticsView } from './planner/SalesAnalyticsView';
+import { ItemSoldStats } from '../services/salesHistoryService';
 import { UserJobsModal } from './common/UserJobsModal';
 import { SafeImage } from './SafeImage';
 import { KamaDisplay } from './common/KamaDisplay';
@@ -431,6 +434,24 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     return typeof saved.showPostedDrawer === 'boolean' ? saved.showPostedDrawer : true;
   });
   const [justPostedNotice, setJustPostedNotice] = useState<string | null>(null);
+
+  // Sales History & Active Listings Integration
+  const { soldStats, activeSummary } = useSalesHistory();
+  const [plannerMainTab, setPlannerMainTab] = useState<'craft_planner' | 'sales_analytics'>('craft_planner');
+
+  const soldStatsMap = useMemo(() => {
+    const map = new Map<number, ItemSoldStats>();
+    soldStats.forEach((s) => map.set(s.itemId, s));
+    return map;
+  }, [soldStats]);
+
+  const handleSelectRecipeById = (itemId: number) => {
+    const snapshot = getCraftableItemsSnapshot() as PresetCraftableItem[];
+    const found = snapshot.find((i) => i.id === itemId);
+    if (found) {
+      onSelectRecipeForCalculator(found);
+    }
+  };
 
   // Persistir toda la configuración, filtros y estado en localStorage para que no se pierdan al cambiar de pestaña
   useEffect(() => {
@@ -1408,6 +1429,63 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         </div>
       </div>
 
+      {/* Selector de Pestañas Principales: Plan de Crafteo vs Historial y Análisis de Ventas */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-2 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setPlannerMainTab('craft_planner')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              plannerMainTab === 'craft_planner'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+            <span>Planificador de Crafteo ({plannedCrafts.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPlannerMainTab('sales_analytics')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              plannerMainTab === 'sales_analytics'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Historial y Análisis de Ventas (HDV)</span>
+            {(soldStats.length > 0 || activeSummary.totalLots > 0) && (
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                {activeSummary.totalLots > 0 ? `${activeSummary.totalLots} en HDV` : `${soldStats.length} vendidos`}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {plannerMainTab === 'craft_planner' && (
+          <div className="text-xs text-slate-400 px-2 flex items-center gap-3">
+            {activeSummary.totalLots > 0 && (
+              <span className="text-blue-400 flex items-center gap-1">
+                <Store className="w-3.5 h-3.5" />
+                <strong>{activeSummary.totalLots}</strong> lotes en HDV
+              </span>
+            )}
+            {soldStats.length > 0 && (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <strong>{soldStats.length}</strong> recetas en historial
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {plannerMainTab === 'sales_analytics' ? (
+        <SalesAnalyticsView onSelectRecipeForCalculator={handleSelectRecipeById} />
+      ) : (
+        <>
       {/* Controles de Configuración del Plan */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-md space-y-3.5">
         {/* Selector de Canal / Mercadillos */}
@@ -1923,7 +2001,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             {/* Toggle Usar recursos de Mi Banco */}
             <label
               className="inline-flex items-center gap-1.5 cursor-pointer select-none pl-2 border-l border-slate-800"
-              title="Usa y descuenta automáticamente los ingredientes disponibles en Mi Banco al marcar objetos como puestos en HDV"
+              title="Al marcar un objeto como 'Puesto en HDV', se descuentan automáticamente los ingredientes que tengas en Mi Banco (y se restauran si pulsas 'Deshacer')"
             >
               <input
                 type="checkbox"
@@ -1933,7 +2011,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               />
               <span className={`font-semibold flex items-center gap-1 ${useBankResources ? 'text-amber-400' : 'text-slate-400'}`}>
                 <Vault className="w-3.5 h-3.5 text-amber-400" />
-                Usar Mi Banco
+                Descontar de Mi Banco al Poner
               </span>
             </label>
 
@@ -2774,6 +2852,47 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                       );
                     })()}
 
+                    {/* Personal Sales & Active HDV Listings Badges */}
+                    {(() => {
+                      const activeItemInfo = activeSummary.byItemMap[craft.item.id];
+                      const soldItemInfo = soldStatsMap.get(craft.item.id);
+                      if (!activeItemInfo && !soldItemInfo) return null;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {activeItemInfo && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-semibold"
+                              title={`Tienes ${activeItemInfo.totalQty} unidades de este objeto puestas en HDV actualmente. Expira en: ${activeItemInfo.timeLabel}`}
+                            >
+                              <Store className="w-3 h-3 text-blue-400" />
+                              <span>{activeItemInfo.totalQty}x en HDV ({activeItemInfo.timeLabel})</span>
+                            </span>
+                          )}
+
+                          {soldItemInfo && soldItemInfo.totalUnitsSold > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold"
+                              title={`Has vendido ${soldItemInfo.totalUnitsSold} unidades en tu historial de ventas (~${soldItemInfo.totalKamas.toLocaleString('es-ES')} K totales)`}
+                            >
+                              <TrendingUp className="w-3 h-3 text-emerald-400" />
+                              <span>Vendido: {soldItemInfo.totalUnitsSold}x</span>
+                            </span>
+                          )}
+
+                          {soldItemInfo && soldItemInfo.expiredCount > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-semibold"
+                              title={`Este ítem caducó ${soldItemInfo.expiredCount} vez(es) tras 28 días sin actualizar y regresó a tu banco`}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              <span>{soldItemInfo.expiredCount}x caducado</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Market Velocity & Cashflow Indicators */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] bg-slate-950/40 px-2.5 py-1.5 rounded-xl border border-slate-800/40">
@@ -2871,6 +2990,8 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             })}
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* Modal para configurar oficios del usuario */}
