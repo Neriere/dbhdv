@@ -27,7 +27,6 @@ interface BankItemDrawerProps {
   onExportBank: () => void;
   onImportBank: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClearBank: () => void;
-  onSearchRecipesWithItem: (itemName: string) => void;
 }
 
 export const BankItemDrawer: React.FC<BankItemDrawerProps> = ({
@@ -39,7 +38,6 @@ export const BankItemDrawer: React.FC<BankItemDrawerProps> = ({
   onExportBank,
   onImportBank,
   onClearBank,
-  onSearchRecipesWithItem,
 }) => {
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventorySort, setInventorySort] = useState<"value" | "quantity" | "name" | "recent">("value");
@@ -349,16 +347,8 @@ export const BankItemDrawer: React.FC<BankItemDrawerProps> = ({
                             Math.max(1, parseInt(e.target.value) || 1)
                           )
                         }
-                        className="w-20 px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-right text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                        className="w-24 px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-right text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
                       />
-                      <button
-                        type="button"
-                        onClick={() => onSearchRecipesWithItem(name)}
-                        className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
-                        title="Buscar recetas con este recurso"
-                      >
-                        Recetas
-                      </button>
                     </div>
                   </div>
                 </div>

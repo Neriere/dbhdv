@@ -1,41 +1,20 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { Vault } from "lucide-react";
+import { DofusItem } from "../types";
 import {
-  Vault,
-  Package,
-  Sparkles,
-  Zap,
-  Briefcase,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-} from "lucide-react";
-import {
-  DofusItem,
-  BankInventoryItem,
-  ReverseCraftAnalysis,
-} from "../types";
-import {
-  calculateReverseCraftsFromBank,
   getStoredItemPrice,
   getItemName,
   getItemById,
-  addToShoppingListById,
 } from "../services/dofusDbService";
 import { useMarketPrices } from "../hooks/useMarketPrices";
 import { useBankInventory } from "../hooks/useBankInventory";
-import { useUserJobs } from "../hooks/useUserJobs";
-import { BankCatalogFilters } from "./bank/BankCatalogFilters";
 import { BankItemDrawer } from "./bank/BankItemDrawer";
-import { ReverseCraftCard } from "./bank/ReverseCraftCard";
 import craftIngredientsIds from "../data/craftIngredientsIds.json";
 import { isMountOrPet } from "../data/dofusJobs";
 
 const craftIngredientsSet = new Set<number>(craftIngredientsIds);
 
-// TypeIds a excluir siempre del banco (no son ingredientes de ninguna receta relevante)
-// 78: Runas de forjamagia | 174,175: Mapas de tesoro y fragmentos | 79: Llaves de mazmorra
-// 18,97,121,196,207,333: Mascotas, Dragopavos, Mascoturas, Mulaguas, Vuelocerontes
+// TypeIds a excluir siempre del banco
 const BANK_EXCLUDED_TYPE_IDS = new Set<number>([
   78,          // Runas de forjamagia
   174, 175,    // Mapas de búsqueda del tesoro y fragmentos
@@ -53,7 +32,7 @@ const EQUIPMENT_TYPE_IDS = new Set<number>([
 
 // TypeIds de consumibles (se permiten solo si son ingredientes de una receta)
 const CONSUMABLE_TYPE_IDS = new Set<number>([
-  65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, // varios consumibles DofusDB
+  65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
   85, 86, 87, 88, 89, 90,
   100, 101, 102,
   115, 116,
@@ -62,12 +41,7 @@ const CONSUMABLE_TYPE_IDS = new Set<number>([
   230, 231,
 ]);
 
-/**
- * Devuelve true si el item debe ser EXCLUIDO del banco.
- * Usa el item resuelto de la DB cuando está disponible.
- */
 function shouldExcludeFromBank(id: number, rawItem?: any): boolean {
-  // Intentar resolver el item completo desde la DB
   const resolved = getItemById(id) || rawItem;
   const typeId = Number(
     resolved?.typeId || resolved?.type?.id || rawItem?.typeId || 0
@@ -76,16 +50,10 @@ function shouldExcludeFromBank(id: number, rawItem?: any): boolean {
     resolved?.type?.superCategoryId || rawItem?.superCategoryId || 0
   );
 
-  // 1. TypeIds excluidos incondicionalmente
   if (BANK_EXCLUDED_TYPE_IDS.has(typeId)) return true;
-
-  // 2. Items de misión / ligados / no comerciables por superCategoryId
   if (BANK_EXCLUDED_SUPER_CATEGORY_IDS.has(superCatId)) return true;
-
-  // 3. Monturas/mascotas (usando la función ya existente)
   if (isMountOrPet(resolved || rawItem)) return true;
 
-  // 4. Llaves (por nombre o typeId 79 ya cubierto, pero verificamos por nombre también)
   const nameEs = (
     typeof resolved?.name === "object" ? resolved.name?.es || "" :
     typeof rawItem?.name === "string" ? rawItem.name : ""
@@ -96,22 +64,16 @@ function shouldExcludeFromBank(id: number, rawItem?: any): boolean {
     (nameEs.includes("clave") && nameEs.includes("mazmorr") && !craftIngredientsSet.has(id))
   ) return true;
 
-  // 5. Equipables que NO son ingredientes de ninguna receta
-  // Excepción: trofeos (typeId 151, 271) y Dofus (typeId 23) se permiten si son ingredientes
   if (EQUIPMENT_TYPE_IDS.has(typeId) && !craftIngredientsSet.has(id)) return true;
-
-  // 6. Consumibles que NO son ingredientes de ninguna receta
   if (CONSUMABLE_TYPE_IDS.has(typeId) && !craftIngredientsSet.has(id)) return true;
 
-  // 7. Filtro por nombre: Genetichas, Gremichas, Sebuscalines y similares
   if (
     nameEs.includes("geneticha") ||
     nameEs.includes("gremicha") ||
     nameEs.includes("sebuscalin") ||
-    nameEs.includes("vuloceront") // por si acaso vuelocerontes llegan por nombre
+    nameEs.includes("vuloceront")
   ) return true;
 
-  // 8. Mapas de tesoro / fragmentos por nombre
   if (
     (nameEs.includes("mapa") && (nameEs.includes("tesoro") || nameEs.includes("búsqueda") || nameEs.includes("busqueda"))) ||
     (nameEs.includes("fragmento") && nameEs.includes("mapa")) ||
@@ -122,18 +84,13 @@ function shouldExcludeFromBank(id: number, rawItem?: any): boolean {
 }
 
 interface BankCraftingViewProps {
-  onSelectRecipeForCalculator: (item: DofusItem) => void;
+  onSelectRecipeForCalculator?: (item: DofusItem) => void;
   onSelectForCrushing?: (item: DofusItem) => void;
   onNavigateToShopping?: () => void;
 }
 
-export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
-  onSelectRecipeForCalculator,
-  onSelectForCrushing,
-  onNavigateToShopping,
-}) => {
+export const BankCraftingView: React.FC<BankCraftingViewProps> = () => {
   const { marketPrices } = useMarketPrices();
-  const { isEnabled: isUserJobsEnabled, canCraft } = useUserJobs();
   const {
     bankInventory: bankItems,
     updateBankItem,
@@ -142,30 +99,6 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
     clearInventory,
   } = useBankInventory();
 
-  const [activeSubTab, setActiveSubTab] = useState<"crafts" | "inventory">("inventory");
-
-  // Reverse Craft Filters
-  const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
-  const [onlyFullyCraftable, setOnlyFullyCraftable] = useState(false);
-  const [minLevel, setMinLevel] = useState(1);
-  const [maxLevel, setMaxLevel] = useState(200);
-  const [craftSearchQuery, setCraftSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<
-    "profit_roi" | "smart_score" | "roi_profit" | "fully_craftable" | "coverage" | "missingCost" | "level"
-  >("profit_roi");
-  const [expandedCrafts, setExpandedCrafts] = useState<Record<number, boolean>>({});
-
-  // Calculation State
-  const [rawCraftResults, setRawCraftResults] = useState<ReverseCraftAnalysis[]>([]);
-  const [isCalculating, setIsCalculating] = useState<boolean>(false);
-  const [hasCalculated, setHasCalculated] = useState<boolean>(false);
-  const [lastCalculatedAt, setLastCalculatedAt] = useState<number | null>(null);
-
-  // Pagination State for Craft Opportunities
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(24);
-
-  // Notifications / Toast
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "info" } | null>(null);
 
   const showToast = (text: string, type: "success" | "info" = "success") => {
@@ -175,7 +108,6 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
     }, 3000);
   };
 
-  // Bank Stats Summary
   const bankStats = useMemo(() => {
     let totalUnits = 0;
     let totalKamasValue = 0;
@@ -210,8 +142,6 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
   const handleClearBank = () => {
     if (window.confirm("¿Seguro que deseas vaciar todos los recursos de tu banco?")) {
       clearInventory();
-      setRawCraftResults([]);
-      setHasCalculated(false);
       showToast("Banco vaciado correctamente", "info");
     }
   };
@@ -236,7 +166,6 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
         const rawContent = e.target?.result as string;
         const parsed = JSON.parse(rawContent);
 
-        // Extraer lista flexible de ítems (array directo, { items: [...] }, o { [itemId]: qty })
         let rawList: any[] = [];
         if (Array.isArray(parsed)) {
           rawList = parsed;
@@ -244,189 +173,66 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
           if (Array.isArray(parsed.items)) {
             rawList = parsed.items;
           } else {
-            // Manejar formato clave-valor { "15271": 10 }
             rawList = Object.entries(parsed).map(([key, val]) => {
               if (typeof val === "number") {
                 return { itemId: Number(key), quantity: val };
               }
               if (val && typeof val === "object") {
-                return { itemId: Number(key), ...(val as object) };
+                return { itemId: Number((val as any).itemId || (val as any).id || key), quantity: Number((val as any).quantity || (val as any).qty || 1) };
               }
               return null;
             }).filter(Boolean);
           }
         }
 
-        if (rawList.length === 0) {
-          alert("El archivo JSON no contiene objetos válidos para importar.");
+        const validItemsMap = new Map<number, number>();
+        let ignoredExcludedCount = 0;
+
+        rawList.forEach((entry) => {
+          const id = Number(entry?.itemId || entry?.id || entry?.item_id || 0);
+          const qty = Number(entry?.quantity || entry?.qty || entry?.count || 0);
+
+          if (id > 0 && qty > 0) {
+            if (shouldExcludeFromBank(id, entry?.item || entry)) {
+              ignoredExcludedCount++;
+              return;
+            }
+            const current = validItemsMap.get(id) || 0;
+            validItemsMap.set(id, current + qty);
+          }
+        });
+
+        if (validItemsMap.size === 0) {
+          alert("El archivo no contenía recursos válidos para el banco.");
           return;
         }
 
-        // Consolidar items válidos, excluyendo categorías no relevantes para el banco
-        const consolidatedMap = new Map<number, BankInventoryItem>();
-        let excludedCount = 0;
+        const newBankItems = Array.from(validItemsMap.entries()).map(([itemId, quantity]) => {
+          const item = getItemById(itemId);
+          return {
+            itemId,
+            quantity,
+            item: item || undefined,
+            addedAt: Date.now(),
+          };
+        });
 
-        for (const rawItem of rawList) {
-          const id = Number(rawItem.itemId || rawItem.id);
-          const qty = Number(rawItem.quantity || rawItem.qty || 1);
-          if (!id || isNaN(id) || qty <= 0) continue;
-
-          // Aplicar el filtro centralizado shouldExcludeFromBank
-          if (shouldExcludeFromBank(id, rawItem)) {
-            excludedCount++;
-            continue;
-          }
-
-          if (consolidatedMap.has(id)) {
-            consolidatedMap.get(id)!.quantity += qty;
-          } else {
-            consolidatedMap.set(id, {
-              itemId: id,
-              quantity: qty,
-              item: rawItem.item || getItemById(id) || undefined,
-              addedAt: rawItem.addedAt || Date.now(),
-            });
-          }
-        }
-
-        const consolidatedList = Array.from(consolidatedMap.values());
-        if (consolidatedList.length === 0) {
-          alert(
-            `No se importó ningún recurso válido. ${excludedCount} objetos fueron excluidos (runas, monturas, llaves, equipables sin receta, objetos de misión, etc.).`
-          );
-          return;
-        }
-
-        saveInventory(consolidatedList);
-        const totalUnits = consolidatedList.reduce((acc, it) => acc + it.quantity, 0);
-        showToast(
-          `¡Éxito! ${consolidatedList.length.toLocaleString()} recursos (${totalUnits.toLocaleString()} u.) importados. ${excludedCount > 0 ? `${excludedCount} excluidos (runas, monturas, llaves, etc.).` : ""}`
-        );
+        saveInventory(newBankItems);
+        const ignoredMsg = ignoredExcludedCount > 0 ? ` (${ignoredExcludedCount} no válidos omitidos)` : "";
+        showToast(`Se importaron ${newBankItems.length} recursos correctamente${ignoredMsg}`);
       } catch (err) {
-        alert("El archivo JSON no tiene un formato válido");
-      } finally {
-        event.target.value = "";
+        console.error("Error al importar banco:", err);
+        alert("Error al procesar el archivo JSON. Formato no compatible.");
       }
     };
     reader.readAsText(file);
+    event.target.value = "";
   };
-
-  const handleCalculateCrafts = async () => {
-    if (bankItems.length === 0) {
-      alert("Agrega recursos a tu banco primero para poder calcular recetas.");
-      return;
-    }
-
-    setIsCalculating(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const results = calculateReverseCraftsFromBank(bankItems, marketPrices);
-      setRawCraftResults(results);
-      setHasCalculated(true);
-      setLastCalculatedAt(Date.now());
-      setCurrentPage(1);
-    } catch (error) {
-      console.error("Error calculando crafteos:", error);
-      alert("Hubo un error al calcular las recetas.");
-    } finally {
-      setIsCalculating(false);
-    }
-  };
-
-  const toggleExpand = (itemId: number) => {
-    setExpandedCrafts((prev) => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
-  };
-
-  const handleAddMissingToShoppingList = (craft: ReverseCraftAnalysis) => {
-    let addedCount = 0;
-    craft.ingredientsStatus.forEach((ing) => {
-      if (!ing.isFullyAvailable && ing.missing > 0) {
-        addToShoppingListById(ing.itemId, ing.missing);
-        addedCount++;
-      }
-    });
-
-    if (addedCount > 0) {
-      showToast(`¡Añadidos ${addedCount} ingredientes faltantes a la Lista de Compras!`);
-      if (onNavigateToShopping) {
-        setTimeout(() => onNavigateToShopping(), 400);
-      }
-    }
-  };
-
-  // Filter and Sort Opportunities
-  const filteredAndSortedOpportunities = useMemo(() => {
-    return rawCraftResults
-      .filter((craft) => {
-        if (isUserJobsEnabled && !canCraft(craft.item)) return false;
-        if (selectedJobId !== "all" && craft.jobId !== selectedJobId) return false;
-        if (onlyFullyCraftable && !craft.isFullyCraftable) return false;
-        if (craft.item.level < minLevel || craft.item.level > maxLevel) return false;
-
-        if (craftSearchQuery.trim()) {
-          const q = craftSearchQuery.toLowerCase();
-          const name = getItemName(craft.item).toLowerCase();
-          const job = (craft.jobNameEs || "").toLowerCase();
-          if (!name.includes(q) && !job.includes(q)) return false;
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === "profit_roi") {
-          if (b.netProfit !== a.netProfit) return b.netProfit - a.netProfit;
-          return b.roi - a.roi;
-        }
-        if (sortBy === "smart_score") {
-          const scoreA = a.missingMaterialsCost > 0 ? a.netProfit / a.missingMaterialsCost : a.netProfit * 2;
-          const scoreB = b.missingMaterialsCost > 0 ? b.netProfit / b.missingMaterialsCost : b.netProfit * 2;
-          return scoreB - scoreA;
-        }
-        if (sortBy === "roi_profit") {
-          if (b.roi !== a.roi) return b.roi - a.roi;
-          return b.netProfit - a.netProfit;
-        }
-        if (sortBy === "fully_craftable") {
-          if (a.isFullyCraftable !== b.isFullyCraftable) return a.isFullyCraftable ? -1 : 1;
-          return b.netProfit - a.netProfit;
-        }
-        if (sortBy === "coverage") {
-          return b.materialsCoveragePercent - a.materialsCoveragePercent;
-        }
-        if (sortBy === "missingCost") {
-          return a.missingMaterialsCost - b.missingMaterialsCost;
-        }
-        if (sortBy === "level") {
-          return b.item.level - a.item.level;
-        }
-        return 0;
-      });
-  }, [
-    rawCraftResults,
-    selectedJobId,
-    onlyFullyCraftable,
-    minLevel,
-    maxLevel,
-    craftSearchQuery,
-    sortBy,
-  ]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedOpportunities.length / pageSize));
-  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-
-  const paginatedOpportunities = useMemo(() => {
-    const start = (safeCurrentPage - 1) * pageSize;
-    return filteredAndSortedOpportunities.slice(start, start + pageSize);
-  }, [filteredAndSortedOpportunities, safeCurrentPage, pageSize]);
 
   return (
     <div className="space-y-5">
-      {/* Toast */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce">
+        <div className="fixed bottom-5 right-5 z-50 bg-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2">
           <span>{toastMessage.text}</span>
         </div>
       )}
@@ -440,10 +246,10 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                Mi Banco & Crafteo Inverso
+                Mi Banco
               </h1>
               <p className="text-xs text-slate-400">
-                Calcula al instante qué recetas puedes craftear con tus recursos en banco y cuáles te generan mayor ganancia neta.
+                Gestiona los recursos de tu almacén, consulta el valor total en Kamas y sincroniza tu inventario para el Plan de Crafteo.
               </p>
             </div>
           </div>
@@ -472,186 +278,17 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
         </div>
       </div>
 
-      {/* Catalog & Filter Toolbar */}
-      <BankCatalogFilters
-        activeSubTab={activeSubTab}
-        onSubTabChange={setActiveSubTab}
-        bankItemsCount={bankItems.length}
-        craftsCount={filteredAndSortedOpportunities.length}
-        selectedJobId={selectedJobId}
-        onSelectJobId={setSelectedJobId}
-        craftSearchQuery={craftSearchQuery}
-        onCraftSearchQueryChange={setCraftSearchQuery}
-        onlyFullyCraftable={onlyFullyCraftable}
-        onOnlyFullyCraftableChange={setOnlyFullyCraftable}
-        minLevel={minLevel}
-        maxLevel={maxLevel}
-        onLevelRangeChange={(min, max) => {
-          setMinLevel(min);
-          setMaxLevel(max);
-        }}
-        sortBy={sortBy}
-        onSortByChange={setSortBy}
-        isCalculating={isCalculating}
-        hasCalculated={hasCalculated}
-        lastCalculatedAt={lastCalculatedAt}
-        onCalculate={handleCalculateCrafts}
+      {/* Bank Inventory Direct View */}
+      <BankItemDrawer
+        bankItems={bankItems}
+        marketPrices={marketPrices}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemoveItem={handleRemoveItem}
+        onAddCustomItem={handleAddToBank}
+        onExportBank={handleExportBank}
+        onImportBank={handleImportBank}
+        onClearBank={handleClearBank}
       />
-
-      {isUserJobsEnabled && (
-        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium">
-          <Briefcase className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>Filtro activo: Mostrando únicamente recetas que tus oficios pueden fabricar actualmente.</span>
-        </div>
-      )}
-
-      {/* Sub-Tab 1: Reverse Craft Finder */}
-      {activeSubTab === "crafts" && (
-        <div className="space-y-4">
-          {!hasCalculated ? (
-            <div className="p-12 text-center rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
-                <Sparkles className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-200">
-                  Listo para analizar recetas con los recursos de tu banco
-                </h3>
-                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  {bankItems.length > 0
-                    ? `Tienes ${bankItems.length} recursos registrados. Haz clic en "Escanear Oportunidades" para calcular las mejores opciones ordenadas por beneficio y ROI.`
-                    : "Tu banco está vacío. Añade algunos recursos en la pestaña 'Inventario del Banco' para comenzar."}
-                </p>
-              </div>
-              {bankItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleCalculateCrafts}
-                  disabled={isCalculating}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-xl transition-all cursor-pointer"
-                >
-                  <Zap className="w-4 h-4 fill-current" />
-                  Escanear Oportunidades
-                </button>
-              )}
-            </div>
-          ) : filteredAndSortedOpportunities.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-              <Package className="w-10 h-10 text-slate-600 mx-auto" />
-              <h3 className="text-sm font-bold text-slate-300">
-                No hay recetas que coincidan con los filtros actuales
-              </h3>
-              <p className="text-xs text-slate-500">
-                Prueba desmarcar "100% Fabricables Ahora" o cambiar de oficio/nivel.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Pagination Top Controls Bar */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-2 bg-slate-900 rounded-xl border border-slate-800 text-xs text-slate-400 shadow-sm">
-                <span>
-                  Mostrando <strong>{(safeCurrentPage - 1) * pageSize + 1}</strong> -{" "}
-                  <strong>{Math.min(safeCurrentPage * pageSize, filteredAndSortedOpportunities.length)}</strong> de{" "}
-                  <strong>{filteredAndSortedOpportunities.length}</strong> oportunidades
-                </span>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <span>Por página:</span>
-                    <select
-                      value={pageSize}
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value));
-                        setCurrentPage(1);
-                      }}
-                      className="px-2 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none cursor-pointer"
-                    >
-                      <option value={12}>12</option>
-                      <option value={24}>24</option>
-                      <option value={48}>48</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(1)}
-                      disabled={safeCurrentPage === 1}
-                      className="p-1 rounded bg-slate-950 hover:bg-slate-800 disabled:opacity-30 text-slate-300 cursor-pointer"
-                      title="Primera página"
-                    >
-                      <ChevronsLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={safeCurrentPage === 1}
-                      className="p-1 rounded bg-slate-950 hover:bg-slate-800 disabled:opacity-30 text-slate-300 cursor-pointer"
-                      title="Página anterior"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="px-2 font-mono font-bold text-slate-200">
-                      {safeCurrentPage} / {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={safeCurrentPage === totalPages}
-                      className="p-1 rounded bg-slate-950 hover:bg-slate-800 disabled:opacity-30 text-slate-300 cursor-pointer"
-                      title="Página siguiente"
-                    >
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(totalPages)}
-                      disabled={safeCurrentPage === totalPages}
-                      className="p-1 rounded bg-slate-950 hover:bg-slate-800 disabled:opacity-30 text-slate-300 cursor-pointer"
-                      title="Última página"
-                    >
-                      <ChevronsRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Opportunities List */}
-              <div className="grid grid-cols-1 gap-3.5">
-                {paginatedOpportunities.map((craft) => (
-                  <ReverseCraftCard
-                    key={craft.item.id}
-                    craft={craft}
-                    isExpanded={Boolean(expandedCrafts[craft.item.id])}
-                    onToggleExpand={() => toggleExpand(craft.item.id)}
-                    onSelectRecipeForCalculator={onSelectRecipeForCalculator}
-                    onSelectForCrushing={onSelectForCrushing}
-                    onAddMissingToShoppingList={handleAddMissingToShoppingList}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Sub-Tab 2: Bank Inventory List */}
-      {activeSubTab === "inventory" && (
-        <BankItemDrawer
-          bankItems={bankItems}
-          marketPrices={marketPrices}
-          onUpdateQuantity={handleUpdateQuantity}
-          onRemoveItem={handleRemoveItem}
-          onAddCustomItem={handleAddToBank}
-          onExportBank={handleExportBank}
-          onImportBank={handleImportBank}
-          onClearBank={handleClearBank}
-          onSearchRecipesWithItem={(name) => {
-            setCraftSearchQuery(name);
-            setActiveSubTab("crafts");
-          }}
-        />
-      )}
     </div>
   );
 };
