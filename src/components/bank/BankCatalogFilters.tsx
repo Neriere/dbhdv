@@ -91,9 +91,25 @@ export const BankCatalogFilters: React.FC<BankCatalogFiltersProps> = ({
 }) => {
   return (
     <div className="space-y-4">
-      {/* Sub-Tab Navigation Bar & Scan Button */}
+      {/* Sub-Tab Navigation Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg">
         <div className="flex items-center gap-2 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={() => onSubTabChange("inventory")}
+            className={`flex-1 md:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeSubTab === "inventory"
+                ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
+            }`}
+          >
+            <Vault className="w-4 h-4" />
+            <span>Inventario del Banco</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-950/40 text-current">
+              {bankItemsCount}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => onSubTabChange("crafts")}
@@ -110,22 +126,6 @@ export const BankCatalogFilters: React.FC<BankCatalogFiltersProps> = ({
                 {craftsCount}
               </span>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onSubTabChange("inventory")}
-            className={`flex-1 md:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-              activeSubTab === "inventory"
-                ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
-                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
-            }`}
-          >
-            <Vault className="w-4 h-4" />
-            <span>Inventario del Banco</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-950/40 text-current">
-              {bankItemsCount}
-            </span>
           </button>
         </div>
 

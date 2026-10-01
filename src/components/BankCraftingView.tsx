@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Vault,
   Package,
@@ -29,8 +29,97 @@ import { BankCatalogFilters } from "./bank/BankCatalogFilters";
 import { BankItemDrawer } from "./bank/BankItemDrawer";
 import { ReverseCraftCard } from "./bank/ReverseCraftCard";
 import craftIngredientsIds from "../data/craftIngredientsIds.json";
+import { isMountOrPet } from "../data/dofusJobs";
 
 const craftIngredientsSet = new Set<number>(craftIngredientsIds);
+
+// TypeIds a excluir siempre del banco (no son ingredientes de ninguna receta relevante)
+// 78: Runas de forjamagia | 174,175: Mapas de tesoro y fragmentos | 79: Llaves de mazmorra
+// 18,97,121,196,207,333: Mascotas, Dragopavos, Mascoturas, Mulaguas, Vuelocerontes
+const BANK_EXCLUDED_TYPE_IDS = new Set<number>([
+  78,          // Runas de forjamagia
+  174, 175,    // Mapas de búsqueda del tesoro y fragmentos
+  79,          // Llaves de mazmorra
+  18, 97, 121, 196, 207, 333,  // Mascotas y monturas
+]);
+
+// SuperCategoryIds que corresponden a objetos de misión/ligados/no comerciables
+const BANK_EXCLUDED_SUPER_CATEGORY_IDS = new Set<number>([4, 5, 14, 15]);
+
+// TypeIds de equipables (no recursos). Se permiten si están en craftIngredientsSet
+const EQUIPMENT_TYPE_IDS = new Set<number>([
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 19, 82, 112, 151, 217, 271,
+]);
+
+// TypeIds de consumibles (se permiten solo si son ingredientes de una receta)
+const CONSUMABLE_TYPE_IDS = new Set<number>([
+  65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, // varios consumibles DofusDB
+  85, 86, 87, 88, 89, 90,
+  100, 101, 102,
+  115, 116,
+  183, 184,
+  219, 220, 221,
+  230, 231,
+]);
+
+/**
+ * Devuelve true si el item debe ser EXCLUIDO del banco.
+ * Usa el item resuelto de la DB cuando está disponible.
+ */
+function shouldExcludeFromBank(id: number, rawItem?: any): boolean {
+  // Intentar resolver el item completo desde la DB
+  const resolved = getItemById(id) || rawItem;
+  const typeId = Number(
+    resolved?.typeId || resolved?.type?.id || rawItem?.typeId || 0
+  );
+  const superCatId = Number(
+    resolved?.type?.superCategoryId || rawItem?.superCategoryId || 0
+  );
+
+  // 1. TypeIds excluidos incondicionalmente
+  if (BANK_EXCLUDED_TYPE_IDS.has(typeId)) return true;
+
+  // 2. Items de misión / ligados / no comerciables por superCategoryId
+  if (BANK_EXCLUDED_SUPER_CATEGORY_IDS.has(superCatId)) return true;
+
+  // 3. Monturas/mascotas (usando la función ya existente)
+  if (isMountOrPet(resolved || rawItem)) return true;
+
+  // 4. Llaves (por nombre o typeId 79 ya cubierto, pero verificamos por nombre también)
+  const nameEs = (
+    typeof resolved?.name === "object" ? resolved.name?.es || "" :
+    typeof rawItem?.name === "string" ? rawItem.name : ""
+  ).toLowerCase();
+  if (
+    typeId === 79 ||
+    (nameEs.includes("llave") && !craftIngredientsSet.has(id)) ||
+    (nameEs.includes("clave") && nameEs.includes("mazmorr") && !craftIngredientsSet.has(id))
+  ) return true;
+
+  // 5. Equipables que NO son ingredientes de ninguna receta
+  // Excepción: trofeos (typeId 151, 271) y Dofus (typeId 23) se permiten si son ingredientes
+  if (EQUIPMENT_TYPE_IDS.has(typeId) && !craftIngredientsSet.has(id)) return true;
+
+  // 6. Consumibles que NO son ingredientes de ninguna receta
+  if (CONSUMABLE_TYPE_IDS.has(typeId) && !craftIngredientsSet.has(id)) return true;
+
+  // 7. Filtro por nombre: Genetichas, Gremichas, Sebuscalines y similares
+  if (
+    nameEs.includes("geneticha") ||
+    nameEs.includes("gremicha") ||
+    nameEs.includes("sebuscalin") ||
+    nameEs.includes("vuloceront") // por si acaso vuelocerontes llegan por nombre
+  ) return true;
+
+  // 8. Mapas de tesoro / fragmentos por nombre
+  if (
+    (nameEs.includes("mapa") && (nameEs.includes("tesoro") || nameEs.includes("búsqueda") || nameEs.includes("busqueda"))) ||
+    (nameEs.includes("fragmento") && nameEs.includes("mapa")) ||
+    nameEs.includes("trozo de mapa")
+  ) return true;
+
+  return false;
+}
 
 interface BankCraftingViewProps {
   onSelectRecipeForCalculator: (item: DofusItem) => void;
@@ -53,7 +142,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
     clearInventory,
   } = useBankInventory();
 
-  const [activeSubTab, setActiveSubTab] = useState<"crafts" | "inventory">("crafts");
+  const [activeSubTab, setActiveSubTab] = useState<"crafts" | "inventory">("inventory");
 
   // Reverse Craft Filters
   const [selectedJobId, setSelectedJobId] = useState<number | "all">("all");
@@ -173,7 +262,7 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
           return;
         }
 
-        // Consolidar automáticamente pilas duplicadas y excluir no comerciables/misión y almas
+        // Consolidar items válidos, excluyendo categorías no relevantes para el banco
         const consolidatedMap = new Map<number, BankInventoryItem>();
         let excludedCount = 0;
 
@@ -182,27 +271,8 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
           const qty = Number(rawItem.quantity || rawItem.qty || 1);
           if (!id || isNaN(id) || qty <= 0) continue;
 
-          // Excluir automáticamente almas de archis o ítems de misión si vienen marcados
-          if (rawItem.isQuest || (rawItem.category === "Misión") || (id >= 33820 && id <= 34125)) {
-            excludedCount++;
-            continue;
-          }
-
-          // Excluir fragmentos de mapa (BYC)
-          const cat = String(rawItem.category || "");
-          const rawName = String(rawItem.name || getItemName({ id } as any) || "").toLowerCase();
-          const isMapFrag =
-            cat.includes("Mapas") ||
-            (rawName.includes("fragmento") && rawName.includes("mapa")) ||
-            rawName.includes("trozo de mapa");
-          if (isMapFrag) {
-            excludedCount++;
-            continue;
-          }
-
-          // Excluir equipables o consumibles que no formen parte de ninguna receta de crafteo
-          const isEquipmentOrConsumable = cat === "Equipamiento" || cat === "Consumibles";
-          if (isEquipmentOrConsumable && !craftIngredientsSet.has(id)) {
+          // Aplicar el filtro centralizado shouldExcludeFromBank
+          if (shouldExcludeFromBank(id, rawItem)) {
             excludedCount++;
             continue;
           }
@@ -221,14 +291,16 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = ({
 
         const consolidatedList = Array.from(consolidatedMap.values());
         if (consolidatedList.length === 0) {
-          alert("Todos los objetos del archivo eran de misión o no válidos.");
+          alert(
+            `No se importó ningún recurso válido. ${excludedCount} objetos fueron excluidos (runas, monturas, llaves, equipables sin receta, objetos de misión, etc.).`
+          );
           return;
         }
 
         saveInventory(consolidatedList);
         const totalUnits = consolidatedList.reduce((acc, it) => acc + it.quantity, 0);
         showToast(
-          `¡Éxito! Se cargaron ${consolidatedList.length.toLocaleString()} recursos (${totalUnits.toLocaleString()} u.) en Mi Banco`
+          `¡Éxito! ${consolidatedList.length.toLocaleString()} recursos (${totalUnits.toLocaleString()} u.) importados. ${excludedCount > 0 ? `${excludedCount} excluidos (runas, monturas, llaves, etc.).` : ""}`
         );
       } catch (err) {
         alert("El archivo JSON no tiene un formato válido");
