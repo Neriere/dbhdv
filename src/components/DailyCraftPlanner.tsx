@@ -29,6 +29,7 @@ import {
   RotateCcw,
   CheckCircle2,
   Vault,
+  Tag,
 } from 'lucide-react';
 import { useUserJobs } from '../hooks/useUserJobs';
 import { useMarketPrices } from '../hooks/useMarketPrices';
@@ -113,6 +114,11 @@ export interface PlannedCraftItem {
   originalSalePriceUnit: number;
   canCrush: boolean;
   hasRecentSales?: boolean;
+  activeInHdv?: {
+    lots: number;
+    totalQty: number;
+    timeLabel: string;
+  };
 }
 
 export interface PostedCraftItem {
@@ -126,6 +132,7 @@ export interface PostedCraftItem {
   units: number;
   craftCostUnit: number;
   totalCraftCost: number;
+  spentKamas?: number;
   salePriceUnit: number;
   saleTaxUnit: number;
   netProfitUnit: number;
@@ -312,6 +319,7 @@ export interface StoredPlannerConfig {
   showPostedDrawer: boolean;
   showMaterialsDrawer: boolean;
   useBankResources?: boolean;
+  avoidAlreadyListed?: boolean;
 }
 
 export function getStoredPlannerConfig(): Partial<StoredPlannerConfig> {
@@ -418,6 +426,10 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     const saved = getStoredPlannerConfig();
     return typeof saved.useBankResources === 'boolean' ? saved.useBankResources : true;
   });
+  const [avoidAlreadyListed, setAvoidAlreadyListed] = useState<boolean>(() => {
+    const saved = getStoredPlannerConfig();
+    return typeof saved.avoidAlreadyListed === 'boolean' ? saved.avoidAlreadyListed : true;
+  });
 
   const { bankInventory, bankQtyMap, updateBankItem } = useBankInventory();
   const [postedCrafts, setPostedCrafts] = useState<PostedCraftItem[]>(() => {
@@ -480,6 +492,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         showPostedDrawer,
         showMaterialsDrawer,
         useBankResources,
+        avoidAlreadyListed,
       };
       localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg));
     } catch (e) {
@@ -508,6 +521,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     showPostedDrawer,
     showMaterialsDrawer,
     useBankResources,
+    avoidAlreadyListed,
   ]);
 
   // Persistir objetos ya puestos en HDV en localStorage
@@ -551,8 +565,8 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
   const postedItemIds = useMemo(() => new Set(postedCrafts.map((c) => c.itemId)), [postedCrafts]);
 
-  // Presupuesto efectivo disponible para nuevos crafteos
-  const effectiveBudget = Math.max(0, budget - postedSummary.totalCost);
+  // Kamas actuales disponibles para nuevos crafteos
+  const effectiveBudget = Math.max(0, budget);
 
   const { settings: userJobSettings, canCraft } = useUserJobs();
   const { marketPrices: basePrices } = useMarketPrices();
@@ -593,7 +607,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     return raw.filter((item) => !isOmittedItem(item) && !isClassItem(item));
   }, []);
 
-  // Manejador del presupuesto
+  // Manejador del saldo de Kamas Actuales
   const handleBudgetChange = (raw: string) => {
     const clean = raw.replace(/[^0-9]/g, '');
     setBudgetInput(clean);
@@ -638,6 +652,11 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       isOutlierPrice: boolean;
       outlierRatio: number;
       referenceMedian: number | null;
+      activeInHdv?: {
+        lots: number;
+        totalQty: number;
+        timeLabel: string;
+      };
     }> = [];
 
     for (const item of allCraftableItems) {
@@ -774,6 +793,22 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         score *= 0.15;
       }
 
+      // Integración de listings activos en venta: si ya está a la venta en HDV, depriorizar para diversificar
+      const activeInHdv = activeSummary?.byItemMap?.[item.id];
+      if (avoidAlreadyListed && activeInHdv && activeInHdv.totalQty > 0) {
+        if (activeInHdv.count >= 2) {
+          score *= 0.20;
+        } else {
+          score *= 0.50;
+        }
+      }
+
+      // Impulso adicional para objetos con ventas comprobadas en el historial personal del usuario
+      const userPersonalSale = soldStatsMap.get(item.id);
+      if (userPersonalSale && userPersonalSale.totalUnitsSold > 0) {
+        score *= 1.25;
+      }
+
       candidates.push({
         item,
         jobName,
@@ -802,6 +837,11 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         isOutlierPrice,
         outlierRatio,
         referenceMedian,
+        activeInHdv: activeInHdv ? {
+          lots: activeInHdv.count,
+          totalQty: activeInHdv.totalQty,
+          timeLabel: activeInHdv.timeLabel,
+        } : undefined,
       });
     }
 
@@ -827,6 +867,9 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
     marketChannel,
     salesVolumeMap,
     optimizationMode,
+    avoidAlreadyListed,
+    activeSummary,
+    soldStatsMap,
   ]);
 
   // 2. Algoritmo de Asignación de Presupuesto y Slots (Optimización con 3 Mercadillos Independientes)
@@ -918,6 +961,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               referenceMedian: cand.referenceMedian,
               originalSalePriceUnit: cand.rawSalePrice,
               canCrush: cand.canCrush,
+              activeInHdv: cand.activeInHdv,
             });
           }
         }
@@ -1031,6 +1075,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           referenceMedian: cand.referenceMedian,
           originalSalePriceUnit: cand.rawSalePrice,
           canCrush: cand.canCrush,
+          activeInHdv: cand.activeInHdv,
         });
       }
     }
@@ -1287,6 +1332,8 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       });
     }
 
+    const kamasSpent = Math.max(0, cost - bankKamasSaved);
+
     const newPosted: PostedCraftItem = {
       itemId: craft.item.id,
       item: craft.item,
@@ -1298,6 +1345,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       units,
       craftCostUnit: craft.craftCostUnit,
       totalCraftCost: cost,
+      spentKamas: kamasSpent,
       salePriceUnit: craft.salePriceUnit,
       saleTaxUnit: craft.saleTaxUnit,
       netProfitUnit: craft.netProfitUnit,
@@ -1315,10 +1363,17 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
       return next;
     });
 
+    // Descontar inmediatamente el gasto real de Mis Kamas Actuales
+    setBudget((prev) => {
+      const next = Math.max(0, prev - kamasSpent);
+      setBudgetInput(String(next));
+      return next;
+    });
+
     const bankMsg = totalItemsDeducted > 0
       ? ` | 🏦 -${totalItemsDeducted} recursos de Mi Banco (ahorro: ~${bankKamasSaved.toLocaleString('es-ES')} K)`
       : '';
-    setJustPostedNotice(`"${itemName}" puesto en HDV (${units}x, -${cost.toLocaleString('es-ES')} K de presupuesto)${bankMsg}`);
+    setJustPostedNotice(`"${itemName}" puesto en HDV (${units}x, -${kamasSpent.toLocaleString('es-ES')} K de tus kamas actuales)${bankMsg}`);
     setTimeout(() => {
       setJustPostedNotice(null);
     }, 4000);
@@ -1326,21 +1381,31 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
 
   const handleUndoPosted = (itemId: number) => {
     const craftToUndo = postedCrafts.find((c) => c.itemId === itemId);
-    if (craftToUndo?.deductedBankMaterials) {
-      // Restaurar recursos descontados a Mi Banco
-      Object.entries(craftToUndo.deductedBankMaterials).forEach(([idStr, qty]) => {
-        const ingId = Number(idStr);
-        const currentInBank = bankQtyMap[ingId] || 0;
-        updateBankItem(ingId, currentInBank + qty);
+    if (craftToUndo) {
+      if (craftToUndo.deductedBankMaterials) {
+        // Restaurar recursos descontados a Mi Banco
+        Object.entries(craftToUndo.deductedBankMaterials).forEach(([idStr, qty]) => {
+          const ingId = Number(idStr);
+          const currentInBank = bankQtyMap[ingId] || 0;
+          updateBankItem(ingId, currentInBank + qty);
+        });
+      }
+      const restoredKamas = typeof craftToUndo.spentKamas === 'number'
+        ? craftToUndo.spentKamas
+        : craftToUndo.totalCraftCost;
+      setBudget((prev) => {
+        const next = prev + restoredKamas;
+        setBudgetInput(String(next));
+        return next;
       });
+      setPostedCrafts((prev) => prev.filter((c) => c.itemId !== itemId));
     }
-    setPostedCrafts((prev) => prev.filter((c) => c.itemId !== itemId));
   };
 
   const handleClearAllPosted = () => {
     if (postedCrafts.length === 0) return;
-    if (window.confirm('¿Deseas reiniciar la lista de objetos puestos en HDV, restaurar los recursos descontados a Mi Banco y recuperar todo el presupuesto?')) {
-      // Restaurar todos los recursos descontados a Mi Banco
+    if (window.confirm('¿Deseas reiniciar la lista de objetos puestos en HDV, restaurar los recursos descontados a Mi Banco y recuperar las kamas gastadas en tus kamas actuales?')) {
+      let totalRestoredKamas = 0;
       for (const craft of postedCrafts) {
         if (craft.deductedBankMaterials) {
           Object.entries(craft.deductedBankMaterials).forEach(([idStr, qty]) => {
@@ -1349,7 +1414,15 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             updateBankItem(ingId, currentInBank + qty);
           });
         }
+        totalRestoredKamas += typeof craft.spentKamas === 'number'
+          ? craft.spentKamas
+          : craft.totalCraftCost;
       }
+      setBudget((prev) => {
+        const next = prev + totalRestoredKamas;
+        setBudgetInput(String(next));
+        return next;
+      });
       setPostedCrafts([]);
     }
   };
@@ -1562,11 +1635,14 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-          {/* 1. Presupuesto */}
+          {/* 1. Mis Kamas Actuales */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <label
+              className="text-xs font-semibold text-slate-300 flex items-center gap-1.5"
+              title="Kamas disponibles en tu personaje. Se descuentan automáticamente cada vez que marcas 'Ya puesto'"
+            >
               <Coins className="w-3.5 h-3.5 text-amber-400" />
-              Presupuesto
+              Mis Kamas Actuales
             </label>
             <div className="relative">
               <input
@@ -2015,6 +2091,23 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               </span>
             </label>
 
+            {/* Toggle Evitar ítems ya en HDV */}
+            <label
+              className="inline-flex items-center gap-1.5 cursor-pointer select-none pl-2 border-l border-slate-800"
+              title="Prioriza objetos que no tienes actualmente a la venta en mercadillo para diversificar y evitar saturar tus propios lotes"
+            >
+              <input
+                type="checkbox"
+                checked={avoidAlreadyListed}
+                onChange={(e) => setAvoidAlreadyListed(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-sky-500 focus:ring-sky-400/50 cursor-pointer"
+              />
+              <span className={`font-semibold flex items-center gap-1 ${avoidAlreadyListed ? 'text-sky-400' : 'text-slate-400'}`}>
+                <Tag className="w-3.5 h-3.5 text-sky-400" />
+                Evitar ya en HDV
+              </span>
+            </label>
+
             {/* Filtro por Oficio Específico */}
             <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
               <span className="text-slate-400 font-medium">Oficio:</span>
@@ -2108,62 +2201,51 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
             <span className="font-semibold">{justPostedNotice}</span>
           </div>
           <span className="text-[10px] font-mono text-emerald-400/80 bg-emerald-500/20 px-2 py-0.5 rounded">
-            Presupuesto actualizado
+            Kamas actualizadas
           </span>
         </div>
       )}
 
       {/* KPI Cards de Resumen del Plan */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* KPI 1: Inversión / Presupuesto */}
+        {/* KPI 1: Mis Kamas Actuales & Asignación */}
         <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shadow-md space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1.5">
               <Coins className="w-3.5 h-3.5 text-amber-400" />
-              Capital Invertido
+              Mis Kamas Actuales
             </span>
             <span className="font-mono font-bold text-amber-300">
-              {summary.budgetUsedPercent.toFixed(1)}%
+              {budget.toLocaleString('es-ES')} K
             </span>
           </div>
           <div className="text-base sm:text-lg font-black text-white font-mono">
-            <KamaDisplay amount={summary.totalCost + postedSummary.totalCost} />
+            <KamaDisplay amount={budget} />
           </div>
           <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800 flex">
-            {budget > 0 && postedSummary.totalCost > 0 && (
-              <div
-                className="h-full bg-emerald-500 transition-all duration-500"
-                style={{ width: `${Math.min(100, (postedSummary.totalCost / budget) * 100)}%` }}
-                title={`Puesto en HDV: ${postedSummary.totalCost.toLocaleString('es-ES')} K`}
-              />
-            )}
             {budget > 0 && summary.totalCost > 0 && (
               <div
                 className="h-full bg-amber-500 transition-all duration-500"
-                style={{ width: `${Math.min(100 - (postedSummary.totalCost / budget) * 100, (summary.totalCost / budget) * 100)}%` }}
-                title={`En plan activo: ${summary.totalCost.toLocaleString('es-ES')} K`}
+                style={{ width: `${Math.min(100, (summary.totalCost / budget) * 100)}%` }}
+                title={`Requerido para plan activo: ${summary.totalCost.toLocaleString('es-ES')} K`}
               />
             )}
           </div>
           <div className="flex flex-col gap-0.5 text-[11px] text-slate-400 font-mono pt-0.5">
-            <div className="flex items-center justify-between">
-              <span>Presupuesto:</span>
-              <span className="text-slate-300">{budget.toLocaleString('es-ES')} K</span>
-            </div>
-            {postedSummary.totalCost > 0 && (
-              <div className="flex items-center justify-between text-emerald-400">
-                <span>Puesto en HDV:</span>
-                <span className="font-bold">{postedSummary.totalCost.toLocaleString('es-ES')} K</span>
-              </div>
-            )}
             <div className="flex items-center justify-between text-amber-300">
-              <span>En plan pendiente:</span>
+              <span>Para plan activo:</span>
               <span className="font-bold">{summary.totalCost.toLocaleString('es-ES')} K</span>
             </div>
             <div className="flex items-center justify-between text-slate-400 border-t border-slate-800/80 pt-0.5">
-              <span>Remanente libre:</span>
-              <span className="text-white font-bold">{summary.remainingBudget.toLocaleString('es-ES')} K</span>
+              <span>Kamas restantes:</span>
+              <span className="text-emerald-400 font-bold">{summary.remainingBudget.toLocaleString('es-ES')} K</span>
             </div>
+            {postedSummary.totalCost > 0 && (
+              <div className="flex items-center justify-between text-slate-500 pt-0.5">
+                <span>Gastado en puestos:</span>
+                <span className="font-medium">-{postedSummary.totalCost.toLocaleString('es-ES')} K</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2533,7 +2615,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                         type="button"
                         onClick={() => handleUndoPosted(posted.itemId)}
                         className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-[10px] font-sans font-semibold transition-colors flex items-center gap-1 shrink-0 cursor-pointer border border-slate-700"
-                        title="Deshacer: Regresar este ítem al plan activo y restaurar su costo al presupuesto libre"
+                        title="Deshacer: Regresar este ítem al plan activo y restaurar las kamas gastadas a tus kamas actuales"
                       >
                         <RotateCcw className="w-3 h-3 text-amber-400" />
                         <span>Deshacer</span>
@@ -2560,13 +2642,13 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
           <div className="space-y-1">
             <h3 className="text-base font-bold text-white">
               {postedCrafts.length > 0
-                ? '¡Presupuesto completamente asignado!'
+                ? '¡Kamas actuales completamente invertidas!'
                 : 'No se encontraron crafteos viables con los filtros actuales'}
             </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
               {postedCrafts.length > 0
-                ? `Has marcado ${postedCrafts.length} crafteo(s) como puestos en mercadillo (${postedSummary.totalCost.toLocaleString('es-ES')} K invertidos). Puedes aumentar el presupuesto si deseas planificar más objetos.`
-                : `Intenta incrementar el presupuesto, bajar el filtro de ROI mínimo, o desactivar temporalmente "Solo oficios que puedo craftear" ${requireSalesHistory ? 'o "Solo con historial de ventas"' : ''} para ampliar las opciones.`}
+                ? `Has marcado ${postedCrafts.length} crafteo(s) como puestos en mercadillo (${postedSummary.totalCost.toLocaleString('es-ES')} K invertidos). Puedes ingresar más fondos en 'Mis Kamas Actuales' si deseas planificar más objetos.`
+                : `Intenta ingresar más kamas en 'Mis Kamas Actuales', bajar el filtro de ROI mínimo, o desactivar temporalmente "Solo oficios que puedo craftear" ${requireSalesHistory ? 'o "Solo con historial de ventas"' : ''} para ampliar las opciones.`}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
@@ -2575,7 +2657,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
               onClick={() => handleApplyPresetBudget(budget + 5_000_000)}
               className="px-3 py-1.5 bg-amber-500 text-slate-950 rounded-xl text-xs font-bold cursor-pointer hover:bg-amber-400"
             >
-              +5 Mk de presupuesto
+              +5 Mk a mis kamas
             </button>
             {postedCrafts.length > 0 ? (
               <button
@@ -2583,7 +2665,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                 onClick={handleClearAllPosted}
                 className="px-3 py-1.5 bg-slate-800 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-700"
               >
-                Limpiar puestos y restaurar presupuesto
+                Limpiar puestos y restaurar kamas
               </button>
             ) : (
               <>
@@ -2675,6 +2757,23 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                             <span className="px-1.5 py-0.2 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-400">
                               Nv. {craft.userJobLevel}
                             </span>
+                            {craft.activeInHdv && craft.activeInHdv.totalQty > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-sky-500/15 border border-sky-500/35 text-[10px] font-bold text-sky-400"
+                                title={`${craft.activeInHdv.totalQty} unidades activas (${craft.activeInHdv.lots} lote(s)) en HDV. Tiempo restante: ${craft.activeInHdv.timeLabel}`}
+                              >
+                                <Tag className="w-2.5 h-2.5 text-sky-400" />
+                                <span>En HDV: {craft.activeInHdv.totalQty} u. ({craft.activeInHdv.timeLabel})</span>
+                              </span>
+                            )}
+                            {soldStatsMap.has(craft.item.id) && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-[10px] font-bold text-emerald-400"
+                                title={`Has vendido personalmente ${soldStatsMap.get(craft.item.id)!.totalUnitsSold} unidades de este ítem`}
+                              >
+                                <span>Tus ventas: {soldStatsMap.get(craft.item.id)!.totalUnitsSold} u.</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2685,7 +2784,7 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                           type="button"
                           onClick={() => handleMarkAsPosted(craft)}
                           className="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 hover:border-emerald-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
-                          title="Marcar 'Esto ya está puesto': quita el objeto del plan y descuenta su costo del presupuesto libre"
+                          title="Marcar 'Ya puesto': descuenta los recursos de Mi Banco y el costo real de tus kamas actuales"
                         >
                           <Check className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Ya puesto</span>

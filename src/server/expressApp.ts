@@ -58,6 +58,7 @@ import {
 import snifferScriptHandler from "../../api/market/sniffer-script";
 import suiteScriptHandler from "../../api/market/suite-script";
 import tokensHandler from "../../api/tokens";
+import marketUpdateHandler from "../../api/market/update";
 import {
   getDofocusGlobalSyncState,
   startHourlyDofocusSync,
@@ -102,6 +103,8 @@ app.get("/api/health", (req, res) => {
 
 app.all("/api/tokens", tokensHandler);
 app.get("/api/market/suite-script", suiteScriptHandler);
+app.all("/api/market/update", marketUpdateHandler);
+app.all("/api/market/batch-update", marketUpdateHandler);
 
 app.get("/api/local-db/bootstrap", async (req, res) => {
   try {

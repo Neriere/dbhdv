@@ -255,11 +255,11 @@ export const BankItemDrawer: React.FC<BankItemDrawerProps> = ({
               <Download className="w-3.5 h-3.5" />
             </button>
             <label
-              title="Importar inventario desde JSON"
+              title="Importar JSONs (Banco, Historial de Ventas y/o Listings Activos - selección múltiple)"
               className="p-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5" />
-              <input type="file" accept=".json" onChange={onImportBank} className="hidden" />
+              <input type="file" accept=".json" multiple onChange={onImportBank} className="hidden" />
             </label>
             <button
               type="button"

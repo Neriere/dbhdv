@@ -23,6 +23,8 @@ import socket
 import datetime
 import urllib.request
 import urllib.parse
+import threading
+import queue
 from collections import defaultdict
 
 # Configurar salida UTF-8 inmediata en Windows
@@ -2078,6 +2080,303 @@ def run_sniffer_active_listings():
     input("\nPresiona Enter para continuar...")
 
 
+def run_sniffer_session_bundle():
+    """
+    MODO SESIÓN COMPLETA (TODO-EN-UNO):
+    Captura simultáneamente:
+    - Precios de Mercadillo: enviados en tiempo real a la API de DBHDV.
+    - Inventario y Banco: guardados en data/banco_inventario_capturado.json.
+    - Historial de Ventas: guardado en data/historial_ventas_capturado.json.
+    - Listings Activos en Venta: guardados en data/listings_en_venta_capturado.json.
+    """
+    km = load_keymap()
+    market_token = km.get("price_list", "jzn")
+    sales_token = km.get("sales_history", "kyo")
+    active_token = km.get("active_listings", "ket")
+
+    print("\n" + "=" * 70)
+    print("  [SNIFFER SESION COMPLETA] CAPTURA UNIFICADA EN TIEMPO REAL")
+    print("=" * 70)
+    print("  Tokens Activos en Paralelo:")
+    print(f"    * Mercadillo (price_list)    : '{market_token}' -> Envio directo a DBHDV")
+    print(f"    * Almacen (inventory/storage): '{km.get('inventory', 'isb')}' / '{km.get('storage', 'hlp')}' -> banco_inventario_capturado.json")
+    print(f"    * Historial (sales_history)  : '{sales_token}' -> historial_ventas_capturado.json")
+    print(f"    * En Venta (active_listings) : '{active_token}' -> listings_en_venta_capturado.json")
+    print("-" * 70)
+    print("  Instrucciones:")
+    print("  1. Juega normalmente en Dofus Unity 3.6.")
+    print("  2. Consulta mercadillos, abre tu banco o la pestana de ventas.")
+    print("  3. El sistema actualiza cada archivo JSON por separado en sniffer/data/.")
+    print("  4. Presiona CTRL+C cuando desees finalizar la sesion.")
+    print("-" * 70)
+
+    load_items_dictionary()
+    load_item_categories()
+
+    accumulated_bank = {}
+    bank_burst_active = False
+    last_bank_pkt = 0.0
+
+    unique_sales_dict = {}
+    sales_burst_active = False
+    sales_burst_stream = bytearray()
+    last_sales_pkt = 0.0
+
+    mercadillos = {"recursos": [], "equipamiento": [], "consumibles": []}
+    if os.path.exists(ACTIVE_LISTINGS_OUTPUT):
+        try:
+            with open(ACTIVE_LISTINGS_OUTPUT, "r", encoding="utf-8") as f:
+                prev_d = json.load(f)
+                if isinstance(prev_d, dict) and "mercadillos" in prev_d:
+                    for mk in ("recursos", "equipamiento", "consumibles"):
+                        sec = prev_d["mercadillos"].get(mk, {})
+                        if isinstance(sec, dict) and "listings" in sec:
+                            mercadillos[mk] = sec["listings"]
+                        elif isinstance(sec, list):
+                            mercadillos[mk] = sec
+        except Exception:
+            pass
+
+    listings_burst_stream = bytearray()
+    listings_burst_active = False
+    last_listings_pkt = 0.0
+
+    market_queue = queue.Queue()
+    market_sent_count = 0
+    server_slug = os.environ.get("DOFUS_SERVER", "draconiros").strip().lower()
+
+    def http_market_worker():
+        nonlocal market_sent_count
+        while True:
+            item_payload = market_queue.get()
+            if item_payload is None:
+                break
+            try:
+                url = f"{DEFAULT_API_URL}/api/market/update"
+                body_bytes = json.dumps(item_payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=body_bytes,
+                    headers={"Content-Type": "application/json", "User-Agent": "DBHDV-UnifiedSniffer/1.0"}
+                )
+                with urllib.request.urlopen(req, timeout=4.0) as resp:
+                    if resp.status == 200:
+                        market_sent_count += 1
+            except Exception:
+                pass
+            finally:
+                market_queue.task_done()
+
+    worker_thread = threading.Thread(target=http_market_worker, daemon=True)
+    worker_thread.start()
+
+    target_bytes_sales = f"type.ankama.com/{sales_token}".encode("ascii")
+    target_bytes_active = f"type.ankama.com/{active_token}".encode("ascii")
+
+    def on_packet(packet):
+        nonlocal bank_burst_active, last_bank_pkt
+        nonlocal sales_burst_active, last_sales_pkt
+        nonlocal listings_burst_active, last_listings_pkt
+
+        if not packet.haslayer(TCP) or not packet.haslayer(Raw):
+            return
+        if packet[TCP].sport != 5555:
+            return
+
+        payload = bytes(packet[Raw].load)
+        if len(payload) < 8:
+            return
+
+        now = time.time()
+
+        # 1. Mercadillo
+        if len(payload) >= 15:
+            tokens = extract_type_tokens(payload)
+            has_market_token = any(tok == market_token for tok, _ in tokens)
+            if has_market_token or len(payload) >= 200:
+                item_id, ladders, offer_prices = extract_market_universal(payload)
+                if item_id > 0 and (ladders or offer_prices):
+                    item_name = get_item_name(item_id)
+                    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+
+                    payload_dict = {
+                        "item_id": item_id,
+                        "server": server_slug,
+                    }
+                    if ladders:
+                        ladder_vals = ladders[0][1]
+                        lad_dict = {}
+                        for i, p in enumerate(ladder_vals):
+                            if p > 0:
+                                lad_dict[str(10**i)] = p
+                        payload_dict["ladders"] = lad_dict
+                        lad_str = " | ".join(f"x{k}: {v:,} K" for k, v in lad_dict.items())
+                        print(f"  [{now_str}] [Mercadillo] {item_name} (#{item_id}) -> {lad_str}")
+                    elif offer_prices:
+                        payload_dict["prices"] = sorted(offer_prices)[:5]
+                        top_3 = sorted(offer_prices)[:3]
+                        lad_str = ", ".join(f"{p:,} K" for p in top_3)
+                        print(f"  [{now_str}] [Mercadillo Equipos] {item_name} (#{item_id}) -> Minimos: {lad_str}")
+
+                    market_queue.put(payload_dict)
+
+        # 2. Almacen / Banco
+        if len(payload) >= 15:
+            direct_items = extract_items_recursive(payload)
+            if direct_items:
+                for gid, qty, uid in direct_items:
+                    k = uid if uid > 0 else (gid, len(accumulated_bank))
+                    accumulated_bank[k] = (gid, qty, uid)
+                bank_burst_active = True
+                last_bank_pkt = now
+
+        # 3. Historial de Ventas
+        if target_bytes_sales in payload or b"type.ankama.com/kyo" in payload:
+            sales_burst_active = True
+            sales_burst_stream.clear()
+
+        if sales_burst_active:
+            sales_burst_stream.extend(payload)
+            last_sales_pkt = now
+
+        # 4. Listings Activos
+        if target_bytes_active in payload or b"type.ankama.com/ket" in payload or (listings_burst_active and len(payload) >= 150):
+            listings_burst_active = True
+            listings_burst_stream.extend(payload)
+            last_listings_pkt = now
+
+    sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
+    sniffer.start()
+
+    print("\n[Sesion Iniciada] Escuchando trafico en puerto 5555...")
+    print("Realiza tus acciones en Dofus Unity (presiona CTRL+C para guardar y finalizar).\n")
+
+    try:
+        while True:
+            time.sleep(0.1)
+            now = time.time()
+
+            # Guardado del Banco al finalizar rafaga
+            if bank_burst_active and now - last_bank_pkt >= 1.8 and len(accumulated_bank) >= 2:
+                bank_burst_active = False
+                total_slots = len(accumulated_bank)
+                total_units = sum(q for _, q, _ in accumulated_bank.values())
+                items_list = [
+                    {"uid": str(uid), "itemId": gid, "name": get_item_name(gid), "quantity": qty}
+                    for gid, qty, uid in accumulated_bank.values()
+                ]
+                saved_bank_data = {
+                    "metadata": {
+                        "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "totalSlots": total_slots,
+                        "totalUnits": total_units,
+                        "uniqueTypes": len(set(gid for gid, _, _ in accumulated_bank.values())),
+                    },
+                    "items": items_list
+                }
+                try:
+                    with open(INVENTORY_OUTPUT, "w", encoding="utf-8") as f:
+                        json.dump(saved_bank_data, f, indent=2, ensure_ascii=False)
+                    print(f"\n  [Guardado Banco] {total_slots} slots ({total_units:,} unidades) -> data/banco_inventario_capturado.json")
+                except Exception as e:
+                    print(f"\n  [Error guardando banco]: {e}")
+
+            # Guardado de Historial al finalizar rafaga
+            if sales_burst_active and now - last_sales_pkt >= 1.2 and len(sales_burst_stream) >= 300:
+                raw_sales_bytes = bytes(sales_burst_stream)
+                sales_burst_active = False
+                sales_burst_stream.clear()
+                entries = extract_sales_entries(raw_sales_bytes)
+                if entries:
+                    for s in entries:
+                        k = (s.get("rawDate") or s.get("date"), s.get("itemId"), s.get("price"), s.get("quantity"))
+                        if k not in unique_sales_dict:
+                            unique_sales_dict[k] = s
+                    sales_list = list(unique_sales_dict.values())
+                    sold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Vendido")
+                    unsold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Sin vender")
+                    saved_sales_data = {
+                        "metadata": {
+                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "totalSales": len(sales_list),
+                            "totalKamas": sold_k,
+                            "soldKamas": sold_k,
+                            "unsoldKamas": unsold_k,
+                            "soldCount": sum(1 for s in sales_list if s.get("status") == "Vendido"),
+                            "unsoldCount": sum(1 for s in sales_list if s.get("status") == "Sin vender"),
+                        },
+                        "sales": sales_list
+                    }
+                    try:
+                        with open(SALES_OUTPUT, "w", encoding="utf-8") as f:
+                            json.dump(saved_sales_data, f, indent=2, ensure_ascii=False)
+                        print(f"\n  [Guardado Historial] {len(sales_list):,} ventas registradas -> data/historial_ventas_capturado.json")
+                    except Exception as e:
+                        print(f"\n  [Error guardando historial]: {e}")
+
+            # Guardado de Listings Activos al finalizar rafaga
+            if listings_burst_active and now - last_listings_pkt >= 1.2 and len(listings_burst_stream) >= 200:
+                raw_listings_bytes = bytes(listings_burst_stream)
+                listings_burst_active = False
+                listings_burst_stream.clear()
+                new_listings = extract_active_listings(raw_listings_bytes)
+                if new_listings:
+                    market_key = classify_batch_market(new_listings)
+                    now_ts = int(time.time())
+                    for entry in new_listings:
+                        secs = entry.get("secondsRemaining", 0)
+                        if secs > 0:
+                            entry["expiresAt"] = datetime.datetime.fromtimestamp(now_ts + secs).strftime("%Y-%m-%d %H:%M:%S")
+                            days = secs // 86400
+                            hours = (secs % 86400) // 3600
+                            entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
+                        else:
+                            entry["expiresAt"] = None
+                            entry["timeLabel"] = "Desconocido"
+                        entry["market"] = market_key
+
+                    mercadillos[market_key] = new_listings
+                    all_listings = mercadillos["recursos"] + mercadillos["equipamiento"] + mercadillos["consumibles"]
+                    saved_listings_data = {
+                        "metadata": {
+                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "totalLots": len(all_listings),
+                            "totalValue": sum(e["price"] for e in all_listings),
+                        },
+                        "mercadillos": {
+                            "recursos": {"totalLots": len(mercadillos["recursos"]), "totalValue": sum(e["price"] for e in mercadillos["recursos"]), "listings": mercadillos["recursos"]},
+                            "equipamiento": {"totalLots": len(mercadillos["equipamiento"]), "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]), "listings": mercadillos["equipamiento"]},
+                            "consumibles": {"totalLots": len(mercadillos["consumibles"]), "totalValue": sum(e["price"] for e in mercadillos["consumibles"]), "listings": mercadillos["consumibles"]},
+                        },
+                        "listings": all_listings
+                    }
+                    try:
+                        with open(ACTIVE_LISTINGS_OUTPUT, "w", encoding="utf-8") as f:
+                            json.dump(saved_listings_data, f, indent=2, ensure_ascii=False)
+                        print(f"\n  [Guardado En Venta] {len(all_listings)} lotes activos ({market_key}) -> data/listings_en_venta_capturado.json")
+                    except Exception as e:
+                        print(f"\n  [Error guardando listings]: {e}")
+
+    except KeyboardInterrupt:
+        print("\n\n" + "=" * 70)
+        print("  RESUMEN DE SESION COMPLETA FINALIZADA")
+        print("=" * 70)
+        print(f"  * Mercadillo : {market_sent_count} actualizaciones enviadas en vivo a DBHDV")
+        print(f"  * Banco      : {len(accumulated_bank)} slots en sniffer/data/banco_inventario_capturado.json")
+        print(f"  * Historial  : {len(unique_sales_dict)} ventas en sniffer/data/historial_ventas_capturado.json")
+        tot_lots = sum(len(v) for v in mercadillos.values())
+        print(f"  * En Venta   : {tot_lots} lotes en sniffer/data/listings_en_venta_capturado.json")
+        print("-" * 70)
+        print("  Puedes importar estos 3 archivos JSON a la vez en DBHDV > Mi Banco.")
+        print("=" * 70)
+    finally:
+        if sniffer.running:
+            sniffer.stop()
+        market_queue.put(None)
+
+    input("\nPresiona Enter para volver al menu...")
+
+
 # =============================================================================
 # MENÚ PRINCIPAL
 # =============================================================================
@@ -2095,6 +2394,7 @@ def print_menu():
     print("    • Última calibración         : " + str(km.get('last_calibrated', 'Nunca')))
     print("-" * 70)
     print("  [MODO CAPTURA Y GESTIÓN EN VIVO]")
+    print("    [S] Sniffer de Sesión Completa Todo-en-Uno (Mercadillo Cloud + Banco + Historial + Listings)")
     print("    [1] Sniffer Mercadillo (Precios HDV en Vivo)")
     print("    [2] Sniffer Almacén Unificado (Inventario + Banco + Merkasako)")
     print("    [3] Sniffer Historial de Ventas (Transacciones y Caducidades)")
@@ -2117,12 +2417,14 @@ def main():
     while True:
         print_menu()
         try:
-            choice = input("Selecciona una opción [0-12]: ").strip()
+            choice = input("Selecciona una opción [0-12 / S]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             print("\n¡Hasta pronto!")
             break
 
-        if choice == "1":
+        if choice in ("s", "sesion", "bundle", "all"):
+            run_sniffer_session_bundle()
+        elif choice == "1":
             run_sniffer_market()
         elif choice == "2":
             run_sniffer_storage()

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Vault } from "lucide-react";
+import { Vault, Upload } from "lucide-react";
 import { DofusItem } from "../types";
 import {
   getStoredItemPrice,
@@ -9,6 +9,11 @@ import {
 import { useMarketPrices } from "../hooks/useMarketPrices";
 import { useBankInventory } from "../hooks/useBankInventory";
 import { BankItemDrawer } from "./bank/BankItemDrawer";
+import {
+  importSalesHistoryJSON,
+  importActiveListingsJSON,
+} from "../services/salesHistoryService";
+import { saveActiveListings } from "../services/activeListingsService";
 import craftIngredientsIds from "../data/craftIngredientsIds.json";
 import { isMountOrPet } from "../data/dofusJobs";
 
@@ -156,16 +161,38 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = () => {
     downloadAnchor.remove();
   };
 
-  const handleImportBank = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleImportBank = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    const files = Array.from(fileList);
+    let bankImportCount = 0;
+    let bankExcludedCount = 0;
+    let salesImportCount = 0;
+    let listingsImportCount = 0;
+    const errors: string[] = [];
+
+    for (const file of files) {
       try {
-        const rawContent = e.target?.result as string;
-        const parsed = JSON.parse(rawContent);
+        const text = await file.text();
+        const parsed = JSON.parse(text);
 
+        // 1. Detectar Historial de Ventas (historial_ventas_capturado.json)
+        if (parsed && Array.isArray(parsed.sales)) {
+          const res = importSalesHistoryJSON(parsed);
+          salesImportCount += res.snapshot.totalSales;
+          continue;
+        }
+
+        // 2. Detectar Listings en Venta Activos (listings_en_venta_capturado.json)
+        if (parsed && (Array.isArray(parsed.listings) || parsed.mercadillos)) {
+          const res = importActiveListingsJSON(parsed);
+          saveActiveListings(parsed);
+          listingsImportCount += res.snapshot.totalLots;
+          continue;
+        }
+
+        // 3. Detectar Banco / Inventario (banco_inventario_capturado.json o array)
         let rawList: any[] = [];
         if (Array.isArray(parsed)) {
           rawList = parsed;
@@ -178,55 +205,73 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = () => {
                 return { itemId: Number(key), quantity: val };
               }
               if (val && typeof val === "object") {
-                return { itemId: Number((val as any).itemId || (val as any).id || key), quantity: Number((val as any).quantity || (val as any).qty || 1) };
+                return {
+                  itemId: Number((val as any).itemId || (val as any).id || key),
+                  quantity: Number((val as any).quantity || (val as any).qty || 1),
+                };
               }
               return null;
             }).filter(Boolean);
           }
         }
 
-        const validItemsMap = new Map<number, number>();
-        let ignoredExcludedCount = 0;
+        if (rawList.length > 0) {
+          const validItemsMap = new Map<number, number>();
+          rawList.forEach((entry) => {
+            const id = Number(entry?.itemId || entry?.id || entry?.item_id || 0);
+            const qty = Number(entry?.quantity || entry?.qty || entry?.count || 0);
 
-        rawList.forEach((entry) => {
-          const id = Number(entry?.itemId || entry?.id || entry?.item_id || 0);
-          const qty = Number(entry?.quantity || entry?.qty || entry?.count || 0);
-
-          if (id > 0 && qty > 0) {
-            if (shouldExcludeFromBank(id, entry?.item || entry)) {
-              ignoredExcludedCount++;
-              return;
+            if (id > 0 && qty > 0) {
+              if (shouldExcludeFromBank(id, entry?.item || entry)) {
+                bankExcludedCount++;
+                return;
+              }
+              const current = validItemsMap.get(id) || 0;
+              validItemsMap.set(id, current + qty);
             }
-            const current = validItemsMap.get(id) || 0;
-            validItemsMap.set(id, current + qty);
+          });
+
+          if (validItemsMap.size > 0) {
+            const newBankItems = Array.from(validItemsMap.entries()).map(([itemId, quantity]) => {
+              const item = getItemById(itemId);
+              return {
+                itemId,
+                quantity,
+                item: item || undefined,
+                addedAt: Date.now(),
+              };
+            });
+            saveInventory(newBankItems);
+            bankImportCount = newBankItems.length;
           }
-        });
-
-        if (validItemsMap.size === 0) {
-          alert("El archivo no contenía recursos válidos para el banco.");
-          return;
         }
-
-        const newBankItems = Array.from(validItemsMap.entries()).map(([itemId, quantity]) => {
-          const item = getItemById(itemId);
-          return {
-            itemId,
-            quantity,
-            item: item || undefined,
-            addedAt: Date.now(),
-          };
-        });
-
-        saveInventory(newBankItems);
-        const ignoredMsg = ignoredExcludedCount > 0 ? ` (${ignoredExcludedCount} no válidos omitidos)` : "";
-        showToast(`Se importaron ${newBankItems.length} recursos correctamente${ignoredMsg}`);
-      } catch (err) {
-        console.error("Error al importar banco:", err);
-        alert("Error al procesar el archivo JSON. Formato no compatible.");
+      } catch (err: any) {
+        console.error(`Error procesando archivo ${file.name}:`, err);
+        errors.push(`${file.name}: ${err?.message || "Formato no compatible"}`);
       }
-    };
-    reader.readAsText(file);
+    }
+
     event.target.value = "";
+
+    const summaryParts: string[] = [];
+    if (bankImportCount > 0) {
+      const excludedMsg = bankExcludedCount > 0 ? ` (${bankExcludedCount} omitidos)` : "";
+      summaryParts.push(`Banco: ${bankImportCount} recursos${excludedMsg}`);
+    }
+    if (salesImportCount > 0) {
+      summaryParts.push(`Historial: ${salesImportCount} ventas`);
+    }
+    if (listingsImportCount > 0) {
+      summaryParts.push(`En venta: ${listingsImportCount} lotes`);
+    }
+
+    if (summaryParts.length > 0) {
+      showToast(`Importación exitosa: ${summaryParts.join(" • ")}`);
+    } else if (errors.length > 0) {
+      alert(`No se pudieron procesar los archivos:\n${errors.join("\n")}`);
+    } else {
+      alert("No se detectó un formato compatible en los archivos seleccionados.");
+    }
   };
 
   return (
@@ -245,11 +290,21 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = () => {
               <Vault className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                Mi Banco
-              </h1>
-              <p className="text-xs text-slate-400">
-                Gestiona los recursos de tu almacén, consulta el valor total en Kamas y sincroniza tu inventario para el Plan de Crafteo.
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                  Mi Banco
+                </h1>
+                <label
+                  title="Selecciona a la vez banco_inventario, historial_ventas y/o listings_en_venta"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Importar JSONs (Multi-archivo)</span>
+                  <input type="file" accept=".json" multiple onChange={handleImportBank} className="hidden" />
+                </label>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Gestiona tus recursos, consulta su valor en Kamas e importa en un solo paso tu banco, historial y listings en venta.
               </p>
             </div>
           </div>
