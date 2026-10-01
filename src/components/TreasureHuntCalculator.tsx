@@ -250,7 +250,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
 
       const calculatedEquipments: CalculatedBycEquipment[] = relatedEquipments.map((eq) => {
         const salePriceGross = getPrice(eq.id, eq.defaultSalePrice);
-        const salePriceNet = Math.round(salePriceGross * (1 - 0.02)); // 2% HDV Tax
+        const saleTax = salePriceGross > 0 ? Math.ceil(salePriceGross * 0.02) : 0;
+        const salePriceNet = salePriceGross - saleTax;
         const resourceQtyNeeded = eq.resourceQuantityNeeded || 1;
 
         let otherIngredientsCost = 0;
@@ -280,7 +281,8 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
         const optimalRoi = optimalInvestment > 0 ? (optimalNetProfit / optimalInvestment) * 100 : 0;
 
         // Value added vs raw resource sale in HDV (-2% tax)
-        const resourceNetIncome = Math.round(resourcePrice * (1 - 0.02));
+        const resourceTax = resourcePrice > 0 ? Math.ceil(resourcePrice * 0.02) : 0;
+        const resourceNetIncome = resourcePrice - resourceTax;
         const addedValueVsRawSale = salePriceNet - otherIngredientsCost - (resourceNetIncome * resourceQtyNeeded);
 
         return {
