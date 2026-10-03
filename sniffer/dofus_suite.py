@@ -121,6 +121,17 @@ SALES_GENERATOR_SCRIPT = os.path.join(VIEWER_DIR, "generar_visor_historial.py")
 
 DEFAULT_API_URL = os.environ.get("DBHDV_API_URL", "https://dbhdv.vercel.app")
 
+# Inicialización garantizada de logs desde el arranque
+try:
+    if not os.path.exists(SNIFFER_LOG):
+        with open(SNIFFER_LOG, "w", encoding="utf-8") as f:
+            f.write(f"=== DBHDV SUITE LOG INICIALIZADO ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ===\n\n")
+    if not os.path.exists(DIAGNOSTIC_LOG):
+        with open(DIAGNOSTIC_LOG, "w", encoding="utf-8") as f:
+            f.write(f"=== DBHDV DIAGNOSTICO INICIALIZADO ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ===\n\n")
+except Exception:
+    pass
+
 ITEMS_NAME_MAP = {}
 
 # =============================================================================
@@ -225,6 +236,25 @@ def log_sniffer_event(module, msg, payload=None, extra=None):
             pass
 
     log_diagnostic(f"[{module}] {msg}", payload_sample=payload[:32].hex() if payload else None)
+
+def init_session_log(session_type="TODO-EN-UNO"):
+    """Inicializa y escribe cabecera en el archivo de log al arrancar una nueva sesión de captura"""
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = [
+        "=" * 80,
+        f"  DBHDV UNIFIED SUITE -> REGISTRO DE SESION ACTIVA [{session_type}]",
+        f"  Inicio de sesión : {ts}",
+        f"  Ruta log         : {SNIFFER_LOG}",
+        "=" * 80,
+        ""
+    ]
+    with SNIFFER_LOG_LOCK:
+        try:
+            with open(SNIFFER_LOG, "a", encoding="utf-8") as f:
+                f.write("\n".join(header) + "\n")
+        except Exception:
+            pass
+    log_diagnostic(f"Sesión iniciada: {session_type}")
 
 def load_keymap():
     if os.path.exists(KEYMAP_FILE):
@@ -615,6 +645,8 @@ def run_sniffer_storage():
     print("  El sistema acumulará la ráfaga continua de paquetes automáticamente.")
     print("-" * 70)
 
+    init_session_log("ALMACEN")
+    storage_lock = threading.Lock()
     accumulated_items = {}
     burst_started = False
     packet_count = 0
@@ -636,9 +668,10 @@ def run_sniffer_storage():
         now = time.time()
 
         if direct_items:
-            for gid, qty, uid in direct_items:
-                key = uid if uid > 0 else (gid, len(accumulated_items))
-                accumulated_items[key] = (gid, qty, uid)
+            with storage_lock:
+                for gid, qty, uid in direct_items:
+                    key = uid if uid > 0 else (gid, len(accumulated_items))
+                    accumulated_items[key] = (gid, qty, uid)
 
             burst_started = True
             last_item_time = now
@@ -658,8 +691,10 @@ def run_sniffer_storage():
             time.sleep(0.1)
             now = time.time()
             if burst_started:
-                slots = len(accumulated_items)
-                total_units = sum(q for _, q, _ in accumulated_items.values())
+                with storage_lock:
+                    items_snapshot = list(accumulated_items.values())
+                slots = len(items_snapshot)
+                total_units = sum(q for _, q, _ in items_snapshot)
                 sys.stdout.write(f"\r  [Acumulando Almacén] {slots:,} slots detectados ({total_units:,} unidades) en {packet_count} paquetes...   ")
                 sys.stdout.flush()
 
@@ -678,22 +713,26 @@ def run_sniffer_storage():
 
     if len(burst_stream) > 0:
         stream_items = extract_items_recursive(bytes(burst_stream))
-        for gid, qty, uid in stream_items:
-            key = uid if uid > 0 else (gid, len(accumulated_items))
-            accumulated_items[key] = (gid, qty, uid)
+        with storage_lock:
+            for gid, qty, uid in stream_items:
+                key = uid if uid > 0 else (gid, len(accumulated_items))
+                accumulated_items[key] = (gid, qty, uid)
 
-    if not accumulated_items:
+    with storage_lock:
+        items_snapshot = list(accumulated_items.values())
+
+    if not items_snapshot:
         print("\n❌ No se detectó ninguna lista de almacén en este intento.")
         print("Sugerencia: Asegúrate de estar dentro del juego y hacer clic en la pestaña de 'VENTA' del mercadillo.")
         return
 
     # Guardar en data/banco_inventario_capturado.json
-    total_slots = len(accumulated_items)
-    total_units = sum(q for _, q, _ in accumulated_items.values())
-    unique_types = len(set(gid for gid, _, _ in accumulated_items.values()))
+    total_slots = len(items_snapshot)
+    total_units = sum(q for _, q, _ in items_snapshot)
+    unique_types = len(set(gid for gid, _, _ in items_snapshot))
 
     items_list = []
-    for gid, qty, uid in accumulated_items.values():
+    for gid, qty, uid in items_snapshot:
         items_list.append({
             "uid": str(uid),
             "itemId": gid,
@@ -2222,6 +2261,13 @@ def run_sniffer_session_bundle():
     load_items_dictionary()
     load_item_categories()
 
+    init_session_log("SESION_COMPLETA")
+    log_sniffer_event("SESION_INICIADA", f"Servidor={server_slug} | Tokens: market='{market_token}', inv='{inv_token}', storage='{storage_token}', sales='{sales_token}', active='{active_token}'")
+
+    bank_lock = threading.Lock()
+    sales_lock = threading.Lock()
+    listings_lock = threading.Lock()
+
     accumulated_bank = {}
     bank_burst_active = False
     last_bank_pkt = 0.0
@@ -2252,7 +2298,6 @@ def run_sniffer_session_bundle():
 
     market_queue = queue.Queue()
     market_sent_count = 0
-    server_slug = os.environ.get("DOFUS_SERVER", "draconiros").strip().lower()
 
     def http_market_worker():
         nonlocal market_sent_count
@@ -2278,13 +2323,6 @@ def run_sniffer_session_bundle():
 
     worker_thread = threading.Thread(target=http_market_worker, daemon=True)
     worker_thread.start()
-
-    target_bytes_sales = f"type.ankama.com/{sales_token}".encode("ascii")
-    target_bytes_active = f"type.ankama.com/{active_token}".encode("ascii")
-    inv_token = km.get("inventory", "isb")
-    storage_token = km.get("storage", "hlp")
-    target_bytes_inv = f"type.ankama.com/{inv_token}".encode("ascii")
-    target_bytes_storage = f"type.ankama.com/{storage_token}".encode("ascii")
 
     def on_packet(packet):
         nonlocal bank_burst_active, last_bank_pkt
@@ -2339,26 +2377,30 @@ def run_sniffer_session_bundle():
             if has_storage_token or bank_burst_active:
                 direct_items = extract_items_recursive(payload)
                 if direct_items:
-                    for gid, qty, uid in direct_items:
-                        k = uid if uid > 0 else (gid, len(accumulated_bank))
-                        accumulated_bank[k] = (gid, qty, uid)
-                    bank_burst_active = True
-                    last_bank_pkt = now
+                    with bank_lock:
+                        for gid, qty, uid in direct_items:
+                            k = uid if uid > 0 else (gid, len(accumulated_bank))
+                            accumulated_bank[k] = (gid, qty, uid)
+                        bank_burst_active = True
+                        last_bank_pkt = now
 
         # 3. Historial de Ventas
         if target_bytes_sales in payload or b"type.ankama.com/kyo" in payload:
-            sales_burst_active = True
-            sales_burst_stream.clear()
+            with sales_lock:
+                sales_burst_active = True
+                sales_burst_stream.clear()
 
         if sales_burst_active:
-            sales_burst_stream.extend(payload)
-            last_sales_pkt = now
+            with sales_lock:
+                sales_burst_stream.extend(payload)
+                last_sales_pkt = now
 
         # 4. Listings Activos
         if target_bytes_active in payload or b"type.ankama.com/ket" in payload or (listings_burst_active and len(payload) >= 150):
-            listings_burst_active = True
-            listings_burst_stream.extend(payload)
-            last_listings_pkt = now
+            with listings_lock:
+                listings_burst_active = True
+                listings_burst_stream.extend(payload)
+                last_listings_pkt = now
 
     sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
     sniffer.start()
@@ -2372,118 +2414,153 @@ def run_sniffer_session_bundle():
             now = time.time()
 
             # Guardado del Banco al finalizar rafaga
-            if bank_burst_active and now - last_bank_pkt >= 1.8 and len(accumulated_bank) >= 2:
-                bank_burst_active = False
-                total_slots = len(accumulated_bank)
-                total_units = sum(q for _, q, _ in accumulated_bank.values())
-                items_list = [
-                    {"uid": str(uid), "itemId": gid, "name": get_item_name(gid), "quantity": qty}
-                    for gid, qty, uid in accumulated_bank.values()
-                ]
-                saved_bank_data = {
-                    "metadata": {
-                        "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "totalSlots": total_slots,
-                        "totalUnits": total_units,
-                        "uniqueTypes": len(set(gid for gid, _, _ in accumulated_bank.values())),
-                    },
-                    "items": items_list
-                }
+            need_save_bank = False
+            bank_snapshot = []
+            with bank_lock:
+                if bank_burst_active and now - last_bank_pkt >= 1.8 and len(accumulated_bank) >= 2:
+                    bank_burst_active = False
+                    need_save_bank = True
+                    bank_snapshot = list(accumulated_bank.values())
+
+            if need_save_bank and bank_snapshot:
                 try:
+                    total_slots = len(bank_snapshot)
+                    total_units = sum(q for _, q, _ in bank_snapshot)
+                    items_list = [
+                        {"uid": str(uid), "itemId": gid, "name": get_item_name(gid), "quantity": qty}
+                        for gid, qty, uid in bank_snapshot
+                    ]
+                    saved_bank_data = {
+                        "metadata": {
+                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "totalSlots": total_slots,
+                            "totalUnits": total_units,
+                            "uniqueTypes": len(set(gid for gid, _, _ in bank_snapshot)),
+                        },
+                        "items": items_list
+                    }
                     with open(INVENTORY_OUTPUT, "w", encoding="utf-8") as f:
                         json.dump(saved_bank_data, f, indent=2, ensure_ascii=False)
                     print(f"\n  [Guardado Banco] {total_slots} slots ({total_units:,} unidades) -> data/banco_inventario_capturado.json")
+                    log_sniffer_event("ALMACEN_GUARDADO", f"{total_slots} slots ({total_units:,} unidades) guardados en {INVENTORY_OUTPUT}")
                 except Exception as e:
                     print(f"\n  [Error guardando banco]: {e}")
+                    log_sniffer_event("ERROR_BANCO", f"Fallo al guardar banco: {e}")
 
             # Guardado de Historial al finalizar rafaga
-            if sales_burst_active and now - last_sales_pkt >= 1.2 and len(sales_burst_stream) >= 300:
-                raw_sales_bytes = bytes(sales_burst_stream)
-                sales_burst_active = False
-                sales_burst_stream.clear()
-                entries = extract_sales_entries(raw_sales_bytes)
-                if entries:
-                    for s in entries:
-                        k = (s.get("rawDate") or s.get("date"), s.get("itemId"), s.get("price"), s.get("quantity"))
-                        if k not in unique_sales_dict:
-                            unique_sales_dict[k] = s
-                    sales_list = list(unique_sales_dict.values())
-                    sold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Vendido")
-                    unsold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Sin vender")
-                    saved_sales_data = {
-                        "metadata": {
-                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "totalSales": len(sales_list),
-                            "totalKamas": sold_k,
-                            "soldKamas": sold_k,
-                            "unsoldKamas": unsold_k,
-                            "soldCount": sum(1 for s in sales_list if s.get("status") == "Vendido"),
-                            "unsoldCount": sum(1 for s in sales_list if s.get("status") == "Sin vender"),
-                        },
-                        "sales": sales_list
-                    }
-                    try:
+            need_save_sales = False
+            raw_sales_bytes = None
+            with sales_lock:
+                if sales_burst_active and now - last_sales_pkt >= 1.2 and len(sales_burst_stream) >= 300:
+                    raw_sales_bytes = bytes(sales_burst_stream)
+                    sales_burst_active = False
+                    sales_burst_stream.clear()
+                    need_save_sales = True
+
+            if need_save_sales and raw_sales_bytes:
+                try:
+                    entries = extract_sales_entries(raw_sales_bytes)
+                    if entries:
+                        with sales_lock:
+                            for s in entries:
+                                k = (s.get("rawDate") or s.get("date"), s.get("itemId"), s.get("price"), s.get("quantity"))
+                                if k not in unique_sales_dict:
+                                    unique_sales_dict[k] = s
+                            sales_list = list(unique_sales_dict.values())
+
+                        sold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Vendido")
+                        unsold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Sin vender")
+                        saved_sales_data = {
+                            "metadata": {
+                                "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "totalSales": len(sales_list),
+                                "totalKamas": sold_k,
+                                "soldKamas": sold_k,
+                                "unsoldKamas": unsold_k,
+                                "soldCount": sum(1 for s in sales_list if s.get("status") == "Vendido"),
+                                "unsoldCount": sum(1 for s in sales_list if s.get("status") == "Sin vender"),
+                            },
+                            "sales": sales_list
+                        }
                         with open(SALES_OUTPUT, "w", encoding="utf-8") as f:
                             json.dump(saved_sales_data, f, indent=2, ensure_ascii=False)
                         print(f"\n  [Guardado Historial] {len(sales_list):,} ventas registradas -> data/historial_ventas_capturado.json")
-                    except Exception as e:
-                        print(f"\n  [Error guardando historial]: {e}")
+                        log_sniffer_event("HISTORIAL_GUARDADO", f"{len(sales_list):,} ventas guardadas en {SALES_OUTPUT}")
+                except Exception as e:
+                    print(f"\n  [Error guardando historial]: {e}")
+                    log_sniffer_event("ERROR_HISTORIAL", f"Fallo al guardar historial: {e}")
 
             # Guardado de Listings Activos al finalizar rafaga
-            if listings_burst_active and now - last_listings_pkt >= 1.2 and len(listings_burst_stream) >= 200:
-                raw_listings_bytes = bytes(listings_burst_stream)
-                listings_burst_active = False
-                listings_burst_stream.clear()
-                new_listings = extract_active_listings(raw_listings_bytes)
-                if new_listings:
-                    market_key = classify_batch_market(new_listings)
-                    now_ts = int(time.time())
-                    for entry in new_listings:
-                        secs = entry.get("secondsRemaining", 0)
-                        if secs > 0:
-                            entry["expiresAt"] = datetime.datetime.fromtimestamp(now_ts + secs).strftime("%Y-%m-%d %H:%M:%S")
-                            days = secs // 86400
-                            hours = (secs % 86400) // 3600
-                            entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
-                        else:
-                            entry["expiresAt"] = None
-                            entry["timeLabel"] = "Desconocido"
-                        entry["market"] = market_key
+            need_save_listings = False
+            raw_listings_bytes = None
+            with listings_lock:
+                if listings_burst_active and now - last_listings_pkt >= 1.2 and len(listings_burst_stream) >= 200:
+                    raw_listings_bytes = bytes(listings_burst_stream)
+                    listings_burst_active = False
+                    listings_burst_stream.clear()
+                    need_save_listings = True
 
-                    mercadillos[market_key] = new_listings
-                    all_listings = mercadillos["recursos"] + mercadillos["equipamiento"] + mercadillos["consumibles"]
-                    saved_listings_data = {
-                        "metadata": {
-                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "totalLots": len(all_listings),
-                            "totalValue": sum(e["price"] for e in all_listings),
-                        },
-                        "mercadillos": {
-                            "recursos": {"totalLots": len(mercadillos["recursos"]), "totalValue": sum(e["price"] for e in mercadillos["recursos"]), "listings": mercadillos["recursos"]},
-                            "equipamiento": {"totalLots": len(mercadillos["equipamiento"]), "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]), "listings": mercadillos["equipamiento"]},
-                            "consumibles": {"totalLots": len(mercadillos["consumibles"]), "totalValue": sum(e["price"] for e in mercadillos["consumibles"]), "listings": mercadillos["consumibles"]},
-                        },
-                        "listings": all_listings
-                    }
-                    try:
+            if need_save_listings and raw_listings_bytes:
+                try:
+                    new_listings = extract_active_listings(raw_listings_bytes)
+                    if new_listings:
+                        market_key = classify_batch_market(new_listings)
+                        now_ts = int(time.time())
+                        for entry in new_listings:
+                            secs = entry.get("secondsRemaining", 0)
+                            if secs > 0:
+                                entry["expiresAt"] = datetime.datetime.fromtimestamp(now_ts + secs).strftime("%Y-%m-%d %H:%M:%S")
+                                days = secs // 86400
+                                hours = (secs % 86400) // 3600
+                                entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
+                            else:
+                                entry["expiresAt"] = None
+                                entry["timeLabel"] = "Desconocido"
+                            entry["market"] = market_key
+
+                        with listings_lock:
+                            mercadillos[market_key] = new_listings
+                            all_listings = mercadillos["recursos"] + mercadillos["equipamiento"] + mercadillos["consumibles"]
+
+                        saved_listings_data = {
+                            "metadata": {
+                                "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "totalLots": len(all_listings),
+                                "totalValue": sum(e["price"] for e in all_listings),
+                            },
+                            "mercadillos": {
+                                "recursos": {"totalLots": len(mercadillos["recursos"]), "totalValue": sum(e["price"] for e in mercadillos["recursos"]), "listings": mercadillos["recursos"]},
+                                "equipamiento": {"totalLots": len(mercadillos["equipamiento"]), "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]), "listings": mercadillos["equipamiento"]},
+                                "consumibles": {"totalLots": len(mercadillos["consumibles"]), "totalValue": sum(e["price"] for e in mercadillos["consumibles"]), "listings": mercadillos["consumibles"]},
+                            },
+                            "listings": all_listings
+                        }
                         with open(ACTIVE_LISTINGS_OUTPUT, "w", encoding="utf-8") as f:
                             json.dump(saved_listings_data, f, indent=2, ensure_ascii=False)
                         print(f"\n  [Guardado En Venta] {len(all_listings)} lotes activos ({market_key}) -> data/listings_en_venta_capturado.json")
-                    except Exception as e:
-                        print(f"\n  [Error guardando listings]: {e}")
+                        log_sniffer_event("LISTINGS_GUARDADO", f"{len(all_listings)} lotes activos ({market_key}) guardados en {ACTIVE_LISTINGS_OUTPUT}")
+                except Exception as e:
+                    print(f"\n  [Error guardando listings]: {e}")
+                    log_sniffer_event("ERROR_LISTINGS", f"Fallo al guardar listings: {e}")
 
     except KeyboardInterrupt:
         print("\n\n" + "=" * 70)
         print("  RESUMEN DE SESION COMPLETA FINALIZADA")
         print("=" * 70)
+        with bank_lock:
+            bank_count = len(accumulated_bank)
+        with sales_lock:
+            sales_count = len(unique_sales_dict)
+        with listings_lock:
+            tot_lots = sum(len(v) for v in mercadillos.values())
         print(f"  * Mercadillo : {market_sent_count} actualizaciones enviadas en vivo a DBHDV")
-        print(f"  * Banco      : {len(accumulated_bank)} slots en sniffer/data/banco_inventario_capturado.json")
-        print(f"  * Historial  : {len(unique_sales_dict)} ventas en sniffer/data/historial_ventas_capturado.json")
-        tot_lots = sum(len(v) for v in mercadillos.values())
+        print(f"  * Banco      : {bank_count} slots en sniffer/data/banco_inventario_capturado.json")
+        print(f"  * Historial  : {sales_count} ventas en sniffer/data/historial_ventas_capturado.json")
         print(f"  * En Venta   : {tot_lots} lotes en sniffer/data/listings_en_venta_capturado.json")
         print("-" * 70)
         print("  Puedes importar estos 3 archivos JSON a la vez en DBHDV > Mi Banco.")
         print("=" * 70)
+        log_sniffer_event("SESION_FINALIZADA", f"Mercadillo={market_sent_count}, Banco={bank_count}, Historial={sales_count}, Listings={tot_lots}")
     finally:
         if sniffer.running:
             sniffer.stop()
@@ -2633,8 +2710,13 @@ if __name__ == "__main__":
         print("\n\nSaliendo de DBHDV Suite. ¡Buen juego!")
     except Exception as e:
         import traceback
+        tb_str = traceback.format_exc()
         print(f"\n[ERROR CRÍTICO NO CONTROLADO]: {e}", flush=True)
-        traceback.print_exc()
+        print(tb_str)
+        try:
+            log_sniffer_event("CRASH_FATAL", f"{e}\n{tb_str}")
+        except Exception:
+            pass
         try:
             input("\nPresiona Enter para cerrar...")
         except Exception:
