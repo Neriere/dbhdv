@@ -84,6 +84,24 @@ if %errorlevel% neq 0 (
     %PY_CMD% -m pip install --quiet scapy
 )
 
+:: Descargar dofus_suite.py si se ejecuta en una carpeta separada
+if not exist "dofus_suite.py" (
+    echo [1/2] Descargando dofus_suite.py desde DBHDV...
+    where curl >nul 2>&1
+    if %errorlevel% equ 0 (
+        curl -fsSL "https://dbhdv.vercel.app/api/market/suite-script" -o "dofus_suite.py" 2>nul
+    )
+    if not exist "dofus_suite.py" (
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://dbhdv.vercel.app/api/market/suite-script' -OutFile 'dofus_suite.py' -UseBasicParsing } catch { exit 0 }" >nul 2>&1
+    )
+)
+
+if not exist "dofus_suite.py" (
+    echo [Error] No se encontro dofus_suite.py en el directorio y fallo la descarga automatica.
+    pause
+    exit /b 1
+)
+
 %PY_CMD% dofus_suite.py
 
 :fin

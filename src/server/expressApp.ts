@@ -1564,14 +1564,21 @@ echo ===================================================================
 echo.
 
 echo [1/3] Descargando / Actualizando dofus_suite.py...
+set "DOWNLOADED="
 where curl >nul 2>&1
 if %errorlevel% equ 0 (
-    curl -fsSL "${suiteScriptUrl}" -o "dofus_suite.py"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${suiteScriptUrl}' -OutFile 'dofus_suite.py' -UseBasicParsing } catch { Write-Host $_.Exception.Message; exit 1 }"
+    curl -fsSL "${suiteScriptUrl}" -o "dofus_suite.py.tmp" 2>nul
+    if exist "dofus_suite.py.tmp" (
+        move /y "dofus_suite.py.tmp" "dofus_suite.py" >nul
+        set "DOWNLOADED=1"
+    )
+)
+if not defined DOWNLOADED (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${suiteScriptUrl}' -OutFile 'dofus_suite.py' -UseBasicParsing; exit 0 } catch { exit 1 }" >nul 2>&1
 )
 if not exist "dofus_suite.py" (
-    echo [Error] No se pudo descargar dofus_suite.py. Verifica tu conexion a internet.
+    echo [Error] No se pudo descargar dofus_suite.py y no existe una copia local.
+    echo Verifica tu conexion a internet o la disponibilidad del backend.
     goto :error
 )
 
@@ -1579,9 +1586,10 @@ echo [2/3] Verificando base de datos de items...
 if not exist "items_db.json" (
     where curl >nul 2>&1
     if %errorlevel% equ 0 (
-        curl -fsSL "${itemsDbDownloadUrl}" -o "items_db.json"
-    ) else (
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { Write-Host $_.Exception.Message }"
+        curl -fsSL "${itemsDbDownloadUrl}" -o "items_db.json" 2>nul
+    )
+    if not exist "items_db.json" (
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '${itemsDbDownloadUrl}' -OutFile 'items_db.json' -UseBasicParsing } catch { exit 0 }" >nul 2>&1
     )
 )
 
