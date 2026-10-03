@@ -3045,6 +3045,7 @@ def run_sniffer_session_bundle():
         nonlocal bank_burst_active, bank_expected_len, last_bank_pkt
         nonlocal sales_burst_active, sales_expected_len, last_sales_pkt
         nonlocal listings_burst_active, listings_expected_len, last_listings_pkt
+        nonlocal session_market_updates, session_quotations_count
 
         if not packet.haslayer(TCP) or not packet.haslayer(Raw):
             return
