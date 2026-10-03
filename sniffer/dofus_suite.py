@@ -156,10 +156,19 @@ def load_items_dictionary():
         except Exception:
             pass
 
+    # Sanitizar colisiones corruptas históricas de "Puré pic-feil" (solo 35089 y 666 son legítimos)
+    corrupt_keys = [k for k, v in list(ITEMS_NAME_MAP.items()) if str(v).strip().lower() == "puré pic-feil" and k not in (35089, 666)]
+    for k in corrupt_keys:
+        del ITEMS_NAME_MAP[k]
+
 def get_item_name(item_id):
     load_items_dictionary()
     if item_id in ITEMS_NAME_MAP:
-        return ITEMS_NAME_MAP[item_id]
+        val = ITEMS_NAME_MAP[item_id]
+        if str(val).strip().lower() == "puré pic-feil" and item_id not in (35089, 666):
+            del ITEMS_NAME_MAP[item_id]
+        else:
+            return val
     try:
         url = f"https://api.dofusdb.fr/items/{item_id}?$select[]=name"
         req = urllib.request.Request(url, headers={"User-Agent": "DBHDV-Suite/1.0"})
@@ -169,11 +178,15 @@ def get_item_name(item_id):
                     data.get("name", {}).get("fr") or
                     data.get("name", {}).get("en"))
             if name:
-                ITEMS_NAME_MAP[item_id] = name
-                return name
+                clean_name = str(name).strip()
+                if clean_name.lower() != "puré pic-feil" or item_id in (35089, 666):
+                    ITEMS_NAME_MAP[item_id] = clean_name
+                    return clean_name
     except Exception:
         pass
     return f"Objeto #{item_id}"
+
+SNIFFER_LOG_LOCK = threading.Lock()
 
 def log_diagnostic(msg, payload_sample=None):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -185,6 +198,33 @@ def log_diagnostic(msg, payload_sample=None):
             f.write(entry)
     except Exception:
         pass
+
+def log_sniffer_event(module, msg, payload=None, extra=None):
+    """
+    Registra eventos detallados de captura en sniffer/logs/sniffer.log y
+    mantiene trazabilidad con volcado hexadecimal para diagnóstico.
+    """
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [f"[{ts}] [{module}] {msg}"]
+    if extra:
+        lines.append(f"  Detalle: {extra}")
+    if payload and isinstance(payload, (bytes, bytearray)):
+        plen = len(payload)
+        hex_preview = payload[:64].hex(" ").upper()
+        lines.append(f"  Longitud: {plen} bytes | Hex: {hex_preview}")
+    entry = "\n".join(lines) + "\n"
+
+    with SNIFFER_LOG_LOCK:
+        try:
+            if os.path.exists(SNIFFER_LOG) and os.path.getsize(SNIFFER_LOG) > 5 * 1024 * 1024:
+                with open(SNIFFER_LOG, "w", encoding="utf-8") as f:
+                    f.write(f"=== LOG ROTADO ({ts}) ===\n")
+            with open(SNIFFER_LOG, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception:
+            pass
+
+    log_diagnostic(f"[{module}] {msg}", payload_sample=payload[:32].hex() if payload else None)
 
 def load_keymap():
     if os.path.exists(KEYMAP_FILE):
@@ -237,18 +277,31 @@ def decode_packed_varints(data):
         off += r
     return nums
 
-def clean_ladder(ints):
-    if not ints:
+def clean_ladder(raw_list):
+    if not raw_list:
         return []
-    ladder = []
-    for x in ints:
+    cl = [int(p) for p in raw_list if p is not None]
+    if not cl:
+        return []
+
+    # 1. Prefijo de conteo exacto de Dofus Unity (len == count + 1)
+    if len(cl) > 1 and 1 <= cl[0] <= 10 and len(cl) == cl[0] + 1:
+        cl = cl[1:]
+    # 2. Prefijo SuperTypeId / Categoría (ej: [6, 1370, 13486, 135900, 1398990])
+    elif len(cl) == 5 and cl[0] <= 100:
+        if cl[0] <= 20 or (cl[1] > 0 and cl[2] >= cl[1]):
+            cl = cl[1:]
+
+    # En Dofus los recursos tienen MÁXIMO 4 escalas: x1, x10, x100, x1000
+    cleaned = []
+    for x in cl[:4]:
         if x == 0 or 50 <= x <= 2_000_000_000:
-            ladder.append(x)
+            cleaned.append(x)
         else:
-            ladder.append(0)
-    while ladder and ladder[-1] == 0:
-        ladder.pop()
-    return ladder
+            cleaned.append(0)
+    while cleaned and cleaned[-1] == 0:
+        cleaned.pop()
+    return cleaned
 
 def extract_type_tokens(buf):
     tokens = []
@@ -364,7 +417,7 @@ def extract_market_universal(buf):
                 if depth <= 1:
                     p_ints = decode_packed_varints(data)
                     cl = clean_ladder(p_ints)
-                    if 1 <= len(cl) <= 10 and all(p >= 0 for p in cl) and any(p > 10 for p in cl):
+                    if 1 <= len(cl) <= 4 and all(p >= 0 for p in cl) and any(p > 10 for p in cl):
                         ladders.append((fnum, cl))
             elif wtype == 1:
                 off += 8
@@ -374,6 +427,47 @@ def extract_market_universal(buf):
                 break
     walk(buf)
     return item_id, ladders, offer_prices
+
+def parse_market_message(buf, market_token="jzn"):
+    """
+    Decodifica ÚNICAMENTE paquetes que contienen el TypeURL de mercadillo verificado.
+    Localiza la sub-estructura protobuf (tag 0x12) tras el TypeURL para aislar
+    los datos reales del objeto e ignorar ruido de envoltorio u otros paquetes.
+    """
+    if not market_token or market_token == "No calibrado":
+        market_token = "jzn"
+    t_bytes = f"type.ankama.com/{market_token}".encode("ascii")
+    if t_bytes not in buf:
+        return 0, [], []
+
+    pos = 0
+    while True:
+        found = buf.find(t_bytes, pos)
+        if found == -1:
+            break
+        tok_end = found + len(t_bytes)
+        pos = tok_end
+
+        # En protobuf Any, tras el type_url viene el campo #2 (tag 0x12) con la carga serializada
+        off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 30))
+        if off_12 == -1:
+            sub_payload = buf[tok_end:]
+        else:
+            off = off_12 + 1
+            if off >= len(buf):
+                continue
+            payload_len, br = decode_varint(buf, off)
+            if br == 0 or off + br + payload_len > len(buf):
+                sub_payload = buf[tok_end:]
+            else:
+                off += br
+                sub_payload = buf[off : off + payload_len]
+
+        item_id, ladders, offer_prices = extract_market_universal(sub_payload)
+        if item_id >= 10 and (ladders or offer_prices):
+            return item_id, ladders, offer_prices
+
+    return 0, [], []
 
 # =============================================================================
 # SINCRONIZACIÓN CLOUD DE TOKENS (BUENAS PRÁCTICAS)
@@ -476,27 +570,22 @@ def run_sniffer_market():
         if len(payload) < 15:
             return
 
-        tokens = extract_type_tokens(payload)
-        has_token = any(tok == market_token for tok, _ in tokens)
-
-        if not has_token and len(payload) < 200:
-            return
-
-        item_id, ladders, offer_prices = extract_market_universal(payload)
+        # Verificación estricta: ÚNICAMENTE procesar si contiene el TypeURL de mercadillo verificado
+        item_id, ladders, offer_prices = parse_market_message(payload, market_token)
         if item_id > 0 and (ladders or offer_prices):
             item_name = get_item_name(item_id)
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
 
             if ladders:
-                ladder_vals = ladders[0][1]
+                ladder_vals = ladders[0][1][:4]
                 lad_str = " | ".join(f"x{10**i}: {p:,} K" for i, p in enumerate(ladder_vals) if p > 0)
                 print(f"  [{now_str}] 📦 {item_name} (#{item_id}) -> {lad_str}")
+                log_sniffer_event("MERCADILLO", f"{item_name} (#{item_id}) -> {lad_str}", payload=payload)
             elif offer_prices:
                 top_3 = sorted(offer_prices)[:3]
                 lad_str = ", ".join(f"{p:,} K" for p in top_3)
                 print(f"  [{now_str}] 🛡️ {item_name} (#{item_id}) [Equipamiento] -> Mínimos: {lad_str}")
-
-            log_diagnostic(f"Mercadillo detectado: {item_name} (#{item_id})")
+                log_sniffer_event("MERCADILLO_EQUIPO", f"{item_name} (#{item_id}) -> Mínimos: {lad_str}", payload=payload)
 
     sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
     sniffer.start()
@@ -2192,6 +2281,10 @@ def run_sniffer_session_bundle():
 
     target_bytes_sales = f"type.ankama.com/{sales_token}".encode("ascii")
     target_bytes_active = f"type.ankama.com/{active_token}".encode("ascii")
+    inv_token = km.get("inventory", "isb")
+    storage_token = km.get("storage", "hlp")
+    target_bytes_inv = f"type.ankama.com/{inv_token}".encode("ascii")
+    target_bytes_storage = f"type.ankama.com/{storage_token}".encode("ascii")
 
     def on_packet(packet):
         nonlocal bank_burst_active, last_bank_pkt
@@ -2209,46 +2302,48 @@ def run_sniffer_session_bundle():
 
         now = time.time()
 
-        # 1. Mercadillo
+        # 1. Mercadillo (estricto por TypeURL y submensaje 0x12)
         if len(payload) >= 15:
-            tokens = extract_type_tokens(payload)
-            has_market_token = any(tok == market_token for tok, _ in tokens)
-            if has_market_token or len(payload) >= 200:
-                item_id, ladders, offer_prices = extract_market_universal(payload)
-                if item_id > 0 and (ladders or offer_prices):
-                    item_name = get_item_name(item_id)
-                    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            item_id, ladders, offer_prices = parse_market_message(payload, market_token)
+            if item_id > 0 and (ladders or offer_prices):
+                item_name = get_item_name(item_id)
+                now_str = datetime.datetime.now().strftime("%H:%M:%S")
 
-                    payload_dict = {
-                        "item_id": item_id,
-                        "server": server_slug,
-                    }
-                    if ladders:
-                        ladder_vals = ladders[0][1]
-                        lad_dict = {}
-                        for i, p in enumerate(ladder_vals):
-                            if p > 0:
-                                lad_dict[str(10**i)] = p
-                        payload_dict["ladders"] = lad_dict
-                        lad_str = " | ".join(f"x{k}: {v:,} K" for k, v in lad_dict.items())
-                        print(f"  [{now_str}] [Mercadillo] {item_name} (#{item_id}) -> {lad_str}")
-                    elif offer_prices:
-                        payload_dict["prices"] = sorted(offer_prices)[:5]
-                        top_3 = sorted(offer_prices)[:3]
-                        lad_str = ", ".join(f"{p:,} K" for p in top_3)
-                        print(f"  [{now_str}] [Mercadillo Equipos] {item_name} (#{item_id}) -> Minimos: {lad_str}")
+                payload_dict = {
+                    "item_id": item_id,
+                    "server": server_slug,
+                }
+                if ladders:
+                    ladder_vals = ladders[0][1][:4]
+                    lad_dict = {}
+                    for i, p in enumerate(ladder_vals):
+                        if p > 0:
+                            lad_dict[str(10**i)] = p
+                    payload_dict["ladders"] = lad_dict
+                    lad_str = " | ".join(f"x{k}: {v:,} K" for k, v in lad_dict.items())
+                    print(f"  [{now_str}] [Mercadillo] {item_name} (#{item_id}) -> {lad_str}")
+                    log_sniffer_event("MERCADILLO", f"{item_name} (#{item_id}) -> {lad_str}", payload=payload)
+                elif offer_prices:
+                    payload_dict["prices"] = sorted(offer_prices)[:5]
+                    top_3 = sorted(offer_prices)[:3]
+                    lad_str = ", ".join(f"{p:,} K" for p in top_3)
+                    print(f"  [{now_str}] [Mercadillo Equipos] {item_name} (#{item_id}) -> Minimos: {lad_str}")
+                    log_sniffer_event("MERCADILLO_EQUIPO", f"{item_name} (#{item_id}) -> Minimos: {lad_str}", payload=payload)
 
-                    market_queue.put(payload_dict)
+                market_queue.put(payload_dict)
 
-        # 2. Almacen / Banco
+        # 2. Almacen / Banco (solo si detecta TypeURL de inventario/banco o si ya inicio la rafaga)
         if len(payload) >= 15:
-            direct_items = extract_items_recursive(payload)
-            if direct_items:
-                for gid, qty, uid in direct_items:
-                    k = uid if uid > 0 else (gid, len(accumulated_bank))
-                    accumulated_bank[k] = (gid, qty, uid)
-                bank_burst_active = True
-                last_bank_pkt = now
+            has_storage_token = (target_bytes_inv in payload or target_bytes_storage in payload or
+                                 b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload)
+            if has_storage_token or bank_burst_active:
+                direct_items = extract_items_recursive(payload)
+                if direct_items:
+                    for gid, qty, uid in direct_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
+                    bank_burst_active = True
+                    last_bank_pkt = now
 
         # 3. Historial de Ventas
         if target_bytes_sales in payload or b"type.ankama.com/kyo" in payload:
@@ -2468,18 +2563,62 @@ def main():
             sync_tokens_from_cloud(silent=False)
         elif choice in ("12", "d", "diag"):
             print("\n" + "=" * 70)
-            print("  ÚLTIMOS REGISTROS DE DIAGNÓSTICO (logs/calibracion_diagnostico.log)")
+            print("  REGISTRO DE DIAGNÓSTICO Y TELEMETRÍA")
             print("=" * 70)
-            if os.path.exists(DIAGNOSTIC_LOG):
-                try:
-                    with open(DIAGNOSTIC_LOG, "r", encoding="utf-8") as f:
-                        lines = f.readlines()
-                        for line in lines[-25:]:
-                            print("  " + line.rstrip())
-                except Exception as e:
-                    print(f"Error leyendo log: {e}")
+            print("  [1] Ver log de calibración y eventos (logs/calibracion_diagnostico.log)")
+            print("  [2] Ver log detallado de paquetes y tráfico (logs/sniffer.log)")
+            print("  [Enter] Ver últimos registros combinados")
+            diag_choice = input("\nSelecciona [1/2/Enter]: ").strip()
+
+            if diag_choice == "1":
+                print("\n--- REGISTRO DE CALIBRACIÓN Y DIAGNÓSTICO ---")
+                if os.path.exists(DIAGNOSTIC_LOG):
+                    try:
+                        with open(DIAGNOSTIC_LOG, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            for line in lines[-40:]:
+                                print("  " + line.rstrip())
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                else:
+                    print("  No hay registros aún.")
+            elif diag_choice == "2":
+                print("\n--- REGISTRO DETALLADO DE PAQUETES (SNIFFER.LOG) ---")
+                if os.path.exists(SNIFFER_LOG):
+                    try:
+                        with open(SNIFFER_LOG, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            for line in lines[-40:]:
+                                print("  " + line.rstrip())
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                else:
+                    print("  No hay registros aún.")
             else:
-                print("  No hay registros guardados aún.")
+                print("\n--- ÚLTIMOS EVENTOS DE CAPTURA (logs/sniffer.log) ---")
+                if os.path.exists(SNIFFER_LOG):
+                    try:
+                        with open(SNIFFER_LOG, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            for line in lines[-25:]:
+                                print("  " + line.rstrip())
+                    except Exception as e:
+                        print(f"  Error leyendo sniffer.log: {e}")
+                else:
+                    print("  (Aún no se han capturado paquetes en la sesión actual)")
+
+                print("\n--- ÚLTIMOS EVENTOS DE CALIBRACIÓN (logs/calibracion_diagnostico.log) ---")
+                if os.path.exists(DIAGNOSTIC_LOG):
+                    try:
+                        with open(DIAGNOSTIC_LOG, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            for line in lines[-15:]:
+                                print("  " + line.rstrip())
+                    except Exception as e:
+                        print(f"  Error leyendo calibracion_diagnostico.log: {e}")
+                else:
+                    print("  (Sin eventos de calibración)")
+
             input("\nPresiona Enter para continuar...")
         elif choice == "0":
             print("\nSaliendo de DBHDV Suite. ¡Buen juego!")
