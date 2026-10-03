@@ -55,6 +55,8 @@ def is_admin():
         return False
 
 def check_and_elevate_admin():
+    if "--no-uac" in sys.argv or os.environ.get("NO_UAC"):
+        return
     if sys.platform == "win32" and not is_admin():
         try:
             import ctypes
@@ -2241,13 +2243,20 @@ def run_sniffer_session_bundle():
     market_token = km.get("price_list", "jzn")
     sales_token = km.get("sales_history", "kyo")
     active_token = km.get("active_listings", "ket")
+    inv_token = km.get("inventory", "isb")
+    storage_token = km.get("storage", "hlp")
+    target_bytes_sales = f"type.ankama.com/{sales_token}".encode("ascii")
+    target_bytes_active = f"type.ankama.com/{active_token}".encode("ascii")
+    target_bytes_inv = f"type.ankama.com/{inv_token}".encode("ascii")
+    target_bytes_storage = f"type.ankama.com/{storage_token}".encode("ascii")
+    server_slug = os.environ.get("DOFUS_SERVER", "draconiros").strip().lower()
 
     print("\n" + "=" * 70)
     print("  [SNIFFER SESION COMPLETA] CAPTURA UNIFICADA EN TIEMPO REAL")
     print("=" * 70)
     print("  Tokens Activos en Paralelo:")
     print(f"    * Mercadillo (price_list)    : '{market_token}' -> Envio directo a DBHDV")
-    print(f"    * Almacen (inventory/storage): '{km.get('inventory', 'isb')}' / '{km.get('storage', 'hlp')}' -> banco_inventario_capturado.json")
+    print(f"    * Almacen (inventory/storage): '{inv_token}' / '{storage_token}' -> banco_inventario_capturado.json")
     print(f"    * Historial (sales_history)  : '{sales_token}' -> historial_ventas_capturado.json")
     print(f"    * En Venta (active_listings) : '{active_token}' -> listings_en_venta_capturado.json")
     print("-" * 70)
@@ -2605,6 +2614,32 @@ def print_menu():
 
 def main():
     sync_tokens_from_cloud(silent=True)
+
+    mode_arg = None
+    for i, a in enumerate(sys.argv):
+        if a == "--mode" and i + 1 < len(sys.argv):
+            mode_arg = sys.argv[i + 1].strip().lower()
+            break
+        elif a.startswith("--mode="):
+            mode_arg = a.split("=", 1)[1].strip().lower()
+            break
+
+    if mode_arg:
+        if mode_arg in ("s", "sesion", "bundle", "all"):
+            run_sniffer_session_bundle()
+            return
+        elif mode_arg == "1":
+            run_sniffer_market()
+            return
+        elif mode_arg == "2":
+            run_sniffer_storage()
+            return
+        elif mode_arg == "3":
+            run_sniffer_sales()
+            return
+        elif mode_arg == "4":
+            run_sniffer_active_listings()
+            return
 
     while True:
         print_menu()
