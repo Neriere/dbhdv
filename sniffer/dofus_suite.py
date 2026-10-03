@@ -361,6 +361,7 @@ def extract_type_tokens(buf):
 def parse_dofus_item_submessage(sub):
     off = 0
     sub_fields = {}
+    inner_item = None
     while off < len(sub):
         t, r = decode_varint(sub, off)
         if r == 0:
@@ -374,7 +375,15 @@ def parse_dofus_item_submessage(sub):
             sub_fields[fn] = v
         elif wt == 2:
             l, r2 = decode_varint(sub, off)
-            off += r2 + l
+            if r2 == 0 or off + r2 + l > len(sub):
+                break
+            off += r2
+            inner_bytes = sub[off:off + l]
+            off += l
+            if fn in (4, 5):
+                res = parse_dofus_item_submessage(inner_bytes)
+                if res:
+                    inner_item = res
         elif wt == 1:
             off += 8
         elif wt == 5:
@@ -387,6 +396,8 @@ def parse_dofus_item_submessage(sub):
     uid = sub_fields.get(1, 0)
     if gid and 10 <= gid <= 65000:
         return (gid, max(1, qty), uid)
+    if inner_item:
+        return inner_item
     return None
 
 def extract_items_recursive(buf):
@@ -2773,12 +2784,14 @@ def run_sniffer_session_bundle():
 
     accumulated_bank = {}
     bank_burst_stream = bytearray()
+    bank_expected_len = 0
     bank_burst_active = False
     last_bank_pkt = 0.0
 
     unique_sales_dict = {}
     sales_burst_active = False
     sales_burst_stream = bytearray()
+    sales_expected_len = 0
     last_sales_pkt = 0.0
 
     mercadillos = {"recursos": [], "equipamiento": [], "consumibles": []}
@@ -2797,6 +2810,7 @@ def run_sniffer_session_bundle():
             pass
 
     listings_burst_stream = bytearray()
+    listings_expected_len = 0
     listings_burst_active = False
     last_listings_pkt = 0.0
 
@@ -2934,12 +2948,13 @@ def run_sniffer_session_bundle():
             return False
 
     def flush_bank():
-        nonlocal bank_burst_active
+        nonlocal bank_burst_active, bank_expected_len
         items_to_save = []
         with bank_lock:
             if not bank_burst_active and not bank_burst_stream and not accumulated_bank:
                 return
             bank_burst_active = False
+            bank_expected_len = 0
             if bank_burst_stream:
                 stream_items = extract_items_recursive(bytes(bank_burst_stream))
                 for gid, qty, uid in stream_items:
@@ -2952,12 +2967,13 @@ def run_sniffer_session_bundle():
             save_bank_snapshot(items_to_save)
 
     def flush_sales():
-        nonlocal sales_burst_active
+        nonlocal sales_burst_active, sales_expected_len
         raw_b = None
         with sales_lock:
             if not sales_burst_active and not sales_burst_stream:
                 return
             sales_burst_active = False
+            sales_expected_len = 0
             if sales_burst_stream:
                 raw_b = bytes(sales_burst_stream)
                 sales_burst_stream.clear()
@@ -2975,12 +2991,13 @@ def run_sniffer_session_bundle():
                 log_sniffer_event("HISTORIAL_INSPECCION", f"Ráfaga de {len(raw_b)}b no generó ventas parseadas", payload=raw_b[:64])
 
     def flush_listings():
-        nonlocal listings_burst_active
+        nonlocal listings_burst_active, listings_expected_len
         raw_b = None
         with listings_lock:
             if not listings_burst_active and not listings_burst_stream:
                 return
             listings_burst_active = False
+            listings_expected_len = 0
             if listings_burst_stream:
                 raw_b = bytes(listings_burst_stream)
                 listings_burst_stream.clear()
@@ -2999,9 +3016,9 @@ def run_sniffer_session_bundle():
     seen_tokens_session = set()
 
     def on_packet(packet):
-        nonlocal bank_burst_active, last_bank_pkt
-        nonlocal sales_burst_active, last_sales_pkt
-        nonlocal listings_burst_active, last_listings_pkt
+        nonlocal bank_burst_active, bank_expected_len, last_bank_pkt
+        nonlocal sales_burst_active, sales_expected_len, last_sales_pkt
+        nonlocal listings_burst_active, listings_expected_len, last_listings_pkt
 
         if not packet.haslayer(TCP) or not packet.haslayer(Raw):
             return
@@ -3028,21 +3045,6 @@ def run_sniffer_session_bundle():
         is_listings_hdr = (target_bytes_active in payload or b"type.ankama.com/ket" in payload)
         is_market_hdr = (target_bytes_market in payload or b"type.ankama.com/jzn" in payload)
         is_quotation_hdr = (b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload)
-
-        # Si entra una cabecera de otro módulo, cerrar y volcar la ráfaga anterior de inmediato
-        if is_storage_hdr:
-            flush_sales()
-            flush_listings()
-        elif is_sales_hdr:
-            flush_bank()
-            flush_listings()
-        elif is_listings_hdr:
-            flush_bank()
-            flush_sales()
-        elif is_market_hdr or is_quotation_hdr:
-            flush_bank()
-            flush_sales()
-            flush_listings()
 
         # 1. Mercadillo (estricto por TypeURL y submensaje 0x12)
         if len(payload) >= 15:
@@ -3074,56 +3076,140 @@ def run_sniffer_session_bundle():
 
                 market_queue.put(payload_dict)
 
-        # 2. Almacen / Banco / Inventario
-        if is_storage_hdr:
-            with bank_lock:
-                bank_burst_active = True
-                bank_burst_stream.clear()
-                bank_burst_stream.extend(payload)
-                last_bank_pkt = now
-            d_items = extract_items_recursive(payload)
-            if d_items:
-                with bank_lock:
-                    for gid, qty, uid in d_items:
-                        k = uid if uid > 0 else (gid, len(accumulated_bank))
-                        accumulated_bank[k] = (gid, qty, uid)
-            log_sniffer_event("ALMACEN_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
-        elif bank_burst_active and not has_type_url and len(payload) >= 50:
-            with bank_lock:
-                bank_burst_stream.extend(payload)
-                last_bank_pkt = now
-            d_items = extract_items_recursive(payload)
-            if d_items:
-                with bank_lock:
-                    for gid, qty, uid in d_items:
-                        k = uid if uid > 0 else (gid, len(accumulated_bank))
-                        accumulated_bank[k] = (gid, qty, uid)
-
-        # 3. Historial de Ventas
-        if is_sales_hdr:
-            with sales_lock:
-                sales_burst_active = True
-                sales_burst_stream.clear()
-                sales_burst_stream.extend(payload)
-                last_sales_pkt = now
-            log_sniffer_event("HISTORIAL_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
-        elif sales_burst_active and not has_type_url and len(payload) >= 50:
-            with sales_lock:
-                sales_burst_stream.extend(payload)
-                last_sales_pkt = now
-
-        # 4. Listings Activos
+        # 2. Listings Activos en Venta (ket)
+        completed_listings = False
         if is_listings_hdr:
             with listings_lock:
-                listings_burst_active = True
+                idx = payload.find(target_bytes_active)
+                if idx == -1:
+                    idx = payload.find(b"type.ankama.com/ket")
+                tok_len = len(target_bytes_active) if (idx != -1 and payload[idx:idx+len(target_bytes_active)] == target_bytes_active) else len(b"type.ankama.com/ket")
+                tok_end = idx + tok_len
+                off_12 = payload.find(bytes([0x12]), tok_end, min(len(payload), tok_end + 16))
+                if off_12 != -1:
+                    off = off_12 + 1
+                    msg_len, r2 = decode_varint(payload, off)
+                    off += r2
+                    listings_expected_len = (off - idx) + msg_len
+                else:
+                    listings_expected_len = 0
+
                 listings_burst_stream.clear()
-                listings_burst_stream.extend(payload)
+                listings_burst_stream.extend(payload[idx:] if idx != -1 else payload)
+                listings_burst_active = True
                 last_listings_pkt = now
-            log_sniffer_event("LISTINGS_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
-        elif listings_burst_active and not has_type_url and len(payload) >= 50:
+                if listings_expected_len > 0 and len(listings_burst_stream) >= listings_expected_len:
+                    completed_listings = True
+            log_sniffer_event("LISTINGS_DETECTADO", f"Inicio de captura ({len(payload)}b, esperado={listings_expected_len}b)", payload=payload)
+            if completed_listings:
+                flush_listings()
+        elif listings_burst_active:
             with listings_lock:
-                listings_burst_stream.extend(payload)
+                if listings_expected_len > 0:
+                    needed = listings_expected_len - len(listings_burst_stream)
+                    listings_burst_stream.extend(payload[:needed])
+                    if len(listings_burst_stream) >= listings_expected_len:
+                        completed_listings = True
+                else:
+                    listings_burst_stream.extend(payload)
                 last_listings_pkt = now
+            if completed_listings:
+                flush_listings()
+
+        # 3. Historial de Ventas (kyo)
+        completed_sales = False
+        if is_sales_hdr:
+            with sales_lock:
+                idx = payload.find(target_bytes_sales)
+                if idx == -1:
+                    idx = payload.find(b"type.ankama.com/kyo")
+                tok_len = len(target_bytes_sales) if (idx != -1 and payload[idx:idx+len(target_bytes_sales)] == target_bytes_sales) else len(b"type.ankama.com/kyo")
+                tok_end = idx + tok_len
+                off_12 = payload.find(bytes([0x12]), tok_end, min(len(payload), tok_end + 16))
+                if off_12 != -1:
+                    off = off_12 + 1
+                    msg_len, r2 = decode_varint(payload, off)
+                    off += r2
+                    sales_expected_len = (off - idx) + msg_len
+                else:
+                    sales_expected_len = 0
+
+                sales_burst_stream.clear()
+                sales_burst_stream.extend(payload[idx:] if idx != -1 else payload)
+                sales_burst_active = True
+                last_sales_pkt = now
+                if sales_expected_len > 0 and len(sales_burst_stream) >= sales_expected_len:
+                    completed_sales = True
+            log_sniffer_event("HISTORIAL_DETECTADO", f"Inicio de captura ({len(payload)}b, esperado={sales_expected_len}b)", payload=payload)
+            if completed_sales:
+                flush_sales()
+        elif sales_burst_active:
+            with sales_lock:
+                if sales_expected_len > 0:
+                    needed = sales_expected_len - len(sales_burst_stream)
+                    sales_burst_stream.extend(payload[:needed])
+                    if len(sales_burst_stream) >= sales_expected_len:
+                        completed_sales = True
+                else:
+                    sales_burst_stream.extend(payload)
+                last_sales_pkt = now
+            if completed_sales:
+                flush_sales()
+
+        # 4. Almacén / Banco / Inventario (isb / hlp)
+        completed_bank = False
+        if is_storage_hdr:
+            with bank_lock:
+                if not bank_burst_active or (now - last_bank_pkt > 2.0):
+                    bank_burst_stream.clear()
+                    bank_burst_active = True
+                    bank_expected_len = 0
+
+                idx = -1
+                cand_hdr = None
+                for cand in (target_bytes_inv, target_bytes_storage, b"type.ankama.com/isb", b"type.ankama.com/hlp"):
+                    if cand in payload:
+                        c_idx = payload.find(cand)
+                        if idx == -1 or c_idx < idx:
+                            idx = c_idx
+                            cand_hdr = cand
+
+                if idx != -1 and cand_hdr:
+                    tok_end = idx + len(cand_hdr)
+                    off_12 = payload.find(bytes([0x12]), tok_end, min(len(payload), tok_end + 16))
+                    if off_12 != -1:
+                        off = off_12 + 1
+                        msg_len, r2 = decode_varint(payload, off)
+                        off += r2
+                        bank_expected_len = max(bank_expected_len, (off - idx) + msg_len)
+
+                bank_burst_stream.extend(payload)
+                last_bank_pkt = now
+                if bank_expected_len > 0 and len(bank_burst_stream) >= bank_expected_len:
+                    completed_bank = True
+            d_items = extract_items_recursive(payload)
+            if d_items:
+                with bank_lock:
+                    for gid, qty, uid in d_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
+            log_sniffer_event("ALMACEN_DETECTADO", f"Captura ({len(payload)}b, exp={bank_expected_len}b, acum={len(bank_burst_stream)}b, slots={len(accumulated_bank)})", payload=payload)
+            if completed_bank:
+                flush_bank()
+        elif bank_burst_active and not (is_listings_hdr or is_sales_hdr or is_market_hdr or is_quotation_hdr):
+            with bank_lock:
+                bank_burst_stream.extend(payload)
+                last_bank_pkt = now
+                if bank_expected_len > 0 and len(bank_burst_stream) >= bank_expected_len:
+                    completed_bank = True
+            d_items = extract_items_recursive(payload)
+            if d_items:
+                with bank_lock:
+                    for gid, qty, uid in d_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
+            if completed_bank:
+                flush_bank()
 
         # 5. Cotizaciones de Mercado (type.ankama.com/iuk o ive)
         has_quotation = (b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload)
@@ -3222,13 +3308,13 @@ def run_sniffer_session_bundle():
             time.sleep(0.1)
             now = time.time()
 
-            if bank_burst_active and (now - last_bank_pkt >= 1.0):
+            if bank_burst_active and (now - last_bank_pkt >= 1.5):
                 flush_bank()
 
-            if sales_burst_active and (now - last_sales_pkt >= 1.0):
+            if sales_burst_active and (now - last_sales_pkt >= 1.2):
                 flush_sales()
 
-            if listings_burst_active and (now - last_listings_pkt >= 1.0):
+            if listings_burst_active and (now - last_listings_pkt >= 1.2):
                 flush_listings()
 
     except KeyboardInterrupt:
