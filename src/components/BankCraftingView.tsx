@@ -303,9 +303,6 @@ export const BankCraftingView: React.FC<BankCraftingViewProps> = () => {
                   <input type="file" accept=".json" multiple onChange={handleImportBank} className="hidden" />
                 </label>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Gestiona tus recursos, consulta su valor en Kamas e importa en un solo paso tu banco, historial y listings en venta.
-              </p>
             </div>
           </div>
 

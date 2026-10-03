@@ -18,11 +18,33 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    // Intercept Content-Type header: whenever Vite (or any handler) sets
+    // "text/html" without a charset, automatically append "; charset=utf-8".
+    // This runs per-request, wrapping res.setHeader so the patch fires even
+    // after this middleware has called next().
+    app.use((_req, res, next) => {
+      const origSetHeader = res.setHeader.bind(res);
+      (res as any).setHeader = function (name: string, value: string | number | readonly string[]) {
+        if (
+          typeof name === 'string' &&
+          name.toLowerCase() === 'content-type' &&
+          typeof value === 'string' &&
+          value.startsWith('text/html') &&
+          !value.includes('charset')
+        ) {
+          return origSetHeader(name, value + '; charset=utf-8');
+        }
+        return origSetHeader(name, value as any);
+      };
+      next();
+    });
     app.use(vite.middlewares);
+
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { setHeaders: (res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); } }));
     app.get("*", (req, res) => {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

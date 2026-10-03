@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   TrendingUp,
   Coins,
@@ -74,11 +74,11 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
         const res = importSalesHistory(json);
         setImportStatusNotice(
           res.isDuplicate
-            ? 'â„¹ï¸ Este archivo de historial ya habÃ­a sido importado anteriormente.'
-            : `âœ… Historial importado con Ã©xito: ${res.snapshot.totalSales} registros (${res.snapshot.soldCount} vendidos, ${res.snapshot.expiredCount} caducados).`
+            ? 'ℹ️  Este archivo de historial ya había sido importado anteriormente.'
+            : `✅ Historial importado con éxito: ${res.snapshot.totalSales} registros (${res.snapshot.soldCount} vendidos, ${res.snapshot.expiredCount} caducados).`
         );
       } catch (err: any) {
-        setImportStatusNotice(`âŒ Error al procesar el archivo: ${err.message || 'JSON invÃ¡lido'}`);
+        setImportStatusNotice(`❌ Error al procesar el archivo: ${err.message || 'JSON inválido'}`);
       }
       setTimeout(() => setImportStatusNotice(null), 5000);
       if (fileInputHistoryRef.current) fileInputHistoryRef.current.value = '';
@@ -96,11 +96,11 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
         const res = importActiveListings(json);
         setImportStatusNotice(
           res.isDuplicate
-            ? 'â„¹ï¸ Esta captura de listings activos ya estaba registrada.'
-            : `âœ… Listings en venta importados: ${res.snapshot.totalLots} lotes en HDV por valor de ${res.snapshot.totalValue.toLocaleString('es-ES')} K.`
+            ? 'ℹ️  Esta captura de listings activos ya estaba registrada.'
+            : `✅ Listings en venta importados: ${res.snapshot.totalLots} lotes en HDV por valor de ${res.snapshot.totalValue.toLocaleString('es-ES')} K.`
         );
       } catch (err: any) {
-        setImportStatusNotice(`âŒ Error al procesar el archivo: ${err.message || 'JSON invÃ¡lido'}`);
+        setImportStatusNotice(`❌ Error al procesar el archivo: ${err.message || 'JSON inválido'}`);
       }
       setTimeout(() => setImportStatusNotice(null), 5000);
       if (fileInputListingsRef.current) fileInputListingsRef.current.value = '';
@@ -203,15 +203,12 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Registro y AnÃ¡lisis de Ventas
+                  Registro y Análisis de Ventas
                 </h2>
                 <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold uppercase tracking-wider">
                   Mercadillo HDV
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Analiza quÃ© Ã­tems te generan mÃ¡s kamas, cuÃ¡les rotan rÃ¡pido y cuÃ¡les caducaron sin venderse.
-              </p>
             </div>
           </div>
 
@@ -236,7 +233,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               type="button"
               onClick={() => fileInputHistoryRef.current?.click()}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:border-amber-500/50"
-              title="Importar historial_ventas_capturado.json (OpciÃ³n 4 o 10 del sniffer)"
+              title="Importar historial_ventas_capturado.json (Opción 4 o 10 del sniffer)"
             >
               <UploadCloud className="w-3.5 h-3.5 text-amber-400" />
               <span>Importar Historial (Ventas)</span>
@@ -246,7 +243,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               type="button"
               onClick={() => fileInputListingsRef.current?.click()}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:border-emerald-500/50"
-              title="Importar listings_en_venta_capturado.json (OpciÃ³n 11 del sniffer)"
+              title="Importar listings_en_venta_capturado.json (Opción 11 del sniffer)"
             >
               <Store className="w-3.5 h-3.5 text-emerald-400" />
               <span>Importar Listings (En Venta)</span>
@@ -263,43 +260,11 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               onClick={() => setImportStatusNotice(null)}
               className="text-slate-400 hover:text-white text-xs px-2"
             >
-              âœ•
+              ✕
             </button>
           </div>
         )}
 
-        {/* Concept Distinctions Banner */}
-        <div className="mt-3.5 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-          <div className="bg-slate-950/70 border border-emerald-500/20 rounded-xl p-2.5 flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold text-emerald-400">Vendido (Historial)</span>
-              <p className="text-[11px] text-slate-400">
-                Ventas completadas con Ã©xito en el mercadillo. Generaron kamas cobrados.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/70 border border-amber-500/20 rounded-xl p-2.5 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold text-amber-400">Sin vender (Caducado 28d)</span>
-              <p className="text-[11px] text-slate-400">
-                Pasaron 28 dÃ­as sin actualizar precio en HDV. <strong className="text-slate-300">Caducaron y regresaron a tu banco</strong> (NO estÃ¡n en venta).
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/70 border border-blue-500/20 rounded-xl p-2.5 flex items-start gap-2">
-            <Store className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold text-blue-400">En venta (Listings Activos)</span>
-              <p className="text-[11px] text-slate-400">
-                Lotes actualmente en mercadillo con tiempo restante de expiraciÃ³n activo (~2d, ~14d).
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* KPI Cards */}
@@ -333,7 +298,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
             {activeSummary.expiringSoonLots > 0 ? (
               <span className="text-amber-400 font-semibold">{activeSummary.expiringSoonLots} expiran &lt;24h</span>
             ) : (
-              <span className="text-slate-500">Al dÃ­a</span>
+              <span className="text-slate-500">Al día</span>
             )}
           </div>
         </div>
@@ -363,7 +328,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
             {salesHistory.length} hist. / {activeListings.length} act.
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate" title={historySummary.newestCapture || 'Sin datos'}>
-            Ãšltima: {historySummary.newestCapture ? new Date(historySummary.newestCapture).toLocaleDateString() : 'Ninguna'}
+            Última: {historySummary.newestCapture ? new Date(historySummary.newestCapture).toLocaleDateString() : 'Ninguna'}
           </div>
         </div>
       </div>
@@ -381,7 +346,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-            <span>Â¿QuÃ© se vende y quÃ© no? ({soldStats.length})</span>
+            <span>¿Qué se vende y qué no? ({soldStats.length})</span>
           </button>
 
           <button
@@ -407,7 +372,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
             }`}
           >
             <Clock className="w-3.5 h-3.5 text-purple-400" />
-            <span>Registro HistÃ³rico</span>
+            <span>Registro Histórico</span>
           </button>
 
           <button
@@ -440,13 +405,13 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               onClick={() => setSearchQuery('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
             >
-              âœ•
+              ✕
             </button>
           )}
         </div>
       </div>
 
-      {/* SUBTAB 1: ANALYTICS ("Â¿QuÃ© se vende y quÃ© no?") */}
+      {/* SUBTAB 1: ANALYTICS ("¿Qué se vende y qué no?") */}
       {activeSubTab === 'analytics' && (
         <div className="space-y-3">
           {/* Controls / Quick Filters */}
@@ -462,7 +427,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Todos los Ã­tems ({soldStats.length})
+                Todos los ítems ({soldStats.length})
               </button>
               <button
                 type="button"
@@ -489,7 +454,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               <Package className="w-10 h-10 text-slate-600 mx-auto" />
               <h3 className="text-sm font-semibold text-slate-300">No hay datos de ventas para mostrar</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Ejecuta el sniffer con la opciÃ³n <strong>[4]</strong> o <strong>[10]</strong> en <code className="text-amber-400">dofus_suite.py</code> para capturar tu historial de ventas, o importa el archivo JSON arriba.
+                Ejecuta el sniffer con la opción <strong>[4]</strong> o <strong>[10]</strong> en <code className="text-amber-400">dofus_suite.py</code> para capturar tu historial de ventas, o importa el archivo JSON arriba.
               </p>
             </div>
           ) : (
@@ -531,7 +496,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                         onClick={() => toggleSort('unitsPerDay')}
                       >
                         <div className="flex items-center gap-1">
-                          <span>RotaciÃ³n (Uds/dÃ­a)</span>
+                          <span>Rotación (Uds/día)</span>
                           {sortField === 'unitsPerDay' && (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                         </div>
                       </th>
@@ -590,11 +555,11 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                           <td className="py-2.5 px-3 text-slate-300">
                             <KamaDisplay amount={item.avgPrice} />
                             <span className="text-[10px] text-slate-500 block">
-                              MÃ­n: {item.minPrice.toLocaleString('es-ES')} | MÃ¡x: {item.maxPrice.toLocaleString('es-ES')}
+                              Mín: {item.minPrice.toLocaleString('es-ES')} | Máx: {item.maxPrice.toLocaleString('es-ES')}
                             </span>
                           </td>
 
-                          {/* RotaciÃ³n */}
+                          {/* Rotación */}
                           <td className="py-2.5 px-3">
                             <span className={`font-semibold ${
                               item.unitsPerDay >= 5
@@ -603,11 +568,11 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                                 ? 'text-amber-400'
                                 : 'text-slate-400'
                             }`}>
-                              ~{item.unitsPerDay} / dÃ­a
+                              ~{item.unitsPerDay} / día
                             </span>
                             {item.lastSoldAt && (
                               <span className="text-[10px] text-slate-500 block truncate" title={item.lastSoldAt}>
-                                Ãšltima: {item.lastSoldAt.split('T')[0] || item.lastSoldAt}
+                                Última: {item.lastSoldAt.split('T')[0] || item.lastSoldAt}
                               </span>
                             )}
                           </td>
@@ -615,7 +580,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                           {/* Caducados ("Sin vender" devueltos a banco) */}
                           <td className="py-2.5 px-3">
                             {item.expiredCount > 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-semibold" title="Ãtems que estuvieron 28 dÃ­as sin actualizar y regresaron al banco">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-semibold" title="Ítems que estuvieron 28 días sin actualizar y regresaron al banco">
                                 <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span>{item.expiredCount} caducados (banco)</span>
                               </span>
@@ -684,7 +649,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
               <Store className="w-10 h-10 text-slate-600 mx-auto" />
               <h3 className="text-sm font-semibold text-slate-300">No hay lotes en venta registrados</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Para capturar lo que tienes actualmente en venta, abre el mercadillo en Dofus, ve a la pestaÃ±a <strong>"VENTA"</strong> y ejecuta la opciÃ³n <strong>[11]</strong> en <code className="text-emerald-400">dofus_suite.py</code>.
+                Para capturar lo que tienes actualmente en venta, abre el mercadillo en Dofus, ve a la pestaña <strong>"VENTA"</strong> y ejecuta la opción <strong>[11]</strong> en <code className="text-emerald-400">dofus_suite.py</code>.
               </p>
             </div>
           ) : (
@@ -693,7 +658,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                 <div>
                   <h3 className="text-xs font-bold text-white">Lotes Actualmente Puestos en Venta en Mercadillo</h3>
                   <span className="text-[11px] text-slate-400">
-                    Captura del {activeListings[0]?.capturedAt || 'reciente'} â€¢ {activeListingsList.length} lotes listados
+                    Captura del {activeListings[0]?.capturedAt || 'reciente'} • {activeListingsList.length} lotes listados
                   </span>
                 </div>
                 <div className="text-xs font-bold text-blue-300">
@@ -710,8 +675,8 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                       <th className="py-2.5 px-3">Precio Lote</th>
                       <th className="py-2.5 px-3">Precio Unitario</th>
                       <th className="py-2.5 px-3">Tiempo Restante</th>
-                      <th className="py-2.5 px-3">Fecha LÃ­mite</th>
-                      <th className="py-2.5 px-3 text-right">AcciÃ³n</th>
+                      <th className="py-2.5 px-3">Fecha Límite</th>
+                      <th className="py-2.5 px-3 text-right">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
@@ -763,7 +728,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                           </td>
 
                           <td className="py-2.5 px-3 text-slate-400">
-                            {entry.expiresAt ? entry.expiresAt : 'â€”'}
+                            {entry.expiresAt ? entry.expiresAt : '—'}
                           </td>
 
                           <td className="py-2.5 px-3 text-right">
@@ -793,7 +758,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
             <div className="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-bold text-white">Registro CronolÃ³gico de Transacciones</h3>
+                <h3 className="text-xs font-bold text-white">Registro Cronológico de Transacciones</h3>
                 <span className="text-[11px] text-slate-400">
                   Mostrando {rawHistoryEntries.length} transacciones registradas
                 </span>
@@ -832,7 +797,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                           ) : (
                             <span
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold uppercase"
-                              title="CaducÃ³ tras 28 dÃ­as sin actualizar precio y regresÃ³ al banco"
+                              title="Caducó tras 28 días sin actualizar precio y regresó al banco"
                             >
                               <AlertTriangle className="w-3 h-3" />
                               <span>Sin vender (Banco)</span>
@@ -882,7 +847,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('Â¿Deseas borrar todo el historial de ventas guardado?')) {
+                    if (window.confirm('¿Deseas borrar todo el historial de ventas guardado?')) {
                       clearHistory();
                     }
                   }}
@@ -905,7 +870,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                         {new Date(s.capturedAt).toLocaleString()}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {s.soldCount} vendidos (<KamaDisplay amount={s.soldKamas} />) â€¢ {s.expiredCount} caducados
+                        {s.soldCount} vendidos (<KamaDisplay amount={s.soldKamas} />) • {s.expiredCount} caducados
                       </div>
                     </div>
                     <button
@@ -933,7 +898,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('Â¿Deseas borrar todos los listings activos guardados?')) {
+                    if (window.confirm('¿Deseas borrar todos los listings activos guardados?')) {
                       clearListings();
                     }
                   }}
@@ -956,7 +921,7 @@ export const SalesAnalyticsView: React.FC<SalesAnalyticsViewProps> = ({ onSelect
                         {new Date(s.capturedAt).toLocaleString()}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {s.totalLots} lotes â€¢ Valor: <KamaDisplay amount={s.totalValue} />
+                        {s.totalLots} lotes • Valor: <KamaDisplay amount={s.totalValue} />
                       </div>
                     </div>
                     <button

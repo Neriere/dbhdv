@@ -775,9 +775,6 @@ export const DofusbookSetCalculator: React.FC<DofusbookSetCalculatorProps> = ({
                 Estimado de set de <span className="text-amber-400">Dofusbook</span>
               </h2>
             </div>
-            <p className="text-xs sm:text-sm text-slate-300">
-              Coloca el enlace para desglosar el costo y marca los objetos que ya posees o deseas descartar
-            </p>
           </div>
         </div>
 

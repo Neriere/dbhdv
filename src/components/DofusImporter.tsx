@@ -202,9 +202,6 @@ export const DofusImporter: React.FC<{
               <Database className="w-5 h-5 text-amber-400" />
               Gestión de Base de Datos y Catálogo
             </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Administración y sincronización del catálogo de objetos, recetas y persistencia de cotizaciones.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

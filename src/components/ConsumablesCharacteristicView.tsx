@@ -473,9 +473,6 @@ export const ConsumablesCharacteristicView: React.FC = () => {
                   Sebuscalines & Recolección
                 </span>
               </h1>
-              <p className="text-sm text-slate-400 mt-0.5">
-                Rentabilidad diaria de pergaminos, velocidad de mercado y análisis de consumibles de protectores de recursos
-              </p>
             </div>
           </div>
         </div>

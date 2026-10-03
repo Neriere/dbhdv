@@ -468,9 +468,6 @@ export const TreasureHuntCalculator: React.FC<TreasureHuntCalculatorProps> = ({
                 <h1 className="text-lg sm:text-xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
                   Búsquedas del Tesoro & Busca y Captura (ByC)
                 </h1>
-                <p className="text-slate-400 text-xs">
-                  Calculador de rentabilidad de Mapas Legendarios: compara el coste de fragmentos vs mapa entero, el valor del recurso del jefe y el retorno en Sebuscalines.
-                </p>
               </div>
             </div>
           </div>

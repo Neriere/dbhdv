@@ -196,9 +196,6 @@ export const ShoppingListPlanner: React.FC<ShoppingListPlannerProps> = ({
             <h2 className="text-lg font-black text-white tracking-tight">
               Lista de Compras
             </h2>
-            <p className="text-xs text-slate-400">
-              Ingredientes consolidados para fabricar tus recetas.
-            </p>
           </div>
         </div>
 

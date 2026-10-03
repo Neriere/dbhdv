@@ -1473,9 +1473,6 @@ export const DailyCraftPlanner: React.FC<DailyCraftPlannerProps> = ({
                 Cartera Activa
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Asignación presupuestaria y optimización de lotes según absorción diaria en mercadillos.
-            </p>
           </div>
         </div>
 

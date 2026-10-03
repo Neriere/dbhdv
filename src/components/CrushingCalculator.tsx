@@ -1324,9 +1324,6 @@ export const CrushingCalculator: React.FC<CrushingCalculatorProps> = ({
                 {crushableItems.length} objetos
               </span>
             </div>
-            <p className="text-xs text-slate-400 hidden sm:block">
-              Machacado de equipables, cálculo exacto de runas, coeficientes y rentabilidad.
-            </p>
           </div>
         </div>
 

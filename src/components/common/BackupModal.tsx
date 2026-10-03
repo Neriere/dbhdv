@@ -145,9 +145,6 @@ export const BackupModal: React.FC<BackupModalProps> = ({
               <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                 Copias de Seguridad (Backup)
               </h2>
-              <p className="text-xs text-slate-400">
-                Guarda y restaura todos tus precios, inventario de banco y coeficientes
-              </p>
             </div>
           </div>
           <button
