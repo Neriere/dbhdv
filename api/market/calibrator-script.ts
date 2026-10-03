@@ -26,11 +26,31 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# Asegurar directorio de caché seguro para Scapy/Pip (evita PermissionError en ~/.cache en Windows)
+if "XDG_CACHE_HOME" not in os.environ:
+    _local_cache = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "cache")
+    try:
+        os.makedirs(_local_cache, exist_ok=True)
+        os.environ["XDG_CACHE_HOME"] = _local_cache
+    except Exception:
+        pass
+
 try:
     from scapy.all import sniff, TCP, Raw
 except ImportError:
     print("[Error] Se requiere scapy. Ejecuta: pip install scapy")
-    input("\\nPresiona Enter para salir...")
+    try:
+        input("\\nPresiona Enter para salir...")
+    except Exception:
+        pass
+    sys.exit(1)
+except Exception as e:
+    print(f"[Error] No se pudo inicializar Scapy/Npcap: {e}")
+    print("Asegúrate de que Npcap esté instalado en modo WinPcap compatible (https://npcap.com).")
+    try:
+        input("\\nPresiona Enter para salir...")
+    except Exception:
+        pass
     sys.exit(1)
 
 PRESETS = {

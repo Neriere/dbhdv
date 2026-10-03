@@ -2,9 +2,16 @@ import fs from "fs";
 import path from "path";
 
 export default function handler(req: any, res: any) {
-  const suitePath = path.join(process.cwd(), "sniffer", "dofus_suite.py");
+  const possiblePaths = [
+    path.join(process.cwd(), "sniffer", "dofus_suite.py"),
+    path.join(__dirname, "..", "..", "sniffer", "dofus_suite.py"),
+    path.join(__dirname, "..", "sniffer", "dofus_suite.py"),
+    path.join(__dirname, "dofus_suite.py"),
+  ];
 
-  if (!fs.existsSync(suitePath)) {
+  const suitePath = possiblePaths.find((p) => fs.existsSync(p));
+
+  if (!suitePath) {
     return res.status(404).send("# Error: dofus_suite.py no encontrado en el servidor.");
   }
 

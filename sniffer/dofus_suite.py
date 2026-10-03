@@ -35,6 +35,15 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# Asegurar directorio de caché seguro para Scapy/Pip (evita PermissionError en ~/.cache en Windows)
+if "XDG_CACHE_HOME" not in os.environ:
+    _local_cache = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "cache")
+    try:
+        os.makedirs(_local_cache, exist_ok=True)
+        os.environ["XDG_CACHE_HOME"] = _local_cache
+    except Exception:
+        pass
+
 # Elevación de permisos Administrador en Windows (Requerido por Scapy/WinPcap/Npcap)
 def is_admin():
     if sys.platform != "win32":
@@ -67,7 +76,18 @@ try:
 except ImportError:
     print("\n[Error] Se requiere Scapy para la captura de paquetes de red.")
     print("Ejecuta en tu terminal: pip install scapy")
-    input("\nPresiona Enter para salir...")
+    try:
+        input("\nPresiona Enter para salir...")
+    except Exception:
+        pass
+    sys.exit(1)
+except Exception as e:
+    print(f"\n[Error cargando Scapy / Npcap]: {e}")
+    print("Asegúrate de que Npcap esté instalado en modo WinPcap compatible (https://npcap.com).")
+    try:
+        input("\nPresiona Enter para salir...")
+    except Exception:
+        pass
     sys.exit(1)
 
 # =============================================================================
@@ -2468,4 +2488,15 @@ def main():
             print("\n[Opción no válida. Ingresa un número del 0 al 12]")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nSaliendo de DBHDV Suite. ¡Buen juego!")
+    except Exception as e:
+        import traceback
+        print(f"\n[ERROR CRÍTICO NO CONTROLADO]: {e}", flush=True)
+        traceback.print_exc()
+        try:
+            input("\nPresiona Enter para cerrar...")
+        except Exception:
+            pass

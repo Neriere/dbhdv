@@ -1,6 +1,11 @@
 {
   "outputDirectory": "dist",
   "buildCommand": "vite build",
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "sniffer/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/ping",

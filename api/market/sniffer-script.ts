@@ -277,6 +277,15 @@ def check_and_elevate_admin():
 
 check_and_elevate_admin()
 
+# Asegurar directorio de caché seguro para Scapy/Pip (evita PermissionError en ~/.cache en Windows)
+if "XDG_CACHE_HOME" not in os.environ:
+    _local_cache = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "cache")
+    try:
+        os.makedirs(_local_cache, exist_ok=True)
+        os.environ["XDG_CACHE_HOME"] = _local_cache
+    except Exception:
+        pass
+
 def ensure_dependencies():
     packages = []
     try:

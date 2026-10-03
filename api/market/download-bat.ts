@@ -21,13 +21,28 @@ cd /d "%~dp0"
 set PYTHONUNBUFFERED=1
 set DBHDV_API_URL=${baseUrl}
 
+:: Configurar directorio de caché seguro para Scapy/Pip (evita errores de permisos en Windows ~/.cache)
+if not defined XDG_CACHE_HOME set "XDG_CACHE_HOME=%LOCALAPPDATA%\\cache"
+if not exist "%LOCALAPPDATA%\\cache" mkdir "%LOCALAPPDATA%\\cache" >nul 2>&1
+
 :: Verificar permisos de Administrador
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo ===============================================================================
-    echo   Solicitando permisos de Administrador para captura de red (Npcap/Scapy)...
+    echo   Solicitando permisos de Administrador para captura de red [Npcap/Scapy]...
     echo ===============================================================================
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d \\"\\"%~dp0\\"\\" && \\"\\"%~f0\\"\\"' -Verb RunAs" 2>nul
+    if %errorlevel% neq 0 (
+        echo.
+        echo ===============================================================================
+        echo  [AVISO] No se pudo solicitar elevacion de Administrador automaticamente.
+        echo  Para iniciar con permisos:
+        echo    1. Haz clic derecho sobre este archivo .bat
+        echo    2. Selecciona "Ejecutar como administrador"
+        echo ===============================================================================
+        echo.
+        pause
+    )
     exit /b
 )
 
@@ -61,60 +76,47 @@ if not exist "items_db.json" (
 )
 
 echo [3/3] Verificando dependencias requeridas (Scapy)...
+set "PY_CMD="
+
 where py >nul 2>&1
 if %errorlevel% equ 0 (
-    py -3 -c "import scapy" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo [Info] Instalando paquete 'scapy'...
-        py -3 -m pip install --quiet scapy
-    )
-    goto :run_py
+    set "PY_CMD=py -3"
+    goto :check_scapy
 )
 
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python -c "import scapy" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo [Info] Instalando paquete 'scapy'...
-        python -m pip install --quiet scapy
-    )
-    goto :run_python
+    set "PY_CMD=python"
+    goto :check_scapy
 )
 
 where python3 >nul 2>&1
 if %errorlevel% equ 0 (
-    python3 -c "import scapy" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo [Info] Instalando paquete 'scapy'...
-        python3 -m pip install --quiet scapy
+    set "PY_CMD=python3"
+    goto :check_scapy
+)
+
+for /d %%D in ("%LOCALAPPDATA%\\Programs\\Python\\Python*") do (
+    if exist "%%D\\python.exe" (
+        set "PY_CMD=\\"%%D\\python.exe\\""
+        goto :check_scapy
     )
-    goto :run_python3
 )
 
 goto :no_python
 
-:run_py
-echo.
-echo ===================================================================
-echo  Iniciando DBHDV Suite Unificada...
-echo ===================================================================
-py -3 dofus_suite.py
-goto :fin
+:check_scapy
+%PY_CMD% -c "import scapy" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [Info] Instalando paquete 'scapy'...
+    %PY_CMD% -m pip install --quiet scapy
+)
 
-:run_python
 echo.
 echo ===================================================================
 echo  Iniciando DBHDV Suite Unificada...
 echo ===================================================================
-python dofus_suite.py
-goto :fin
-
-:run_python3
-echo.
-echo ===================================================================
-echo  Iniciando DBHDV Suite Unificada...
-echo ===================================================================
-python3 dofus_suite.py
+%PY_CMD% dofus_suite.py
 goto :fin
 
 :no_python
