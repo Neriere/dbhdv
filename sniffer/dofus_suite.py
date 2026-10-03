@@ -119,7 +119,11 @@ ITEM_SALES_VOLUME = {}
 QUOTATION_BUFFERS = {}
 QUOTATION_LOCK = threading.Lock()
 
-ITEMS_DB_FILE = os.path.join(CONFIG_DIR, "items_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_db.json")) else os.path.join(PROJECT_ROOT, "scripts", "items_db.json")
+ITEMS_DB_FILE = (
+    os.path.join(CONFIG_DIR, "items_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_db.json"))
+    else os.path.join(SUITE_DIR, "items_db.json") if os.path.exists(os.path.join(SUITE_DIR, "items_db.json"))
+    else os.path.join(PROJECT_ROOT, "scripts", "items_db.json")
+)
 STATIC_DICT_FILE = os.path.join(PROJECT_ROOT, "src", "data", "staticItemsDictionary.json")
 
 VIEWER_HTML = os.path.join(VIEWER_DIR, "visor_almacen.html")
@@ -158,22 +162,28 @@ def load_items_dictionary():
         except Exception:
             pass
 
-    if os.path.exists(ITEMS_DB_FILE):
-        try:
-            with open(ITEMS_DB_FILE, "r", encoding="utf-8") as f:
-                d = json.load(f)
-                raw = d.get("items", {}) if isinstance(d, dict) else d
-                if isinstance(raw, dict):
-                    for k, v in raw.items():
-                        if str(k).isdigit():
-                            ik = int(k)
-                            if ik not in ITEMS_NAME_MAP:
-                                if isinstance(v, dict):
-                                    ITEMS_NAME_MAP[ik] = v.get("name", f"Objeto #{ik}")
-                                elif isinstance(v, str):
-                                    ITEMS_NAME_MAP[ik] = v
-        except Exception:
-            pass
+    for cand_db in [
+        os.path.join(CONFIG_DIR, "items_db.json"),
+        os.path.join(SUITE_DIR, "items_db.json"),
+        os.path.join(PROJECT_ROOT, "scripts", "items_db.json"),
+        ITEMS_DB_FILE
+    ]:
+        if os.path.exists(cand_db):
+            try:
+                with open(cand_db, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    raw = d.get("items", {}) if isinstance(d, dict) else d
+                    if isinstance(raw, dict):
+                        for k, v in raw.items():
+                            if str(k).isdigit():
+                                ik = int(k)
+                                if ik not in ITEMS_NAME_MAP:
+                                    if isinstance(v, dict):
+                                        ITEMS_NAME_MAP[ik] = v.get("name", f"Objeto #{ik}")
+                                    elif isinstance(v, str):
+                                        ITEMS_NAME_MAP[ik] = v
+            except Exception:
+                pass
 
     # Sanitizar colisiones corruptas históricas de "Puré pic-feil" (solo 35089 y 666 son legítimos)
     corrupt_keys = [k for k, v in list(ITEMS_NAME_MAP.items()) if str(v).strip().lower() == "puré pic-feil" and k not in (35089, 666)]
@@ -381,28 +391,52 @@ def parse_dofus_item_submessage(sub):
 
 def extract_items_recursive(buf):
     items = []
+    seen_keys = set()
+
     def walk(b, depth=0):
-        if depth > 4 or len(b) < 6:
+        if depth > 6 or len(b) < 6:
             return
         off = 0
         while off < len(b):
+            if b[off:off+16] == b"type.ankama.com/":
+                space_or_tag = off + 16
+                while space_or_tag < min(len(b), off + 30) and 0x61 <= b[space_or_tag] <= 0x7A:
+                    space_or_tag += 1
+                off = space_or_tag
+                if off < len(b) and b[off] == 0x12:
+                    off += 1
+                    _, r = decode_varint(b, off)
+                    off += r
+                continue
+
             tag, r = decode_varint(b, off)
             if r == 0:
-                break
+                off += 1
+                continue
             off += r
             fnum = tag >> 3
             wtype = tag & 7
 
             if wtype == 2:
                 length, r2 = decode_varint(b, off)
-                if r2 == 0 or off + r2 + length > len(b):
-                    break
+                if r2 == 0:
+                    off += 1
+                    continue
                 off += r2
-                sub_data = b[off:off + length]
-                off += length
+                if off + length <= len(b):
+                    sub_data = b[off:off + length]
+                    off += length
+                else:
+                    sub_data = b[off:]
+                    off = len(b)
+
                 item = parse_dofus_item_submessage(sub_data)
                 if item:
-                    items.append(item)
+                    gid, qty, uid = item
+                    key = uid if uid > 0 else (gid, len(items))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        items.append(item)
                 else:
                     walk(sub_data, depth + 1)
             elif wtype == 0:
@@ -413,7 +447,8 @@ def extract_items_recursive(buf):
             elif wtype == 5:
                 off += 4
             else:
-                break
+                off += 1
+
     walk(buf)
     return items
 
@@ -1416,12 +1451,14 @@ def extract_sales_entries(buf):
     start_pos = 0
     idx = buf.find(b'type.ankama.com/kyo')
     if idx != -1:
-        off = idx + len(b'type.ankama.com/kyo')
-        if off < len(buf) and buf[off] == 0x12:
-            off += 1
+        tok_end = idx + len(b'type.ankama.com/kyo')
+        off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 16))
+        if off_12 != -1:
+            off = off_12 + 1
             _, r = decode_varint(buf, off)
-            off += r
-            start_pos = off
+            start_pos = off + r
+        else:
+            start_pos = tok_end
 
     off = start_pos
     while off < len(buf) - 6:
@@ -1442,30 +1479,49 @@ def extract_sales_entries(buf):
             continue
         off += 1
 
-    # 2. Si no encontró por escaneo de flujo, aplicar recorrido recursivo estándar
+    # 2. Si no encontró por escaneo de flujo, aplicar recorrido recursivo tolerante
     if not sales:
+        seen_keys = set()
         def walk(b, depth=0):
             if depth > 4 or len(b) < 10:
                 return
             woff = 0
             while woff < len(b):
+                if b[woff:woff+16] == b"type.ankama.com/":
+                    space_or_tag = woff + 16
+                    while space_or_tag < min(len(b), woff + 30) and 0x61 <= b[space_or_tag] <= 0x7A:
+                        space_or_tag += 1
+                    woff = space_or_tag
+                    if woff < len(b) and b[woff] == 0x12:
+                        woff += 1
+                        _, r = decode_varint(b, woff)
+                        woff += r
+                    continue
+
                 tag, r = decode_varint(b, woff)
                 if r == 0:
-                    break
+                    woff += 1
+                    continue
                 woff += r
                 wt = tag & 7
                 if wt == 2:
                     l, r2 = decode_varint(b, woff)
                     if r2 == 0:
-                        break
+                        woff += 1
+                        continue
                     woff += r2
-                    if woff + l > len(b):
-                        break
-                    sub = b[woff:woff + l]
-                    woff += l
+                    if woff + l <= len(b):
+                        sub = b[woff:woff + l]
+                        woff += l
+                    else:
+                        sub = b[woff:]
+                        woff = len(b)
                     sale = parse_single_sale_submessage(sub)
                     if sale:
-                        sales.append(sale)
+                        sk = (sale.get("rawDate") or sale.get("date"), sale.get("itemId"), sale.get("price"), sale.get("quantity"))
+                        if sk not in seen_keys:
+                            seen_keys.add(sk)
+                            sales.append(sale)
                     else:
                         walk(sub, depth + 1)
                 elif wt == 0:
@@ -1476,7 +1532,7 @@ def extract_sales_entries(buf):
                 elif wt == 5:
                     woff += 4
                 else:
-                    break
+                    woff += 1
         walk(buf)
 
     return sales
@@ -2210,31 +2266,37 @@ def extract_active_listings(buf, token=None):
 
     pos = buf.find(target_bytes)
     if pos != -1:
-        off = pos + len(target_bytes)
-        tag, r = decode_varint(buf, off)
-        if tag >> 3 == 2:
-            off += r
+        tok_end = pos + len(target_bytes)
+        off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 16))
+        if off_12 != -1:
+            off = off_12 + 1
             length, r2 = decode_varint(buf, off)
             off += r2
-            msg_bytes = buf[off:off + length]
+            msg_bytes = buf[off:off + length] if off + length <= len(buf) else buf[off:]
         else:
-            msg_bytes = buf[off:off + 50000]
+            msg_bytes = buf[tok_end:]
 
         moff = 0
         while moff < len(msg_bytes):
             mtag, mr = decode_varint(msg_bytes, moff)
             if mr == 0:
-                break
+                moff += 1
+                continue
             moff += mr
             mfn = mtag >> 3
             mwt = mtag & 7
             if mwt == 2:
                 ml, mr2 = decode_varint(msg_bytes, moff)
-                if mr2 == 0 or moff + mr2 + ml > len(msg_bytes):
-                    break
+                if mr2 == 0:
+                    moff += 1
+                    continue
                 moff += mr2
-                entry_bytes = msg_bytes[moff:moff + ml]
-                moff += ml
+                if moff + ml <= len(msg_bytes):
+                    entry_bytes = msg_bytes[moff:moff + ml]
+                    moff += ml
+                else:
+                    entry_bytes = msg_bytes[moff:]
+                    moff = len(msg_bytes)
                 if mfn == 2:
                     parsed = parse_active_listing_entry(entry_bytes)
                     if parsed:
@@ -2250,7 +2312,7 @@ def extract_active_listings(buf, token=None):
             elif mwt == 5:
                 moff += 4
             else:
-                break
+                moff += 1
 
     if listings:
         return listings
@@ -2261,19 +2323,36 @@ def extract_active_listings(buf, token=None):
             return
         off = 0
         while off < len(b):
+            if b[off:off+16] == b"type.ankama.com/":
+                space_or_tag = off + 16
+                while space_or_tag < min(len(b), off + 30) and 0x61 <= b[space_or_tag] <= 0x7A:
+                    space_or_tag += 1
+                off = space_or_tag
+                if off < len(b) and b[off] == 0x12:
+                    off += 1
+                    _, r = decode_varint(b, off)
+                    off += r
+                continue
+
             tag, r = decode_varint(b, off)
             if r == 0:
-                break
+                off += 1
+                continue
             off += r
             fn = tag >> 3
             wt = tag & 7
             if wt == 2:
                 length, r2 = decode_varint(b, off)
-                if r2 == 0 or off + r2 + length > len(b):
-                    break
+                if r2 == 0:
+                    off += 1
+                    continue
                 off += r2
-                sub = b[off:off + length]
-                off += length
+                if off + length <= len(b):
+                    sub = b[off:off + length]
+                    off += length
+                else:
+                    sub = b[off:]
+                    off = len(b)
                 entry = parse_active_listing_entry(sub)
                 if entry and entry["price"] > 0:
                     key = entry.get("uid") or (entry["itemId"], entry["quantity"], entry["price"], len(listings))
@@ -2290,7 +2369,7 @@ def extract_active_listings(buf, token=None):
             elif wt == 5:
                 off += 4
             else:
-                break
+                off += 1
 
     walk(buf)
     return listings
@@ -2692,6 +2771,7 @@ def run_sniffer_session_bundle():
     listings_lock = threading.Lock()
 
     accumulated_bank = {}
+    bank_burst_stream = bytearray()
     bank_burst_active = False
     last_bank_pkt = 0.0
 
@@ -2747,6 +2827,174 @@ def run_sniffer_session_bundle():
     worker_thread = threading.Thread(target=http_market_worker, daemon=True)
     worker_thread.start()
 
+    def save_bank_snapshot(items_snapshot):
+        if not items_snapshot:
+            return False
+        try:
+            total_slots = len(items_snapshot)
+            total_units = sum(q for _, q, _ in items_snapshot)
+            items_list = [
+                {"uid": str(uid), "itemId": gid, "name": get_item_name(gid), "quantity": qty}
+                for gid, qty, uid in items_snapshot
+            ]
+            saved_bank_data = {
+                "metadata": {
+                    "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "totalSlots": total_slots,
+                    "totalUnits": total_units,
+                    "uniqueTypes": len(set(gid for gid, _, _ in items_snapshot)),
+                },
+                "items": items_list
+            }
+            with open(INVENTORY_OUTPUT, "w", encoding="utf-8") as f:
+                json.dump(saved_bank_data, f, indent=2, ensure_ascii=False)
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n  [{now_str}] 📦 [Guardado Almacén/Inventario] {total_slots:,} slots ({total_units:,} unidades) -> data/banco_inventario_capturado.json")
+            log_sniffer_event("ALMACEN_GUARDADO", f"{total_slots} slots ({total_units:,} unidades) guardados en {INVENTORY_OUTPUT}")
+            return True
+        except Exception as e:
+            print(f"\n  [Error guardando banco]: {e}")
+            log_sniffer_event("ERROR_BANCO", f"Fallo al guardar banco: {e}")
+            return False
+
+    def save_sales_snapshot(sales_list):
+        if not sales_list:
+            return False
+        try:
+            sold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Vendido")
+            unsold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Sin vender")
+            saved_sales_data = {
+                "metadata": {
+                    "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "totalSales": len(sales_list),
+                    "totalKamas": sold_k,
+                    "soldKamas": sold_k,
+                    "unsoldKamas": unsold_k,
+                    "soldCount": sum(1 for s in sales_list if s.get("status") == "Vendido"),
+                    "unsoldCount": sum(1 for s in sales_list if s.get("status") == "Sin vender"),
+                },
+                "sales": sales_list
+            }
+            with open(SALES_OUTPUT, "w", encoding="utf-8") as f:
+                json.dump(saved_sales_data, f, indent=2, ensure_ascii=False)
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n  [{now_str}] 📜 [Guardado Historial] {len(sales_list):,} ventas registradas -> data/historial_ventas_capturado.json")
+            log_sniffer_event("HISTORIAL_GUARDADO", f"{len(sales_list):,} ventas guardadas en {SALES_OUTPUT}")
+            return True
+        except Exception as e:
+            print(f"\n  [Error guardando historial]: {e}")
+            log_sniffer_event("ERROR_HISTORIAL", f"Fallo al guardar historial: {e}")
+            return False
+
+    def save_listings_snapshot(new_listings):
+        if not new_listings:
+            return False
+        try:
+            market_key = classify_batch_market(new_listings)
+            now_ts = int(time.time())
+            for entry in new_listings:
+                secs = entry.get("secondsRemaining", 0)
+                if secs > 0:
+                    entry["expiresAt"] = datetime.datetime.fromtimestamp(now_ts + secs).strftime("%Y-%m-%d %H:%M:%S")
+                    days = secs // 86400
+                    hours = (secs % 86400) // 3600
+                    entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
+                else:
+                    entry["expiresAt"] = None
+                    entry["timeLabel"] = "Desconocido"
+                entry["market"] = market_key
+
+            with listings_lock:
+                mercadillos[market_key] = new_listings
+                all_listings = mercadillos["recursos"] + mercadillos["equipamiento"] + mercadillos["consumibles"]
+
+            saved_listings_data = {
+                "metadata": {
+                    "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "totalLots": len(all_listings),
+                    "totalValue": sum(e["price"] for e in all_listings),
+                },
+                "mercadillos": {
+                    "recursos": {"totalLots": len(mercadillos["recursos"]), "totalValue": sum(e["price"] for e in mercadillos["recursos"]), "listings": mercadillos["recursos"]},
+                    "equipamiento": {"totalLots": len(mercadillos["equipamiento"]), "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]), "listings": mercadillos["equipamiento"]},
+                    "consumibles": {"totalLots": len(mercadillos["consumibles"]), "totalValue": sum(e["price"] for e in mercadillos["consumibles"]), "listings": mercadillos["consumibles"]},
+                },
+                "listings": all_listings
+            }
+            with open(ACTIVE_LISTINGS_OUTPUT, "w", encoding="utf-8") as f:
+                json.dump(saved_listings_data, f, indent=2, ensure_ascii=False)
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n  [{now_str}] 🏷️ [Guardado En Venta] {len(all_listings)} lotes activos ({market_key}) -> data/listings_en_venta_capturado.json")
+            log_sniffer_event("LISTINGS_GUARDADO", f"{len(all_listings)} lotes activos ({market_key}) guardados en {ACTIVE_LISTINGS_OUTPUT}")
+            return True
+        except Exception as e:
+            print(f"\n  [Error guardando listings]: {e}")
+            log_sniffer_event("ERROR_LISTINGS", f"Fallo al guardar listings: {e}")
+            return False
+
+    def flush_bank():
+        nonlocal bank_burst_active
+        items_to_save = []
+        with bank_lock:
+            if not bank_burst_active and not bank_burst_stream and not accumulated_bank:
+                return
+            bank_burst_active = False
+            if bank_burst_stream:
+                stream_items = extract_items_recursive(bytes(bank_burst_stream))
+                for gid, qty, uid in stream_items:
+                    k = uid if uid > 0 else (gid, len(accumulated_bank))
+                    accumulated_bank[k] = (gid, qty, uid)
+                bank_burst_stream.clear()
+            if accumulated_bank:
+                items_to_save = list(accumulated_bank.values())
+        if items_to_save:
+            save_bank_snapshot(items_to_save)
+
+    def flush_sales():
+        nonlocal sales_burst_active
+        raw_b = None
+        with sales_lock:
+            if not sales_burst_active and not sales_burst_stream:
+                return
+            sales_burst_active = False
+            if sales_burst_stream:
+                raw_b = bytes(sales_burst_stream)
+                sales_burst_stream.clear()
+        if raw_b and len(raw_b) >= 20:
+            entries = extract_sales_entries(raw_b)
+            if entries:
+                with sales_lock:
+                    for s in entries:
+                        k = (s.get("rawDate") or s.get("date"), s.get("itemId"), s.get("price"), s.get("quantity"))
+                        if k not in unique_sales_dict:
+                            unique_sales_dict[k] = s
+                    sales_list = list(unique_sales_dict.values())
+                save_sales_snapshot(sales_list)
+            else:
+                log_sniffer_event("HISTORIAL_INSPECCION", f"Ráfaga de {len(raw_b)}b no generó ventas parseadas", payload=raw_b[:64])
+
+    def flush_listings():
+        nonlocal listings_burst_active
+        raw_b = None
+        with listings_lock:
+            if not listings_burst_active and not listings_burst_stream:
+                return
+            listings_burst_active = False
+            if listings_burst_stream:
+                raw_b = bytes(listings_burst_stream)
+                listings_burst_stream.clear()
+        if raw_b and len(raw_b) >= 20:
+            new_listings = extract_active_listings(raw_b)
+            if new_listings:
+                save_listings_snapshot(new_listings)
+            else:
+                log_sniffer_event("LISTINGS_INSPECCION", f"Ráfaga de {len(raw_b)}b no generó listings parseados", payload=raw_b[:64])
+
+    def flush_all_pending():
+        flush_bank()
+        flush_sales()
+        flush_listings()
+
     seen_tokens_session = set()
 
     def on_packet(packet):
@@ -2771,6 +3019,29 @@ def run_sniffer_session_bundle():
             if tok not in seen_tokens_session:
                 seen_tokens_session.add(tok)
                 log_sniffer_event("TOKEN_TRAFICO", f"TypeURL en tráfico: 'type.ankama.com/{tok}' (longitud paquete: {len(payload)}b)")
+
+        has_type_url = b"type.ankama.com/" in payload
+        is_storage_hdr = (target_bytes_inv in payload or target_bytes_storage in payload or
+                          b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload)
+        is_sales_hdr = (target_bytes_sales in payload or b"type.ankama.com/kyo" in payload)
+        is_listings_hdr = (target_bytes_active in payload or b"type.ankama.com/ket" in payload)
+        is_market_hdr = (target_bytes_market in payload or b"type.ankama.com/jzn" in payload)
+        is_quotation_hdr = (b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload)
+
+        # Si entra una cabecera de otro módulo, cerrar y volcar la ráfaga anterior de inmediato
+        if is_storage_hdr:
+            flush_sales()
+            flush_listings()
+        elif is_sales_hdr:
+            flush_bank()
+            flush_listings()
+        elif is_listings_hdr:
+            flush_bank()
+            flush_sales()
+        elif is_market_hdr or is_quotation_hdr:
+            flush_bank()
+            flush_sales()
+            flush_listings()
 
         # 1. Mercadillo (estricto por TypeURL y submensaje 0x12)
         if len(payload) >= 15:
@@ -2802,44 +3073,53 @@ def run_sniffer_session_bundle():
 
                 market_queue.put(payload_dict)
 
-        # 2. Almacen / Banco (solo si detecta TypeURL de inventario/banco o ráfaga de items)
-        if len(payload) >= 15:
-            has_storage_token = (target_bytes_inv in payload or target_bytes_storage in payload or
-                                 b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload)
-            if has_storage_token:
+        # 2. Almacen / Banco / Inventario
+        if is_storage_hdr:
+            with bank_lock:
+                bank_burst_active = True
+                bank_burst_stream.clear()
+                bank_burst_stream.extend(payload)
+                last_bank_pkt = now
+            d_items = extract_items_recursive(payload)
+            if d_items:
                 with bank_lock:
-                    bank_burst_active = True
-                    last_bank_pkt = now
-
-            direct_items = extract_items_recursive(payload)
-            if direct_items and (has_storage_token or bank_burst_active or len(direct_items) >= 2):
-                with bank_lock:
-                    for gid, qty, uid in direct_items:
+                    for gid, qty, uid in d_items:
                         k = uid if uid > 0 else (gid, len(accumulated_bank))
                         accumulated_bank[k] = (gid, qty, uid)
-                    bank_burst_active = True
-                    last_bank_pkt = now
+            log_sniffer_event("ALMACEN_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
+        elif bank_burst_active and not has_type_url and len(payload) >= 50:
+            with bank_lock:
+                bank_burst_stream.extend(payload)
+                last_bank_pkt = now
+            d_items = extract_items_recursive(payload)
+            if d_items:
+                with bank_lock:
+                    for gid, qty, uid in d_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
 
         # 3. Historial de Ventas
-        if target_bytes_sales in payload or b"type.ankama.com/kyo" in payload:
+        if is_sales_hdr:
             with sales_lock:
                 sales_burst_active = True
                 sales_burst_stream.clear()
                 sales_burst_stream.extend(payload)
                 last_sales_pkt = now
-        elif sales_burst_active and len(payload) >= 100:
+            log_sniffer_event("HISTORIAL_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
+        elif sales_burst_active and not has_type_url and len(payload) >= 50:
             with sales_lock:
                 sales_burst_stream.extend(payload)
                 last_sales_pkt = now
 
         # 4. Listings Activos
-        if target_bytes_active in payload or b"type.ankama.com/ket" in payload:
+        if is_listings_hdr:
             with listings_lock:
                 listings_burst_active = True
                 listings_burst_stream.clear()
                 listings_burst_stream.extend(payload)
                 last_listings_pkt = now
-        elif listings_burst_active and len(payload) >= 100:
+            log_sniffer_event("LISTINGS_DETECTADO", f"Inicio de captura ({len(payload)}b)", payload=payload)
+        elif listings_burst_active and not has_type_url and len(payload) >= 50:
             with listings_lock:
                 listings_burst_stream.extend(payload)
                 last_listings_pkt = now
@@ -2941,140 +3221,20 @@ def run_sniffer_session_bundle():
             time.sleep(0.1)
             now = time.time()
 
-            # Guardado del Banco al finalizar rafaga
-            need_save_bank = False
-            bank_snapshot = []
-            with bank_lock:
-                if bank_burst_active and now - last_bank_pkt >= 1.8 and len(accumulated_bank) >= 2:
-                    bank_burst_active = False
-                    need_save_bank = True
-                    bank_snapshot = list(accumulated_bank.values())
+            if bank_burst_active and (now - last_bank_pkt >= 1.0):
+                flush_bank()
 
-            if need_save_bank and bank_snapshot:
-                try:
-                    total_slots = len(bank_snapshot)
-                    total_units = sum(q for _, q, _ in bank_snapshot)
-                    items_list = [
-                        {"uid": str(uid), "itemId": gid, "name": get_item_name(gid), "quantity": qty}
-                        for gid, qty, uid in bank_snapshot
-                    ]
-                    saved_bank_data = {
-                        "metadata": {
-                            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "totalSlots": total_slots,
-                            "totalUnits": total_units,
-                            "uniqueTypes": len(set(gid for gid, _, _ in bank_snapshot)),
-                        },
-                        "items": items_list
-                    }
-                    with open(INVENTORY_OUTPUT, "w", encoding="utf-8") as f:
-                        json.dump(saved_bank_data, f, indent=2, ensure_ascii=False)
-                    print(f"\n  [Guardado Banco] {total_slots} slots ({total_units:,} unidades) -> data/banco_inventario_capturado.json")
-                    log_sniffer_event("ALMACEN_GUARDADO", f"{total_slots} slots ({total_units:,} unidades) guardados en {INVENTORY_OUTPUT}")
-                except Exception as e:
-                    print(f"\n  [Error guardando banco]: {e}")
-                    log_sniffer_event("ERROR_BANCO", f"Fallo al guardar banco: {e}")
+            if sales_burst_active and (now - last_sales_pkt >= 1.0):
+                flush_sales()
 
-            # Guardado de Historial al finalizar rafaga
-            need_save_sales = False
-            raw_sales_bytes = None
-            with sales_lock:
-                if sales_burst_active and now - last_sales_pkt >= 1.2 and len(sales_burst_stream) >= 300:
-                    raw_sales_bytes = bytes(sales_burst_stream)
-                    sales_burst_active = False
-                    sales_burst_stream.clear()
-                    need_save_sales = True
-
-            if need_save_sales and raw_sales_bytes:
-                try:
-                    entries = extract_sales_entries(raw_sales_bytes)
-                    if entries:
-                        with sales_lock:
-                            for s in entries:
-                                k = (s.get("rawDate") or s.get("date"), s.get("itemId"), s.get("price"), s.get("quantity"))
-                                if k not in unique_sales_dict:
-                                    unique_sales_dict[k] = s
-                            sales_list = list(unique_sales_dict.values())
-
-                        sold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Vendido")
-                        unsold_k = sum(s.get("price", 0) for s in sales_list if s.get("status") == "Sin vender")
-                        saved_sales_data = {
-                            "metadata": {
-                                "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "totalSales": len(sales_list),
-                                "totalKamas": sold_k,
-                                "soldKamas": sold_k,
-                                "unsoldKamas": unsold_k,
-                                "soldCount": sum(1 for s in sales_list if s.get("status") == "Vendido"),
-                                "unsoldCount": sum(1 for s in sales_list if s.get("status") == "Sin vender"),
-                            },
-                            "sales": sales_list
-                        }
-                        with open(SALES_OUTPUT, "w", encoding="utf-8") as f:
-                            json.dump(saved_sales_data, f, indent=2, ensure_ascii=False)
-                        print(f"\n  [Guardado Historial] {len(sales_list):,} ventas registradas -> data/historial_ventas_capturado.json")
-                        log_sniffer_event("HISTORIAL_GUARDADO", f"{len(sales_list):,} ventas guardadas en {SALES_OUTPUT}")
-                except Exception as e:
-                    print(f"\n  [Error guardando historial]: {e}")
-                    log_sniffer_event("ERROR_HISTORIAL", f"Fallo al guardar historial: {e}")
-
-            # Guardado de Listings Activos al finalizar rafaga
-            need_save_listings = False
-            raw_listings_bytes = None
-            with listings_lock:
-                if listings_burst_active and now - last_listings_pkt >= 1.2 and len(listings_burst_stream) >= 200:
-                    raw_listings_bytes = bytes(listings_burst_stream)
-                    listings_burst_active = False
-                    listings_burst_stream.clear()
-                    need_save_listings = True
-
-            if need_save_listings and raw_listings_bytes:
-                try:
-                    new_listings = extract_active_listings(raw_listings_bytes)
-                    if new_listings:
-                        market_key = classify_batch_market(new_listings)
-                        now_ts = int(time.time())
-                        for entry in new_listings:
-                            secs = entry.get("secondsRemaining", 0)
-                            if secs > 0:
-                                entry["expiresAt"] = datetime.datetime.fromtimestamp(now_ts + secs).strftime("%Y-%m-%d %H:%M:%S")
-                                days = secs // 86400
-                                hours = (secs % 86400) // 3600
-                                entry["timeLabel"] = f"{days}d {hours}h" if days > 0 else f"{hours}h"
-                            else:
-                                entry["expiresAt"] = None
-                                entry["timeLabel"] = "Desconocido"
-                            entry["market"] = market_key
-
-                        with listings_lock:
-                            mercadillos[market_key] = new_listings
-                            all_listings = mercadillos["recursos"] + mercadillos["equipamiento"] + mercadillos["consumibles"]
-
-                        saved_listings_data = {
-                            "metadata": {
-                                "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "totalLots": len(all_listings),
-                                "totalValue": sum(e["price"] for e in all_listings),
-                            },
-                            "mercadillos": {
-                                "recursos": {"totalLots": len(mercadillos["recursos"]), "totalValue": sum(e["price"] for e in mercadillos["recursos"]), "listings": mercadillos["recursos"]},
-                                "equipamiento": {"totalLots": len(mercadillos["equipamiento"]), "totalValue": sum(e["price"] for e in mercadillos["equipamiento"]), "listings": mercadillos["equipamiento"]},
-                                "consumibles": {"totalLots": len(mercadillos["consumibles"]), "totalValue": sum(e["price"] for e in mercadillos["consumibles"]), "listings": mercadillos["consumibles"]},
-                            },
-                            "listings": all_listings
-                        }
-                        with open(ACTIVE_LISTINGS_OUTPUT, "w", encoding="utf-8") as f:
-                            json.dump(saved_listings_data, f, indent=2, ensure_ascii=False)
-                        print(f"\n  [Guardado En Venta] {len(all_listings)} lotes activos ({market_key}) -> data/listings_en_venta_capturado.json")
-                        log_sniffer_event("LISTINGS_GUARDADO", f"{len(all_listings)} lotes activos ({market_key}) guardados en {ACTIVE_LISTINGS_OUTPUT}")
-                except Exception as e:
-                    print(f"\n  [Error guardando listings]: {e}")
-                    log_sniffer_event("ERROR_LISTINGS", f"Fallo al guardar listings: {e}")
+            if listings_burst_active and (now - last_listings_pkt >= 1.0):
+                flush_listings()
 
     except KeyboardInterrupt:
         print("\n\n" + "=" * 70)
         print("  RESUMEN DE SESION COMPLETA FINALIZADA")
         print("=" * 70)
+        flush_all_pending()
         with bank_lock:
             bank_count = len(accumulated_bank)
         with sales_lock:
@@ -3090,6 +3250,7 @@ def run_sniffer_session_bundle():
         print("=" * 70)
         log_sniffer_event("SESION_FINALIZADA", f"Mercadillo={market_sent_count}, Banco={bank_count}, Historial={sales_count}, Listings={tot_lots}")
     finally:
+        flush_all_pending()
         if sniffer.running:
             sniffer.stop()
         market_queue.put(None)

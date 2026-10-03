@@ -1066,6 +1066,44 @@ class TestSnifferMarketIngest(unittest.TestCase):
         self.assertIn(13713, sniffer_standalone.ITEM_SALES_VOLUME)
         self.assertEqual(sniffer_standalone.ITEM_SALES_VOLUME[13713]["sales24h"], 10)
 
+    def test_extract_items_recursive_segmented_stream(self):
+        import os
+        from sniffer.dofus_suite import extract_items_recursive
+        bin_path = os.path.join(os.path.dirname(__file__), "..", "sniffer", "data", "debug_active_listings_raw.bin")
+        if os.path.exists(bin_path):
+            with open(bin_path, "rb") as f:
+                data = f.read()
+            items = extract_items_recursive(data)
+            self.assertGreater(len(items), 1000)
+            # Test individual 1412-byte fragment starting around isb
+            pos_isb = data.find(b"type.ankama.com/isb")
+            self.assertNotEqual(pos_isb, -1)
+            single_pkt = data[pos_isb - 10 : pos_isb - 10 + 1412]
+            items_frag = extract_items_recursive(single_pkt)
+            self.assertGreater(len(items_frag), 20)
+
+    def test_extract_sales_entries_real_stream(self):
+        import os
+        from sniffer.dofus_suite import extract_sales_entries
+        bin_path = os.path.join(os.path.dirname(__file__), "..", "sniffer", "data", "raw_sales_stream.bin")
+        if os.path.exists(bin_path):
+            with open(bin_path, "rb") as f:
+                data = f.read()
+            sales = extract_sales_entries(data)
+            self.assertEqual(len(sales), 1000)
+            self.assertEqual(sales[0]["status"], "Vendido")
+
+    def test_extract_active_listings_real_stream(self):
+        import os
+        from sniffer.dofus_suite import extract_active_listings
+        bin_path = os.path.join(os.path.dirname(__file__), "..", "sniffer", "data", "debug_active_listings_raw.bin")
+        if os.path.exists(bin_path):
+            with open(bin_path, "rb") as f:
+                data = f.read()
+            listings = extract_active_listings(data)
+            self.assertEqual(len(listings), 44)
+            self.assertGreater(listings[0]["price"], 0)
+
 if __name__ == "__main__":
     unittest.main()
 
