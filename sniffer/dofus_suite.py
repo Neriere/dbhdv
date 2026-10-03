@@ -112,6 +112,12 @@ SNIFFER_LOG = os.path.join(LOGS_DIR, "sniffer.log")
 INVENTORY_OUTPUT = os.path.join(DATA_DIR, "banco_inventario_capturado.json")
 SALES_OUTPUT = os.path.join(DATA_DIR, "historial_ventas_capturado.json")
 ACTIVE_LISTINGS_OUTPUT = os.path.join(DATA_DIR, "listings_en_venta_capturado.json")
+QUOTATIONS_OUTPUT = os.path.join(DATA_DIR, "cotizaciones_capturadas.json")
+
+LAST_MARKET_ITEM_ID = 0
+ITEM_SALES_VOLUME = {}
+QUOTATION_BUFFERS = {}
+QUOTATION_LOCK = threading.Lock()
 
 ITEMS_DB_FILE = os.path.join(CONFIG_DIR, "items_db.json") if os.path.exists(os.path.join(CONFIG_DIR, "items_db.json")) else os.path.join(PROJECT_ROOT, "scripts", "items_db.json")
 STATIC_DICT_FILE = os.path.join(PROJECT_ROOT, "src", "data", "staticItemsDictionary.json")
@@ -497,9 +503,395 @@ def parse_market_message(buf, market_token="jzn"):
 
         item_id, ladders, offer_prices = extract_market_universal(sub_payload)
         if item_id >= 10 and (ladders or offer_prices):
+            global LAST_MARKET_ITEM_ID
+            LAST_MARKET_ITEM_ID = item_id
             return item_id, ladders, offer_prices
 
     return 0, [], []
+
+
+def calculate_quick_price(is_equip, prices):
+    """
+    Calcula el precio de referencia rápido a partir de la lista de ofertas o escalas del mercadillo.
+    """
+    if is_equip:
+        valid = [int(p) for p in prices if isinstance(p, (int, float)) and p >= 50]
+        if not valid:
+            return 0
+        valid.sort()
+        if len(valid) == 1:
+            return valid[0]
+        elif len(valid) == 2:
+            return round((valid[0] + valid[1]) / 2)
+        else:
+            std = [p for p in valid if p <= valid[0] * 1.8]
+            use = std if std else valid
+            low = use[:min(3, len(use))]
+            low_avg = sum(low) / len(low)
+            med = use[len(use) // 2]
+            return round(low_avg * 0.7 + med * 0.3)
+    else:
+        cl = clean_ladder(prices)
+        p1 = cl[0] if len(cl) > 0 else 0
+        p10 = cl[1] if len(cl) > 1 else 0
+        p100 = cl[2] if len(cl) > 2 else 0
+        p1000 = cl[3] if len(cl) > 3 else 0
+        lots = []
+        if p1 > 0: lots.append((p1, 0.40))
+        if p10 > 0: lots.append((round(p10 / 10.0), 0.30))
+        if p100 > 0: lots.append((round(p100 / 100.0), 0.20))
+        if p1000 > 0: lots.append((round(p1000 / 1000.0), 0.10))
+        if not lots:
+            return 0
+        tot_w = sum(w for _, w in lots)
+        return round(sum(u * w for u, w in lots) / tot_w)
+
+
+def save_captured_quotation(item_id, item_name, quotation_data):
+    """
+    Guarda o actualiza la cotización capturada de un ítem en data/cotizaciones_capturadas.json
+    """
+    try:
+        data = {}
+        if os.path.exists(QUOTATIONS_OUTPUT):
+            try:
+                with open(QUOTATIONS_OUTPUT, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        if not isinstance(data, dict) or "items" not in data:
+            data = {
+                "metadata": {
+                    "lastUpdated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "totalItems": 0
+                },
+                "items": {}
+            }
+        data["items"][str(item_id)] = {
+            "itemId": item_id,
+            "name": item_name,
+            "capturedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            **quotation_data
+        }
+        data["metadata"]["totalItems"] = len(data["items"])
+        data["metadata"]["lastUpdated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(QUOTATIONS_OUTPUT, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def parse_quotation_message(payload, now_ts=None):
+    """
+    Decodifica paquetes Ankama Protobuf Any ('type.ankama.com/iuk' o 'type.ankama.com/ive')
+    de la ventana de Cotizaciones del Mercado. Extrae simultáneamente las series temporales
+    completas de 24 Horas (Campo #1), 30 Días (Campo #2) y 7 Días (últimos 7 días).
+    """
+    if not payload:
+        return 0, None, None, ""
+
+    target_header = None
+    if b"type.ankama.com/iuk" in payload:
+        target_header = b"type.ankama.com/iuk"
+    elif b"type.ankama.com/ive" in payload:
+        target_header = b"type.ankama.com/ive"
+    else:
+        return 0, None, None, ""
+
+    try:
+        idx = payload.find(target_header)
+        tok_end = idx + len(target_header)
+
+        off_12 = payload.find(bytes([0x12]), tok_end, min(len(payload), tok_end + 32))
+        if off_12 != -1:
+            off = off_12 + 1
+            len2, r2_len = decode_varint(payload, off)
+            off += r2_len
+            payload_data = payload[off:off + len2] if len2 > 0 else payload[off:]
+        else:
+            tag2, r2 = decode_varint(payload, tok_end)
+            off = tok_end + r2
+            len2, r2_len = decode_varint(payload, off)
+            off += r2_len
+            payload_data = payload[off:off + len2] if len2 > 0 else payload[off:]
+
+        entries_24h = []
+        entries_30d = []
+        item_id_found = 0
+
+        p_off = 0
+        while p_off < len(payload_data):
+            tag_e, r_e = decode_varint(payload_data, p_off)
+            if r_e == 0:
+                break
+            p_off += r_e
+            fnum_e = tag_e >> 3
+            len_e, r_len_e = decode_varint(payload_data, p_off)
+            p_off += r_len_e
+            entry_buf = payload_data[p_off:p_off + len_e]
+            p_off += len_e
+
+            e_off = 0
+            vol, date_str, price, iid = 0, "", 0, 0
+            while e_off < len(entry_buf):
+                t_f, r_f = decode_varint(entry_buf, e_off)
+                if r_f == 0:
+                    break
+                e_off += r_f
+                f_num = t_f >> 3
+                w_type = t_f & 7
+                if w_type == 0:
+                    v_val, r_v = decode_varint(entry_buf, e_off)
+                    e_off += r_v
+                    if f_num == 1:
+                        vol = v_val
+                    elif f_num == 3:
+                        price = v_val
+                    elif f_num == 4:
+                        iid = v_val
+                        if iid >= 10:
+                            item_id_found = iid
+                elif w_type == 2:
+                    l_str, r_s = decode_varint(entry_buf, e_off)
+                    e_off += r_s
+                    date_str = entry_buf[e_off:e_off + l_str].decode("utf-8", errors="ignore")
+                    e_off += l_str
+                else:
+                    break
+
+            if date_str:
+                ts = 0
+                try:
+                    cleaned = date_str.split(".")[0].replace("Z", "+00:00")
+                    ts = datetime.datetime.fromisoformat(cleaned).timestamp()
+                except Exception:
+                    pass
+                entry = {"date": date_str, "price": price, "volume": vol, "item_id": iid, "ts": ts}
+                if fnum_e == 1:
+                    entries_24h.append(entry)
+                elif fnum_e == 2:
+                    entries_30d.append(entry)
+                else:
+                    entries_30d.append(entry)
+
+        if not entries_24h and not entries_30d:
+            return 0, None, None, ""
+
+        if not entries_30d and len(entries_24h) > 24:
+            entries_30d = entries_24h
+            entries_24h = []
+
+        if entries_24h:
+            entries_24h.sort(key=lambda e: e.get("ts", 0))
+        if entries_30d:
+            entries_30d.sort(key=lambda e: e.get("ts", 0))
+
+        all_ts = [e["ts"] for e in (entries_24h + entries_30d) if e.get("ts", 0) > 0]
+        max_ts = max(all_ts) if all_ts else 0
+
+        ref_now = now_ts if now_ts is not None else (max_ts if max_ts > 0 else time.time())
+        cutoff_7d = ref_now - (7 * 86400 + 3600)
+        cutoff_24h = ref_now - (24 * 3600 + 1800)
+
+        def calculate_weighted_median(items):
+            sorted_items = sorted(items, key=lambda x: x[0])
+            total_vol = sum(x[1] for x in sorted_items)
+            half_vol = total_vol / 2.0
+            cum_vol = 0
+            for p, v in sorted_items:
+                cum_vol += v
+                if cum_vol >= half_vol:
+                    return p
+            return sorted_items[-1][0] if sorted_items else 0
+
+        # 1. Métricas 24 Horas (últimos 22 intervalos horarios de la UI)
+        calc_24h = entries_24h[-22:] if len(entries_24h) >= 22 else entries_24h
+        sales24h = sum(e["volume"] for e in calc_24h)
+        w_sum_24 = sum(e["price"] * e["volume"] for e in calc_24h)
+        price24h = (w_sum_24 // sales24h) if sales24h > 0 else 0
+        pairs_24 = [(e["price"], e["volume"]) for e in calc_24h if e["price"] > 0 and e["volume"] > 0]
+        median24h = calculate_weighted_median(pairs_24) if pairs_24 else price24h
+
+        # 2. Métricas 30 Días
+        sales30d = sum(e["volume"] for e in entries_30d)
+        w_sum_30 = sum(e["price"] * e["volume"] for e in entries_30d)
+        price30d = (w_sum_30 // sales30d) if sales30d > 0 else 0
+        pairs_30 = [(e["price"], e["volume"]) for e in entries_30d if e["price"] > 0 and e["volume"] > 0]
+        median30d = calculate_weighted_median(pairs_30) if pairs_30 else price30d
+
+        # 3. Métricas 7 Días (últimos 8 puntos diarios si la serie >= 28 días)
+        if len(entries_30d) >= 28:
+            entries_7d = entries_30d[-8:]
+        elif any(e.get("ts", 0) > 0 for e in entries_30d):
+            entries_7d = [e for e in entries_30d if e.get("ts", 0) >= cutoff_7d]
+        else:
+            entries_7d = entries_30d[-8:] if len(entries_30d) >= 8 else entries_30d
+
+        sales7d = sum(e["volume"] for e in entries_7d)
+        w_sum_7 = sum(e["price"] * e["volume"] for e in entries_7d)
+        price7d = (w_sum_7 // sales7d) if sales7d > 0 else 0
+        pairs_7 = [(e["price"], e["volume"]) for e in entries_7d if e["price"] > 0 and e["volume"] > 0]
+        median7d = calculate_weighted_median(pairs_7) if pairs_7 else price7d
+
+        # Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+        if sales24h > sales7d:
+            sales7d = sales24h
+            if price7d == 0 and price24h > 0:
+                price7d = price24h
+                median7d = median24h
+        if sales7d > sales30d:
+            sales30d = sales7d
+            if price30d == 0 and price7d > 0:
+                price30d = price7d
+                median30d = median7d
+
+        # Estimación promedio diario
+        if sales24h == 0 and sales7d == 0:
+            avg_daily = 0.0
+        elif sales30d > 0:
+            avg_daily = round(sales30d / 30.0, 1)
+        elif sales7d > 0:
+            avg_daily = round(sales7d / 7.0, 1)
+        else:
+            avg_daily = float(sales24h)
+
+        def get_robust_period_price(price, median, vol=0):
+            if median > 0 and price > 0:
+                if price > median * 1.8:
+                    return median
+                if vol >= 2 and median < price:
+                    return round(median * 0.70 + price * 0.30)
+                if price < median * 0.5:
+                    return median
+                return price
+            return median if median > 0 else price
+
+        p24_rep = get_robust_period_price(price24h, median24h, sales24h) if (sales24h > 0 and (price24h > 0 or median24h > 0)) else 0
+        p7_rep = get_robust_period_price(price7d, median7d, sales7d) if (sales7d > 0 and (price7d > 0 or median7d > 0)) else 0
+        p30_rep = get_robust_period_price(price30d, median30d, sales30d) if (sales30d > 0 and (price30d > 0 or median30d > 0)) else 0
+
+        is_active_downtrend = sales24h >= 3 and p24_rep > 0 and p7_rep > 0 and p24_rep < p7_rep * 0.65
+
+        vol_periods = []
+        if p24_rep > 0:
+            w24 = 0.80 if is_active_downtrend else 0.45
+            vol_periods.append({"w": w24, "p": p24_rep})
+        if p7_rep > 0:
+            w7 = 0.15 if is_active_downtrend else 0.35
+            vol_periods.append({"w": w7, "p": p7_rep})
+        if p30_rep > 0:
+            w30 = 0.05 if is_active_downtrend else 0.20
+            vol_periods.append({"w": w30, "p": p30_rep})
+
+        if vol_periods:
+            tot_w = sum(vp["w"] for vp in vol_periods)
+            suggested_price = int(round(sum(vp["p"] * vp["w"] for vp in vol_periods) / tot_w))
+            if is_active_downtrend and suggested_price > p24_rep * 1.4:
+                suggested_price = int(round(p24_rep * 1.4))
+        else:
+            suggested_price = p24_rep or p7_rep or p30_rep or 0
+
+        sales_data = {
+            "sales24h": sales24h,
+            "price24h": price24h if sales24h > 0 else 0,
+            "median24h": median24h if sales24h > 0 else 0,
+            "sales7d": sales7d,
+            "price7d": price7d if sales7d > 0 else 0,
+            "median7d": median7d if sales7d > 0 else 0,
+            "sales30d": sales30d,
+            "price30d": price30d if sales30d > 0 else 0,
+            "median30d": median30d if sales30d > 0 else 0,
+            "avgDailySales": avg_daily,
+            "suggestedPrice": suggested_price,
+            "medianPrice": median24h or median7d or median30d or 0,
+            "updatedAt": int(time.time() * 1000)
+        }
+
+        return item_id_found, sales_data, entries_30d or entries_24h, "all"
+    except Exception:
+        return 0, None, None, ""
+
+
+def process_packet(pkt):
+    """
+    Procesa un paquete de red para pruebas unitarias y motor de eventos.
+    Soporta reensamblado de fragmentos TCP de cotizaciones ('type.ankama.com/iuk' o 'ive').
+    """
+    global LAST_MARKET_ITEM_ID
+    try:
+        if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
+            return
+        if pkt[TCP].sport != 5555 and pkt[TCP].dport == 5555:
+            return
+
+        raw_load = bytes(pkt[Raw].load)
+        if len(raw_load) == 0:
+            return
+
+        km = load_keymap()
+        market_tok = km.get("price_list", "jzn")
+        if f"type.ankama.com/{market_tok}".encode("ascii") in raw_load:
+            item_id, ladders, offer_prices = parse_market_message(raw_load, market_tok)
+            if item_id > 0:
+                LAST_MARKET_ITEM_ID = item_id
+
+        has_iuk = b"type.ankama.com/iuk" in raw_load or b"type.ankama.com/ive" in raw_load
+        if pkt.haslayer(IP):
+            conn_key = (pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport)
+        else:
+            conn_key = pkt[TCP].sport
+
+        with QUOTATION_LOCK:
+            in_buffer = conn_key in QUOTATION_BUFFERS
+
+        if in_buffer or has_iuk:
+            now_t = time.time()
+            with QUOTATION_LOCK:
+                existing = QUOTATION_BUFFERS.get(conn_key)
+                if existing and (now_t - existing.get("ts", 0)) > 4.0:
+                    existing = None
+
+                if existing:
+                    buf = existing["buf"] + raw_load
+                else:
+                    target_hdr = b"type.ankama.com/iuk" if b"type.ankama.com/iuk" in raw_load else b"type.ankama.com/ive"
+                    idx = raw_load.find(target_hdr)
+                    buf = raw_load[idx:] if idx != -1 else b""
+
+                target_hdr = b"type.ankama.com/iuk" if b"type.ankama.com/iuk" in buf else (b"type.ankama.com/ive" if b"type.ankama.com/ive" in buf else None)
+
+                if buf and target_hdr:
+                    idx = buf.find(target_hdr)
+                    tok_end = idx + len(target_hdr)
+
+                    off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 16))
+                    off = (off_12 + 1) if off_12 != -1 else (tok_end + 1)
+
+                    if len(buf) > off:
+                        len2, r2_len = decode_varint(buf, off)
+                        if r2_len > 0:
+                            off += r2_len
+                            total_needed = off + len2
+                            if len(buf) >= total_needed:
+                                quotation_payload = buf[idx:total_needed]
+                                QUOTATION_BUFFERS.pop(conn_key, None)
+                                q_id, s_data, _, _ = parse_quotation_message(quotation_payload)
+                                target_id = q_id or LAST_MARKET_ITEM_ID
+                                if target_id and s_data:
+                                    ITEM_SALES_VOLUME[target_id] = s_data
+                            else:
+                                if len(buf) < 500000:
+                                    QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                                else:
+                                    QUOTATION_BUFFERS.pop(conn_key, None)
+                        else:
+                            QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                    else:
+                        QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now_t}
+                else:
+                    QUOTATION_BUFFERS.pop(conn_key, None)
+    except Exception:
+        pass
 
 # =============================================================================
 # SINCRONIZACIÓN CLOUD DE TOKENS (BUENAS PRÁCTICAS)
@@ -618,6 +1010,26 @@ def run_sniffer_market():
                 lad_str = ", ".join(f"{p:,} K" for p in top_3)
                 print(f"  [{now_str}] 🛡️ {item_name} (#{item_id}) [Equipamiento] -> Mínimos: {lad_str}")
                 log_sniffer_event("MERCADILLO_EQUIPO", f"{item_name} (#{item_id}) -> Mínimos: {lad_str}", payload=payload)
+
+        # Cotizaciones del Mercado (type.ankama.com/iuk o ive)
+        if b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload:
+            q_id, s_data, _, _ = parse_quotation_message(payload)
+            target_id = q_id or LAST_MARKET_ITEM_ID
+            if target_id > 0 and s_data:
+                target_name = get_item_name(target_id)
+                now_str = datetime.datetime.now().strftime("%H:%M:%S")
+                s24 = s_data.get("sales24h", 0)
+                p24 = s_data.get("price24h", 0)
+                s7 = s_data.get("sales7d", 0)
+                p7 = s_data.get("price7d", 0)
+                s30 = s_data.get("sales30d", 0)
+                p30 = s_data.get("price30d", 0)
+                sug_p = s_data.get("suggestedPrice", 0)
+                print(f"\n  [{now_str}] 📈 [Cotización] {target_name} (#{target_id})")
+                print(f"       • 24h: {s24:,} ventas ({p24:,} K) | 7d: {s7:,} ventas ({p7:,} K) | 30d: {s30:,} ventas ({p30:,} K)")
+                print(f"       • Sugerido : {sug_p:,} K\n")
+                log_sniffer_event("COTIZACION", f"{target_name} (#{target_id}) -> 24h:{s24}v | 7d:{s7}v | 30d:{s30}v | Sug:{sug_p}K", payload=payload)
+                save_captured_quotation(target_id, target_name, s_data)
 
     sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
     sniffer.start()
@@ -2256,15 +2668,17 @@ def run_sniffer_session_bundle():
     print("=" * 70)
     print("  Tokens Activos en Paralelo:")
     print(f"    * Mercadillo (price_list)    : '{market_token}' -> Envio directo a DBHDV")
+    print(f"    * Cotizaciones (sales_volume): 'iuk' / 'ive' -> Envio directo a DBHDV y cotizaciones_capturadas.json")
     print(f"    * Almacen (inventory/storage): '{inv_token}' / '{storage_token}' -> banco_inventario_capturado.json")
     print(f"    * Historial (sales_history)  : '{sales_token}' -> historial_ventas_capturado.json")
     print(f"    * En Venta (active_listings) : '{active_token}' -> listings_en_venta_capturado.json")
     print("-" * 70)
     print("  Instrucciones:")
     print("  1. Juega normalmente en Dofus Unity 3.6.")
-    print("  2. Consulta mercadillos, abre tu banco o la pestana de ventas.")
-    print("  3. El sistema actualiza cada archivo JSON por separado en sniffer/data/.")
-    print("  4. Presiona CTRL+C cuando desees finalizar la sesion.")
+    print("  2. Consulta mercadillos, abre objetos y haz clic en sus cotizaciones.")
+    print("  3. Abre tu banco o la pestana de ventas del mercadillo.")
+    print("  4. El sistema actualiza cada archivo JSON por separado en sniffer/data/.")
+    print("  5. Presiona CTRL+C cuando desees finalizar la sesion.")
     print("-" * 70)
 
     load_items_dictionary()
@@ -2429,6 +2843,92 @@ def run_sniffer_session_bundle():
             with listings_lock:
                 listings_burst_stream.extend(payload)
                 last_listings_pkt = now
+
+        # 5. Cotizaciones de Mercado (type.ankama.com/iuk o ive)
+        has_quotation = (b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload)
+        conn_key = (packet[IP].src, packet[TCP].sport, packet[IP].dst, packet[TCP].dport) if packet.haslayer(IP) else packet[TCP].sport
+
+        with QUOTATION_LOCK:
+            in_quote_buf = conn_key in QUOTATION_BUFFERS
+
+        if in_quote_buf or has_quotation:
+            quote_complete_payload = None
+            with QUOTATION_LOCK:
+                existing = QUOTATION_BUFFERS.get(conn_key)
+                if existing and (now - existing.get("ts", 0)) > 4.0:
+                    existing = None
+
+                if existing:
+                    buf = existing["buf"] + payload
+                else:
+                    target_hdr = b"type.ankama.com/iuk" if b"type.ankama.com/iuk" in payload else b"type.ankama.com/ive"
+                    idx = payload.find(target_hdr)
+                    buf = payload[idx:] if idx != -1 else b""
+
+                target_hdr = b"type.ankama.com/iuk" if b"type.ankama.com/iuk" in buf else (b"type.ankama.com/ive" if b"type.ankama.com/ive" in buf else None)
+                if buf and target_hdr:
+                    idx = buf.find(target_hdr)
+                    tok_end = idx + len(target_hdr)
+                    off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 16))
+                    off = (off_12 + 1) if off_12 != -1 else (tok_end + 1)
+                    if len(buf) > off:
+                        len2, r2_len = decode_varint(buf, off)
+                        if r2_len > 0:
+                            off += r2_len
+                            total_needed = off + len2
+                            if len(buf) >= total_needed:
+                                quote_complete_payload = buf[idx:total_needed]
+                                QUOTATION_BUFFERS.pop(conn_key, None)
+                            else:
+                                if len(buf) < 500000:
+                                    QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now}
+                                else:
+                                    QUOTATION_BUFFERS.pop(conn_key, None)
+                        else:
+                            quote_complete_payload = buf[idx:]
+                            QUOTATION_BUFFERS.pop(conn_key, None)
+                    else:
+                        QUOTATION_BUFFERS[conn_key] = {"buf": buf, "ts": now}
+                else:
+                    QUOTATION_BUFFERS.pop(conn_key, None)
+
+            if quote_complete_payload:
+                q_id, s_data, _, _ = parse_quotation_message(quote_complete_payload)
+                target_id = q_id or LAST_MARKET_ITEM_ID
+                if target_id > 0 and s_data:
+                    ITEM_SALES_VOLUME[target_id] = s_data
+                    target_name = get_item_name(target_id)
+                    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+
+                    s24 = s_data.get("sales24h", 0)
+                    p24 = s_data.get("price24h", 0)
+                    m24 = s_data.get("median24h", 0)
+                    s7 = s_data.get("sales7d", 0)
+                    p7 = s_data.get("price7d", 0)
+                    m7 = s_data.get("median7d", 0)
+                    s30 = s_data.get("sales30d", 0)
+                    p30 = s_data.get("price30d", 0)
+                    m30 = s_data.get("median30d", 0)
+                    sug_p = s_data.get("suggestedPrice", 0)
+                    avg_d = s_data.get("avgDailySales", 0.0)
+
+                    print(f"\n  [{now_str}] 📈 [Cotización de Mercado] {target_name} (#{target_id})")
+                    print(f"       • 24 Horas : {s24:,} ventas | Medio: {p24:,} K | Mediana: {m24:,} K")
+                    print(f"       • 7 Días   : {s7:,} ventas | Medio: {p7:,} K | Mediana: {m7:,} K")
+                    print(f"       • 30 Días  : {s30:,} ventas | Medio: {p30:,} K | Mediana: {m30:,} K")
+                    print(f"       • Sugerido : {sug_p:,} K | Ritmo: {avg_d:.1f} u/día\n")
+
+                    summary_log = f"{target_name} (#{target_id}) -> 24h:{s24}v/{p24}K | 7d:{s7}v/{p7}K | 30d:{s30}v/{p30}K | Sug:{sug_p}K"
+                    log_sniffer_event("COTIZACION", summary_log, payload=quote_complete_payload)
+
+                    market_queue.put({
+                        "server": server_slug,
+                        "salesVolume": {
+                            str(target_id): s_data
+                        }
+                    })
+
+                    save_captured_quotation(target_id, target_name, s_data)
 
     sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
     sniffer.start()

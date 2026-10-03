@@ -674,8 +674,8 @@ class TestSnifferMarketIngest(unittest.TestCase):
         import os
         import sys
         from datetime import datetime, timedelta
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-        import sniffer_standalone
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sniffer'))
+        import dofus_suite as sniffer_standalone
 
         def make_quotation_entry(vol, date_str, price, item_id):
             buf = bytearray()
