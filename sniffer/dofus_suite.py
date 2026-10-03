@@ -537,29 +537,6 @@ def parse_market_message(buf, market_token="jzn"):
                 LAST_MARKET_ITEM_ID = item_id
                 return item_id, ladders, offer_prices
 
-    # 2. Detección automática por cualquier TypeURL que contenga escalas válidas de objeto conocido
-    for m in re.finditer(rb'type\.ankama\.com/([a-z0-9]+)', buf):
-        tok_name = m.group(1).decode("ascii", errors="ignore")
-        if tok_name in ("isb", "hlp", "ket", "kyo", "iuk", "ive", "kby", "jon", "joq", "kqf"):
-            continue
-        tok_end = m.end()
-        off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 30))
-        if off_12 != -1:
-            off = off_12 + 1
-            if off >= len(buf):
-                continue
-            payload_len, br = decode_varint(buf, off)
-            if br > 0 and off + br + payload_len <= len(buf):
-                sub_payload = buf[off + br : off + br + payload_len]
-            else:
-                sub_payload = buf[tok_end:]
-        else:
-            sub_payload = buf[tok_end:]
-
-        item_id, ladders, offer_prices = extract_market_universal(sub_payload)
-        if item_id >= 10 and (item_id in ITEMS_NAME_MAP or get_item_name(item_id) != f"Objeto #{item_id}") and (ladders or offer_prices):
-            LAST_MARKET_ITEM_ID = item_id
-            return item_id, ladders, offer_prices
 
     return 0, [], []
 
