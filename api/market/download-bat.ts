@@ -31,7 +31,8 @@ if %errorlevel% neq 0 (
     echo ===============================================================================
     echo   Solicitando permisos de Administrador para captura de red [Npcap/Scapy]...
     echo ===============================================================================
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d \\"\\"%~dp0\\"\\" && \\"\\"%~f0\\"\\"' -Verb RunAs" 2>nul
+    set "BATCH_PATH=%~f0"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', ('call ' + [char]34 + $env:BATCH_PATH + [char]34)) -Verb RunAs" 2>nul
     if %errorlevel% neq 0 (
         echo.
         echo ===============================================================================
