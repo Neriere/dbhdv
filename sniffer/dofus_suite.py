@@ -2736,6 +2736,7 @@ def run_sniffer_session_bundle():
     active_token = km.get("active_listings", "ket")
     inv_token = km.get("inventory", "isb")
     storage_token = km.get("storage", "hlp")
+    target_bytes_market = f"type.ankama.com/{market_token}".encode("ascii")
     target_bytes_sales = f"type.ankama.com/{sales_token}".encode("ascii")
     target_bytes_active = f"type.ankama.com/{active_token}".encode("ascii")
     target_bytes_inv = f"type.ankama.com/{inv_token}".encode("ascii")
