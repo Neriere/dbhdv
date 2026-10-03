@@ -2786,6 +2786,7 @@ def run_sniffer_session_bundle():
     bank_burst_stream = bytearray()
     bank_expected_len = 0
     bank_burst_active = False
+    bank_dirty = False
     last_bank_pkt = 0.0
 
     unique_sales_dict = {}
@@ -2948,21 +2949,24 @@ def run_sniffer_session_bundle():
             return False
 
     def flush_bank():
-        nonlocal bank_burst_active, bank_expected_len
+        nonlocal bank_burst_active, bank_expected_len, bank_dirty
         items_to_save = []
         with bank_lock:
-            if not bank_burst_active and not bank_burst_stream and not accumulated_bank:
+            if not bank_burst_active and not bank_burst_stream and not bank_dirty:
                 return
             bank_burst_active = False
             bank_expected_len = 0
             if bank_burst_stream:
                 stream_items = extract_items_recursive(bytes(bank_burst_stream))
-                for gid, qty, uid in stream_items:
-                    k = uid if uid > 0 else (gid, len(accumulated_bank))
-                    accumulated_bank[k] = (gid, qty, uid)
+                if stream_items:
+                    for gid, qty, uid in stream_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
+                    bank_dirty = True
                 bank_burst_stream.clear()
-            if accumulated_bank:
+            if bank_dirty and accumulated_bank:
                 items_to_save = list(accumulated_bank.values())
+                bank_dirty = False
         if items_to_save:
             save_bank_snapshot(items_to_save)
 
@@ -3039,12 +3043,14 @@ def run_sniffer_session_bundle():
                 log_sniffer_event("TOKEN_TRAFICO", f"TypeURL en tráfico: 'type.ankama.com/{tok}' (longitud paquete: {len(payload)}b)")
 
         has_type_url = b"type.ankama.com/" in payload
-        is_storage_hdr = (target_bytes_inv in payload or target_bytes_storage in payload or
-                          b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload)
-        is_sales_hdr = (target_bytes_sales in payload or b"type.ankama.com/kyo" in payload)
         is_listings_hdr = (target_bytes_active in payload or b"type.ankama.com/ket" in payload)
+        is_sales_hdr = (target_bytes_sales in payload or b"type.ankama.com/kyo" in payload)
         is_market_hdr = (target_bytes_market in payload or b"type.ankama.com/jzn" in payload)
         is_quotation_hdr = (b"type.ankama.com/iuk" in payload or b"type.ankama.com/ive" in payload)
+        is_storage_hdr = (not (is_listings_hdr or is_sales_hdr or is_market_hdr or is_quotation_hdr)) and (
+            target_bytes_inv in payload or target_bytes_storage in payload or
+            b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload
+        )
 
         # 1. Mercadillo (estricto por TypeURL y submensaje 0x12)
         if len(payload) >= 15:
@@ -3103,7 +3109,7 @@ def run_sniffer_session_bundle():
             log_sniffer_event("LISTINGS_DETECTADO", f"Inicio de captura ({len(payload)}b, esperado={listings_expected_len}b)", payload=payload)
             if completed_listings:
                 flush_listings()
-        elif listings_burst_active:
+        elif listings_burst_active and not has_type_url:
             with listings_lock:
                 if listings_expected_len > 0:
                     needed = listings_expected_len - len(listings_burst_stream)
@@ -3143,7 +3149,7 @@ def run_sniffer_session_bundle():
             log_sniffer_event("HISTORIAL_DETECTADO", f"Inicio de captura ({len(payload)}b, esperado={sales_expected_len}b)", payload=payload)
             if completed_sales:
                 flush_sales()
-        elif sales_burst_active:
+        elif sales_burst_active and not has_type_url:
             with sales_lock:
                 if sales_expected_len > 0:
                     needed = sales_expected_len - len(sales_burst_stream)
@@ -3183,7 +3189,7 @@ def run_sniffer_session_bundle():
                         off += r2
                         bank_expected_len = max(bank_expected_len, (off - idx) + msg_len)
 
-                bank_burst_stream.extend(payload)
+                bank_burst_stream.extend(payload[idx:] if idx != -1 else payload)
                 last_bank_pkt = now
                 if bank_expected_len > 0 and len(bank_burst_stream) >= bank_expected_len:
                     completed_bank = True
@@ -3193,10 +3199,11 @@ def run_sniffer_session_bundle():
                     for gid, qty, uid in d_items:
                         k = uid if uid > 0 else (gid, len(accumulated_bank))
                         accumulated_bank[k] = (gid, qty, uid)
+                    bank_dirty = True
             log_sniffer_event("ALMACEN_DETECTADO", f"Captura ({len(payload)}b, exp={bank_expected_len}b, acum={len(bank_burst_stream)}b, slots={len(accumulated_bank)})", payload=payload)
             if completed_bank:
                 flush_bank()
-        elif bank_burst_active and not (is_listings_hdr or is_sales_hdr or is_market_hdr or is_quotation_hdr):
+        elif bank_burst_active and not has_type_url:
             with bank_lock:
                 bank_burst_stream.extend(payload)
                 last_bank_pkt = now
@@ -3208,6 +3215,7 @@ def run_sniffer_session_bundle():
                     for gid, qty, uid in d_items:
                         k = uid if uid > 0 else (gid, len(accumulated_bank))
                         accumulated_bank[k] = (gid, qty, uid)
+                    bank_dirty = True
             if completed_bank:
                 flush_bank()
 
