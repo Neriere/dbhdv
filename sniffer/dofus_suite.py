@@ -2764,12 +2764,14 @@ def run_sniffer_session_bundle():
     print(f"    * Historial (sales_history)  : '{sales_token}' -> historial_ventas_capturado.json")
     print(f"    * En Venta (active_listings) : '{active_token}' -> listings_en_venta_capturado.json")
     print("-" * 70)
-    print("  Instrucciones:")
-    print("  1. Juega normalmente en Dofus Unity 3.6.")
-    print("  2. Consulta mercadillos, abre objetos y haz clic en sus cotizaciones.")
-    print("  3. Abre tu banco o la pestana de ventas del mercadillo.")
-    print("  4. El sistema actualiza cada archivo JSON por separado en sniffer/data/.")
-    print("  5. Presiona CTRL+C cuando desees finalizar la sesion.")
+    print("  Instrucciones para captura en vivo en Dofus Unity 3.6:")
+    print("  1. Mercadillo  : En pestana 'COMPRAR', escribe y busca objetos en el buscador")
+    print("                   (o cierra y vuelve a abrir el mercadillo para forzar la red).")
+    print("  2. Cotizaciones: Haz clic en el icono de grafico de cotizacion de un objeto.")
+    print("  3. Banco       : Ve al edificio del Banco y habla con el Banquero ('Consultar tu banco').")
+    print("  4. Historial   : En el mercadillo, abre la pestana 'HISTORIAL' de ventas.")
+    print("  5. En Venta    : En el mercadillo, abre la pestana 'VENTA' para capturar tus lotes activos.")
+    print("  6. Presiona CTRL+C cuando desees finalizar la sesion.")
     print("-" * 70)
 
     load_items_dictionary()
@@ -2814,6 +2816,12 @@ def run_sniffer_session_bundle():
     listings_expected_len = 0
     listings_burst_active = False
     last_listings_pkt = 0.0
+
+    session_market_updates = 0
+    session_quotations_count = 0
+    session_bank_saved_slots = 0
+    session_sales_saved_count = 0
+    session_listings_saved_lots = 0
 
     market_queue = queue.Queue()
     market_sent_count = 0
@@ -2867,6 +2875,8 @@ def run_sniffer_session_bundle():
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
             print(f"\n  [{now_str}] 📦 [Guardado Almacén/Inventario] {total_slots:,} slots ({total_units:,} unidades) -> data/banco_inventario_capturado.json")
             log_sniffer_event("ALMACEN_GUARDADO", f"{total_slots} slots ({total_units:,} unidades) guardados en {INVENTORY_OUTPUT}")
+            nonlocal session_bank_saved_slots
+            session_bank_saved_slots = total_slots
             return True
         except Exception as e:
             print(f"\n  [Error guardando banco]: {e}")
@@ -2896,6 +2906,8 @@ def run_sniffer_session_bundle():
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
             print(f"\n  [{now_str}] 📜 [Guardado Historial] {len(sales_list):,} ventas registradas -> data/historial_ventas_capturado.json")
             log_sniffer_event("HISTORIAL_GUARDADO", f"{len(sales_list):,} ventas guardadas en {SALES_OUTPUT}")
+            nonlocal session_sales_saved_count
+            session_sales_saved_count = len(sales_list)
             return True
         except Exception as e:
             print(f"\n  [Error guardando historial]: {e}")
@@ -2942,6 +2954,8 @@ def run_sniffer_session_bundle():
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
             print(f"\n  [{now_str}] 🏷️ [Guardado En Venta] {len(all_listings)} lotes activos ({market_key}) -> data/listings_en_venta_capturado.json")
             log_sniffer_event("LISTINGS_GUARDADO", f"{len(all_listings)} lotes activos ({market_key}) guardados en {ACTIVE_LISTINGS_OUTPUT}")
+            nonlocal session_listings_saved_lots
+            session_listings_saved_lots = len(all_listings)
             return True
         except Exception as e:
             print(f"\n  [Error guardando listings]: {e}")
@@ -3081,6 +3095,7 @@ def run_sniffer_session_bundle():
                     log_sniffer_event("MERCADILLO_EQUIPO", f"{item_name} (#{item_id}) -> Minimos: {lad_str}", payload=payload)
 
                 market_queue.put(payload_dict)
+                session_market_updates += 1
 
         # 2. Listings Activos en Venta (ket)
         completed_listings = False
@@ -3304,6 +3319,7 @@ def run_sniffer_session_bundle():
                     })
 
                     save_captured_quotation(target_id, target_name, s_data)
+                    session_quotations_count += 1
 
     sniffer = AsyncSniffer(filter="tcp port 5555", prn=on_packet, store=False)
     sniffer.start()
@@ -3336,14 +3352,33 @@ def run_sniffer_session_bundle():
             sales_count = len(unique_sales_dict)
         with listings_lock:
             tot_lots = sum(len(v) for v in mercadillos.values())
-        print(f"  * Mercadillo : {market_sent_count} actualizaciones enviadas en vivo a DBHDV")
-        print(f"  * Banco      : {bank_count} slots en sniffer/data/banco_inventario_capturado.json")
-        print(f"  * Historial  : {sales_count} ventas en sniffer/data/historial_ventas_capturado.json")
-        print(f"  * En Venta   : {tot_lots} lotes en sniffer/data/listings_en_venta_capturado.json")
+
+        # Mercadillo y Cotizaciones
+        print(f"  * Mercadillo   : {session_market_updates} actualizaciones capturadas en vivo ({market_sent_count} enviadas a DBHDV)")
+        print(f"  * Cotizaciones : {session_quotations_count} cotizaciones capturadas en vivo")
+
+        # Banco / Inventario
+        if session_bank_saved_slots > 0:
+            print(f"  * Almacén/Banco: {session_bank_saved_slots:,} slots capturados y guardados en esta sesión")
+        else:
+            print(f"  * Almacén/Banco: No se abrió el banco en esta sesión ({bank_count:,} slots previos en disco)")
+
+        # Historial
+        if session_sales_saved_count > 0:
+            print(f"  * Historial    : {session_sales_saved_count:,} ventas capturadas y guardadas en esta sesión")
+        else:
+            print(f"  * Historial    : No se abrió la pestaña 'HISTORIAL' en esta sesión ({sales_count:,} previas en disco)")
+
+        # Listings
+        if session_listings_saved_lots > 0:
+            print(f"  * En Venta     : {session_listings_saved_lots:,} lotes capturados y guardados en esta sesión")
+        else:
+            print(f"  * En Venta     : No se abrió la pestaña 'VENTA' en esta sesión ({tot_lots:,} lotes previos en disco)")
+
         print("-" * 70)
-        print("  Puedes importar estos 3 archivos JSON a la vez en DBHDV > Mi Banco.")
+        print("  Puedes importar estos archivos JSON en DBHDV > Mi Banco.")
         print("=" * 70)
-        log_sniffer_event("SESION_FINALIZADA", f"Mercadillo={market_sent_count}, Banco={bank_count}, Historial={sales_count}, Listings={tot_lots}")
+        log_sniffer_event("SESION_FINALIZADA", f"Mercadillo={session_market_updates}, Cotizaciones={session_quotations_count}, Banco={session_bank_saved_slots}, Historial={session_sales_saved_count}, Listings={session_listings_saved_lots}")
     finally:
         flush_all_pending()
         if sniffer.running:
