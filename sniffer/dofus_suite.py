@@ -198,21 +198,6 @@ def get_item_name(item_id):
             del ITEMS_NAME_MAP[item_id]
         else:
             return val
-    try:
-        url = f"https://api.dofusdb.fr/items/{item_id}?$select[]=name"
-        req = urllib.request.Request(url, headers={"User-Agent": "DBHDV-Suite/1.0"})
-        with urllib.request.urlopen(req, timeout=1.2) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            name = (data.get("name", {}).get("es") or
-                    data.get("name", {}).get("fr") or
-                    data.get("name", {}).get("en"))
-            if name:
-                clean_name = str(name).strip()
-                if clean_name.lower() != "puré pic-feil" or item_id in (35089, 666):
-                    ITEMS_NAME_MAP[item_id] = clean_name
-                    return clean_name
-    except Exception:
-        pass
     return f"Objeto #{item_id}"
 
 SNIFFER_LOG_LOCK = threading.Lock()
@@ -521,35 +506,58 @@ def parse_market_message(buf, market_token="jzn"):
     if not market_token or market_token == "No calibrado":
         market_token = "jzn"
     t_bytes = f"type.ankama.com/{market_token}".encode("ascii")
-    if t_bytes not in buf:
-        return 0, [], []
 
-    pos = 0
-    while True:
-        found = buf.find(t_bytes, pos)
-        if found == -1:
-            break
-        tok_end = found + len(t_bytes)
-        pos = tok_end
+    # 1. Búsqueda directa por token principal calibrado
+    if t_bytes in buf:
+        pos = 0
+        while True:
+            found = buf.find(t_bytes, pos)
+            if found == -1:
+                break
+            tok_end = found + len(t_bytes)
+            pos = tok_end
 
-        # En protobuf Any, tras el type_url viene el campo #2 (tag 0x12) con la carga serializada
+            off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 30))
+            if off_12 == -1:
+                sub_payload = buf[tok_end:]
+            else:
+                off = off_12 + 1
+                if off >= len(buf):
+                    continue
+                payload_len, br = decode_varint(buf, off)
+                if br == 0 or off + br + payload_len > len(buf):
+                    sub_payload = buf[tok_end:]
+                else:
+                    off += br
+                    sub_payload = buf[off : off + payload_len]
+
+            item_id, ladders, offer_prices = extract_market_universal(sub_payload)
+            if item_id >= 10 and (ladders or offer_prices):
+                global LAST_MARKET_ITEM_ID
+                LAST_MARKET_ITEM_ID = item_id
+                return item_id, ladders, offer_prices
+
+    # 2. Detección automática por cualquier TypeURL que contenga escalas válidas de objeto conocido
+    for m in re.finditer(rb'type\.ankama\.com/([a-z0-9]+)', buf):
+        tok_name = m.group(1).decode("ascii", errors="ignore")
+        if tok_name in ("isb", "hlp", "ket", "kyo", "iuk", "ive", "kby", "jon", "joq", "kqf"):
+            continue
+        tok_end = m.end()
         off_12 = buf.find(bytes([0x12]), tok_end, min(len(buf), tok_end + 30))
-        if off_12 == -1:
-            sub_payload = buf[tok_end:]
-        else:
+        if off_12 != -1:
             off = off_12 + 1
             if off >= len(buf):
                 continue
             payload_len, br = decode_varint(buf, off)
-            if br == 0 or off + br + payload_len > len(buf):
-                sub_payload = buf[tok_end:]
+            if br > 0 and off + br + payload_len <= len(buf):
+                sub_payload = buf[off + br : off + br + payload_len]
             else:
-                off += br
-                sub_payload = buf[off : off + payload_len]
+                sub_payload = buf[tok_end:]
+        else:
+            sub_payload = buf[tok_end:]
 
         item_id, ladders, offer_prices = extract_market_universal(sub_payload)
-        if item_id >= 10 and (ladders or offer_prices):
-            global LAST_MARKET_ITEM_ID
+        if item_id >= 10 and (item_id in ITEMS_NAME_MAP or get_item_name(item_id) != f"Objeto #{item_id}") and (ladders or offer_prices):
             LAST_MARKET_ITEM_ID = item_id
             return item_id, ladders, offer_prices
 
