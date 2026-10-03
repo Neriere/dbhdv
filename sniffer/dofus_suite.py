@@ -2333,6 +2333,8 @@ def run_sniffer_session_bundle():
     worker_thread = threading.Thread(target=http_market_worker, daemon=True)
     worker_thread.start()
 
+    seen_tokens_session = set()
+
     def on_packet(packet):
         nonlocal bank_burst_active, last_bank_pkt
         nonlocal sales_burst_active, last_sales_pkt
@@ -2348,6 +2350,13 @@ def run_sniffer_session_bundle():
             return
 
         now = time.time()
+
+        # Telemetría de tokens vistos en la sesión
+        raw_tokens = extract_type_tokens(payload)
+        for tok, _ in raw_tokens:
+            if tok not in seen_tokens_session:
+                seen_tokens_session.add(tok)
+                log_sniffer_event("TOKEN_TRAFICO", f"TypeURL en tráfico: 'type.ankama.com/{tok}' (longitud paquete: {len(payload)}b)")
 
         # 1. Mercadillo (estricto por TypeURL y submensaje 0x12)
         if len(payload) >= 15:
@@ -2379,35 +2388,45 @@ def run_sniffer_session_bundle():
 
                 market_queue.put(payload_dict)
 
-        # 2. Almacen / Banco (solo si detecta TypeURL de inventario/banco o si ya inicio la rafaga)
+        # 2. Almacen / Banco (solo si detecta TypeURL de inventario/banco o ráfaga de items)
         if len(payload) >= 15:
             has_storage_token = (target_bytes_inv in payload or target_bytes_storage in payload or
                                  b"type.ankama.com/isb" in payload or b"type.ankama.com/hlp" in payload)
-            if has_storage_token or bank_burst_active:
-                direct_items = extract_items_recursive(payload)
-                if direct_items:
-                    with bank_lock:
-                        for gid, qty, uid in direct_items:
-                            k = uid if uid > 0 else (gid, len(accumulated_bank))
-                            accumulated_bank[k] = (gid, qty, uid)
-                        bank_burst_active = True
-                        last_bank_pkt = now
+            if has_storage_token:
+                with bank_lock:
+                    bank_burst_active = True
+                    last_bank_pkt = now
+
+            direct_items = extract_items_recursive(payload)
+            if direct_items and (has_storage_token or bank_burst_active or len(direct_items) >= 2):
+                with bank_lock:
+                    for gid, qty, uid in direct_items:
+                        k = uid if uid > 0 else (gid, len(accumulated_bank))
+                        accumulated_bank[k] = (gid, qty, uid)
+                    bank_burst_active = True
+                    last_bank_pkt = now
 
         # 3. Historial de Ventas
         if target_bytes_sales in payload or b"type.ankama.com/kyo" in payload:
             with sales_lock:
                 sales_burst_active = True
                 sales_burst_stream.clear()
-
-        if sales_burst_active:
+                sales_burst_stream.extend(payload)
+                last_sales_pkt = now
+        elif sales_burst_active and len(payload) >= 100:
             with sales_lock:
                 sales_burst_stream.extend(payload)
                 last_sales_pkt = now
 
         # 4. Listings Activos
-        if target_bytes_active in payload or b"type.ankama.com/ket" in payload or (listings_burst_active and len(payload) >= 150):
+        if target_bytes_active in payload or b"type.ankama.com/ket" in payload:
             with listings_lock:
                 listings_burst_active = True
+                listings_burst_stream.clear()
+                listings_burst_stream.extend(payload)
+                last_listings_pkt = now
+        elif listings_burst_active and len(payload) >= 100:
+            with listings_lock:
                 listings_burst_stream.extend(payload)
                 last_listings_pkt = now
 
