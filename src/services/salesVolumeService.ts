@@ -1,0 +1,485 @@
+import { ItemSalesVolume, SalesVolumeMap } from "../types";
+
+export type { ItemSalesVolume, SalesVolumeMap };
+
+const SALES_VOLUME_STORAGE_KEY = "dofus_sales_volume_v1";
+
+/**
+ * Obtener el mapa de volúmenes guardados localmente
+ */
+export function getStoredSalesVolumeMap(): SalesVolumeMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(SALES_VOLUME_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Aplica una actualización remota respetando Last-Write-Wins (LWW) por timestamp
+ */
+export function handleRemoteVolumeUpdate(itemId: number, remoteVolume: ItemSalesVolume): boolean {
+  if (typeof window === "undefined" || !itemId || !remoteVolume) return false;
+  const current = getStoredSalesVolumeMap();
+  const existing = current[itemId];
+
+  const localTime = existing?.updatedAt || 0;
+  const remoteTime = remoteVolume.updatedAt || 0;
+
+  // Solo se actualiza si la cotización remota es más reciente o igual a la local
+  if (remoteTime >= localTime || !existing) {
+    const isQuotation =
+      remoteVolume.sales7d !== undefined ||
+      remoteVolume.sales30d !== undefined ||
+      remoteVolume.sales24h !== undefined ||
+      remoteVolume.suggestedPrice !== undefined;
+    let resolvedSales24h = remoteVolume.sales24h !== undefined ? remoteVolume.sales24h : (isQuotation ? 0 : existing?.sales24h);
+    let resolvedSales7d = remoteVolume.sales7d !== undefined ? remoteVolume.sales7d : (isQuotation ? 0 : existing?.sales7d);
+    let resolvedSales30d = remoteVolume.sales30d !== undefined ? remoteVolume.sales30d : (isQuotation ? 0 : existing?.sales30d);
+
+    // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+    if (resolvedSales24h != null && resolvedSales7d != null && resolvedSales24h > resolvedSales7d) {
+      resolvedSales7d = resolvedSales24h;
+    }
+    if (resolvedSales7d != null && resolvedSales30d != null && resolvedSales7d > resolvedSales30d) {
+      resolvedSales30d = resolvedSales7d;
+    }
+
+    const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
+      ? 0
+      : (remoteVolume.avgDailySales !== undefined ? remoteVolume.avgDailySales : existing?.avgDailySales);
+
+    const p24 = resolvedSales24h === 0 ? 0 : (remoteVolume.price24h ?? existing?.price24h);
+    const m24 = resolvedSales24h === 0 ? 0 : (remoteVolume.median24h ?? existing?.median24h);
+    let p7 = resolvedSales7d === 0 ? 0 : (remoteVolume.price7d ?? existing?.price7d);
+    let m7 = resolvedSales7d === 0 ? 0 : (remoteVolume.median7d ?? existing?.median7d);
+    if (resolvedSales7d > 0 && !p7 && p24) {
+      p7 = p24;
+      m7 = m24;
+    }
+
+    current[itemId] = {
+      ...existing,
+      ...remoteVolume,
+      sales24h: resolvedSales24h,
+      sales7d: resolvedSales7d,
+      sales30d: resolvedSales30d,
+      price24h: p24,
+      median24h: m24,
+      price7d: p7,
+      median7d: m7,
+      avgDailySales: resolvedAvgDaily,
+      updatedAt: remoteTime || Date.now(),
+    };
+    try {
+      localStorage.setItem(SALES_VOLUME_STORAGE_KEY, JSON.stringify(current));
+      window.dispatchEvent(
+        new CustomEvent("dofus_sales_volume_updated", { detail: { itemId, volume: current[itemId] } })
+      );
+      return true;
+    } catch (e) {
+      console.warn("[handleRemoteVolumeUpdate] Storage write error:", e);
+    }
+  }
+  return false;
+}
+
+/**
+ * Sincroniza un mapa completo remoto con la base local usando LWW.
+ * Si la base local tiene cambios más recientes que la remota, los conserva y los envía a la nube.
+ */
+export function syncRemoteSalesVolume(remoteMap: SalesVolumeMap): SalesVolumeMap {
+  if (typeof window === "undefined") return remoteMap || {};
+  const current = getStoredSalesVolumeMap();
+  const localNewerToPush: Record<number, ItemSalesVolume> = {};
+  let hasLocalUpdates = false;
+
+  // 1. Procesar datos remotos
+  if (remoteMap && typeof remoteMap === "object") {
+    for (const [idStr, remoteVol] of Object.entries(remoteMap)) {
+      const itemId = Number(idStr);
+      if (!itemId || !remoteVol) continue;
+
+      const localVol = current[itemId];
+      const localTime = localVol?.updatedAt || 0;
+      const remoteTime = remoteVol.updatedAt || 0;
+
+      if (!localVol || remoteTime >= localTime) {
+        const isQuotation =
+          remoteVol.sales7d !== undefined ||
+          remoteVol.sales30d !== undefined ||
+          remoteVol.sales24h !== undefined ||
+          remoteVol.suggestedPrice !== undefined;
+        let resolvedSales24h = remoteVol.sales24h !== undefined ? remoteVol.sales24h : (isQuotation ? 0 : localVol?.sales24h);
+        let resolvedSales7d = remoteVol.sales7d !== undefined ? remoteVol.sales7d : (isQuotation ? 0 : localVol?.sales7d);
+        let resolvedSales30d = remoteVol.sales30d !== undefined ? remoteVol.sales30d : (isQuotation ? 0 : localVol?.sales30d);
+
+        // Invariante temporal matemática: 24h ⊆ 7d ⊆ 30d
+        if (resolvedSales24h != null && resolvedSales7d != null && resolvedSales24h > resolvedSales7d) {
+          resolvedSales7d = resolvedSales24h;
+        }
+        if (resolvedSales7d != null && resolvedSales30d != null && resolvedSales7d > resolvedSales30d) {
+          resolvedSales30d = resolvedSales7d;
+        }
+
+        const resolvedAvgDaily = (resolvedSales24h === 0 && resolvedSales7d === 0)
+          ? 0
+          : (remoteVol.avgDailySales !== undefined ? remoteVol.avgDailySales : localVol?.avgDailySales);
+
+        const p24 = resolvedSales24h === 0 ? 0 : (remoteVol.price24h ?? localVol?.price24h);
+        const m24 = resolvedSales24h === 0 ? 0 : (remoteVol.median24h ?? localVol?.median24h);
+        let p7 = resolvedSales7d === 0 ? 0 : (remoteVol.price7d ?? localVol?.price7d);
+        let m7 = resolvedSales7d === 0 ? 0 : (remoteVol.median7d ?? localVol?.median7d);
+        if (resolvedSales7d > 0 && !p7 && p24) {
+          p7 = p24;
+          m7 = m24;
+        }
+
+        current[itemId] = {
+          ...localVol,
+          ...remoteVol,
+          sales24h: resolvedSales24h,
+          sales7d: resolvedSales7d,
+          sales30d: resolvedSales30d,
+          price24h: p24,
+          median24h: m24,
+          price7d: p7,
+          median7d: m7,
+          avgDailySales: resolvedAvgDaily,
+        };
+        hasLocalUpdates = true;
+      } else {
+        // La versión local es más reciente: conservar y marcar para sincronizar al servidor
+        localNewerToPush[itemId] = localVol;
+      }
+    }
+  }
+
+  // 2. Verificar datos locales que no existen en el servidor aún
+  for (const [idStr, localVol] of Object.entries(current)) {
+    const itemId = Number(idStr);
+    if (!itemId || !localVol) continue;
+    if (!remoteMap || !remoteMap[itemId]) {
+      localNewerToPush[itemId] = localVol;
+    }
+  }
+
+  if (hasLocalUpdates) {
+    try {
+      localStorage.setItem(SALES_VOLUME_STORAGE_KEY, JSON.stringify(current));
+      window.dispatchEvent(
+        new CustomEvent("dofus_sales_volume_updated", { detail: { count: Object.keys(current).length } })
+      );
+    } catch (e) {
+      console.warn("[syncRemoteSalesVolume] Storage write error:", e);
+    }
+  }
+
+  // 3. Si hay datos locales más recientes, subirlos a la nube para que otros jugadores los vean
+  if (Object.keys(localNewerToPush).length > 0 && typeof window !== "undefined" && window.location?.host) {
+    void fetch("/api/local-db/sales-volume/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volumes: localNewerToPush }),
+    }).catch((err) => {
+      console.warn("[syncRemoteSalesVolume] Error sincronizando cambios locales a la nube:", err);
+    });
+  }
+
+  return current;
+}
+
+/**
+ * Consulta la API y sincroniza los volúmenes de venta con la nube
+ */
+export async function fetchAndSyncSalesVolume(): Promise<SalesVolumeMap> {
+  if (typeof window === "undefined" || !window.location?.host) return getStoredSalesVolumeMap();
+  try {
+    const res = await fetch("/api/local-db/sales-volume");
+    if (!res.ok) return getStoredSalesVolumeMap();
+    const data = await res.json();
+    if (data?.salesVolume) {
+      return syncRemoteSalesVolume(data.salesVolume);
+    }
+  } catch (err) {
+    console.warn("[fetchAndSyncSalesVolume] Error fetching sales volume:", err);
+  }
+  return getStoredSalesVolumeMap();
+}
+
+/**
+ * Guardar volumen de ventas para un ítem con timestamp y persistencia en la nube
+ */
+export function saveItemSalesVolume(itemId: number, volume: Partial<ItemSalesVolume>): SalesVolumeMap {
+  const current = getStoredSalesVolumeMap();
+  const existing = current[itemId] || {};
+  const now = Date.now();
+
+  const updated: ItemSalesVolume = {
+    ...existing,
+    ...volume,
+    updatedAt: now,
+  };
+
+  current[itemId] = updated;
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(SALES_VOLUME_STORAGE_KEY, JSON.stringify(current));
+      window.dispatchEvent(new CustomEvent("dofus_sales_volume_updated", { detail: { itemId, volume: updated } }));
+    } catch (e) {
+      console.warn("Error guardando volumen de ventas localmente:", e);
+    }
+
+    // Sincronización asíncrona a la nube con LWW
+    if (window.location?.host) {
+      void fetch(`/api/local-db/sales-volume/${itemId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ volume: updated, updatedAt: now }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.volume && data.volume.updatedAt > now) {
+            // El servidor tenía un registro más reciente que no fue sobreescrito, actualizar local
+            handleRemoteVolumeUpdate(itemId, data.volume);
+          }
+        })
+        .catch((err) => {
+          console.warn("[saveItemSalesVolume] Error enviando a la nube:", err);
+        });
+    }
+  }
+
+  return current;
+}
+
+/**
+ * Calcula métricas analíticas a partir de los 3 registros (24h, 7d, 30d)
+ * Si no existen registros suficientes (>0), retorna null sin clasificar como estancado.
+ */
+export interface SalesAnalysisResult {
+  hasData: boolean;
+  sales24h: number;
+  sales7d: number;
+  sales30d: number;
+  avgDailySales: number;
+  hasRecentSales: boolean;
+  daysToSell: number | null;
+  turnoverRating: "alta" | "media" | "baja" | null;
+  turnoverLabel: string | null;
+  momentum: "acelerado" | "estable" | "desacelerado" | null;
+  suggestedPrice: number | null;
+}
+
+export function analyzeSalesVolume(
+  currentPrice: number,
+  volume?: ItemSalesVolume | null
+): SalesAnalysisResult {
+  const v24h = volume?.sales24h;
+  const v7d = volume?.sales7d;
+  const v30d = volume?.sales30d;
+  const directDaily = volume?.avgDailySales;
+
+  const hasPeriodData =
+    (v24h !== undefined && v24h > 0) ||
+    (v7d !== undefined && v7d > 0) ||
+    (v30d !== undefined && v30d > 0);
+  const hasDirectDaily = directDaily !== undefined && directDaily > 0;
+
+  if (!hasPeriodData && !hasDirectDaily) {
+    return {
+      hasData: false,
+      sales24h: v24h ?? 0,
+      sales7d: v7d ?? 0,
+      sales30d: v30d ?? 0,
+      avgDailySales: 0,
+      hasRecentSales: false,
+      daysToSell: null,
+      turnoverRating: null,
+      turnoverLabel: null,
+      momentum: null,
+      suggestedPrice: null,
+    };
+  }
+
+  const s24h = Math.max(0, v24h || 0);
+  const s7d = Math.max(s24h, v7d || 0);
+  const s30d = Math.max(s7d, v30d || 0);
+  const hasRecentSales = s24h > 0 || s7d > 0 || (hasDirectDaily && directDaily! > 0);
+
+  // Estimación de ventas diarias ponderadas:
+  // 50% peso a 24h, 35% peso a 7d (diario), 15% peso a 30d (diario)
+  const dailyFrom7d = s7d / 7;
+  const dailyFrom30d = s30d / 30;
+
+  let weightedDaily = 0;
+  let weightsSum = 0;
+
+  if (v24h !== undefined && v24h >= 0) {
+    weightedDaily += s24h * 0.5;
+    weightsSum += 0.5;
+  }
+  if (v7d !== undefined && v7d >= 0) {
+    weightedDaily += dailyFrom7d * 0.35;
+    weightsSum += 0.35;
+  }
+  if (v30d !== undefined && v30d >= 0) {
+    weightedDaily += dailyFrom30d * 0.15;
+    weightsSum += 0.15;
+  }
+
+  let avgDaily = weightsSum > 0 ? weightedDaily / weightsSum : (directDaily || 0);
+  // If direct daily was explicitly set and hasPeriodData is false, use directDaily
+  if (!hasPeriodData && hasDirectDaily) {
+    avgDaily = directDaily!;
+  }
+
+  // Si no hay ventas recientes (0 en 24h y 0 en 7d cuando se dispone de datos de periodo):
+  // El producto está estancado o inactivo. Las ventas antiguas de hace 30 días no deben computar
+  // como ventas diarias activas a corto plazo.
+  if (!hasRecentSales && (v24h !== undefined || v7d !== undefined)) {
+    avgDaily = 0;
+  }
+
+  const daysToSell = avgDaily > 0 ? 1 / avgDaily : null;
+
+  // Clasificación de rotación
+  let turnoverRating: "alta" | "media" | "baja" | null = null;
+  let turnoverLabel: string | null = null;
+
+  if (avgDaily >= 3) {
+    turnoverRating = "alta";
+    turnoverLabel = "Alta rotación (< 8 horas)";
+  } else if (avgDaily >= 1) {
+    turnoverRating = "alta";
+    turnoverLabel = "Alta rotación (~1 día)";
+  } else if (avgDaily >= 0.25) {
+    turnoverRating = "media";
+    turnoverLabel = `Rotación media (~${Math.round(daysToSell || 3)} días)`;
+  } else if (avgDaily > 0) {
+    turnoverRating = "baja";
+    turnoverLabel = `Rotación lenta (~${Math.round(daysToSell || 7)} días)`;
+  }
+
+  // Momentum (comparando 24h vs promedio 7d)
+  let momentum: "acelerado" | "estable" | "desacelerado" | null = null;
+  if (s7d > 0 && v24h !== undefined) {
+    const expected24h = s7d / 7;
+    if (s24h > expected24h * 1.3) {
+      momentum = "acelerado";
+    } else if (s24h < expected24h * 0.7) {
+      momentum = "desacelerado";
+    } else {
+      momentum = "estable";
+    }
+  }
+
+function getRobustPeriodPrice(price?: number, median?: number, vol: number = 0): number {
+  if (price && median && price > 0 && median > 0) {
+    if (price > median * 1.8) return median;
+    if (vol >= 2 && median < price) {
+      return Math.round(median * 0.70 + price * 0.30);
+    }
+    if (price < median * 0.5) return median;
+    return price;
+  }
+  return (median && median > 0 ? median : price) || 0;
+}
+
+  // Precio sugerido de venta: prioridad a la cotización histórica capturada (robusta ante exomagueos)
+  let suggestedPrice: number | null = null;
+  const hasDowntrendOutlier = Boolean(
+    volume?.suggestedPrice &&
+    s24h >= 3 &&
+    volume?.median24h &&
+    volume.suggestedPrice > volume.median24h * 1.8
+  );
+  const hasOutlierSuggestedPrice =
+    Boolean(volume?.suggestedPrice &&
+    volume?.median7d &&
+    volume.suggestedPrice > volume.median7d * 1.8) || hasDowntrendOutlier;
+
+  if (volume?.suggestedPrice && volume.suggestedPrice > 0 && !hasOutlierSuggestedPrice) {
+    suggestedPrice = Math.round(volume.suggestedPrice);
+  } else if (
+    (volume?.price24h && volume.price24h > 0) ||
+    (volume?.price7d && volume.price7d > 0) ||
+    (volume?.price30d && volume.price30d > 0) ||
+    (volume?.median24h && volume.median24h > 0) ||
+    (volume?.median7d && volume.median7d > 0) ||
+    (volume?.median30d && volume.median30d > 0)
+  ) {
+    const p24 = (volume?.price24h || volume?.median24h) && s24h > 0
+      ? getRobustPeriodPrice(volume.price24h, volume.median24h, s24h)
+      : 0;
+    const p7 = (volume?.price7d || volume?.median7d) && s7d > 0
+      ? getRobustPeriodPrice(volume.price7d, volume.median7d, s7d)
+      : 0;
+    const p30 = (volume?.price30d || volume?.median30d) && s30d > 0
+      ? getRobustPeriodPrice(volume.price30d, volume.median30d, s30d)
+      : 0;
+
+    const isDowntrend = s24h >= 3 && p24 > 0 && p7 > 0 && p24 < p7 * 0.65;
+
+    let wSum = 0;
+    let wTot = 0;
+    if (p24 > 0) {
+      const w = isDowntrend ? 0.80 : 0.45;
+      wSum += p24 * w;
+      wTot += w;
+    }
+    if (p7 > 0) {
+      const w = isDowntrend ? 0.15 : 0.35;
+      wSum += p7 * w;
+      wTot += w;
+    }
+    if (p30 > 0) {
+      const w = isDowntrend ? 0.05 : 0.20;
+      wSum += p30 * w;
+      wTot += w;
+    }
+    if (wTot > 0) {
+      suggestedPrice = Math.round(wSum / wTot);
+      if (isDowntrend && suggestedPrice > p24 * 1.4) {
+        suggestedPrice = Math.round(p24 * 1.4);
+      }
+    }
+  }
+
+  // Si volume.suggestedPrice existía pero fue descartado por outlier y no hubo wTot
+  if (!suggestedPrice && volume?.suggestedPrice && volume.suggestedPrice > 0) {
+    suggestedPrice = Math.round(volume.median7d || volume.median30d || volume.suggestedPrice);
+  }
+
+  // Fallback: estimación según rotación y precio actual de mercadillo si no hay cotización
+  if (!suggestedPrice && currentPrice > 0) {
+    if (turnoverRating === "alta") {
+      // Precio competitivo inmediato (0.5% a 1% bajo precio actual)
+      suggestedPrice = Math.round(currentPrice * 0.99);
+    } else if (turnoverRating === "media") {
+      suggestedPrice = Math.round(currentPrice * 0.98);
+    } else if (turnoverRating === "baja") {
+      suggestedPrice = Math.round(currentPrice * 0.95);
+    } else {
+      suggestedPrice = currentPrice;
+    }
+  }
+
+  return {
+    hasData: true,
+    sales24h: s24h,
+    sales7d: s7d,
+    sales30d: s30d,
+    avgDailySales: Number(avgDaily.toFixed(2)),
+    hasRecentSales,
+    daysToSell: daysToSell ? Number(daysToSell.toFixed(1)) : null,
+    turnoverRating,
+    turnoverLabel,
+    momentum,
+    suggestedPrice,
+  };
+}

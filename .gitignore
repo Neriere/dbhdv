@@ -1,0 +1,117 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Production builds
+dist/
+build/
+.next/
+out/
+
+# Coverage & Tests (Local only)
+coverage/
+.pytest_cache/
+tests/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables & Secrets
+.env*
+!.env.example
+
+# Local Databases & Journals
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+local.db
+local_dofus.db
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+sniffer/__pycache__/
+scripts/__pycache__/
+.cache/
+sniffer/.cache/
+venv/
+.venv/
+env/
+ENV/
+
+# Logs & Diagnostics
+*.log
+logs/
+sniffer/logs/
+calibracion_*
+cotizaciones_*
+sniffer.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Private Storage Captures, Packet Dumps & User Data (Never commit user items/banks/dumps)
+*capturado*.json
+*banco_inventario*.json
+banco_inventario_capturado.json
+almacen_filtrado*.json
+historial_ventas_*
+listings_en_venta_*
+sniffer/data/*
+!sniffer/data/.gitkeep
+sniffer/viewer/*.html
+*.bin
+*.pcap
+*.pcapng
+*.cap
+
+# Generated Large Dictionaries & Redundant Datasets
+items_db.json
+**/items_db.json
+scripts/items_db.json
+sniffer/items_db.json
+sniffer/config/items_db.json
+src/data/bycGeneratedDb.json
+
+# Cloud, IDE & AI Agent Customization Artifacts
+.vercel/
+.gemini/
+.agents/
+metadata.json
+scratch/
+offline_tokens.json
+
+# Internal Documentation, Changelogs, Protocols & Instructions (Local only)
+docs/
+
+# Local Testing, Investigative & Offline Maintenance Scripts (Local only)
+scripts/*
+!scripts/syncSuiteContent.js
+
+# Sniffer Local Launchers, Viewers & Debuggers (Local only)
+iniciar_dbhdv_suite.bat
+sniffer/iniciar_sniffer.bat
+sniffer/test_sniffer_simulation.py
+sniffer/viewer/
+sniffer/packet_logger.py
+sniffer/debug_packet_logger.py
+sniffer/tools/
+
+# Local Browser Extensions & External Tooling
+extension_dofocus/
+SniffSniffSquared-main/
+*.tmp
+*.bak
